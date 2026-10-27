@@ -3,19 +3,26 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import '../cheque_register_api.dart';
+import '../widgets/payee_check_notice.dart';
+import '../widgets/scan_messages.dart';
 import '../widgets/step_header.dart';
 
 enum Disposition { holdInSafe, depositToday, scheduleDeposit }
 
-/// Step 3 — show the matched payment, editable cheque fields, and disposition.
+/// Step 3 — show the matched register row, editable cheque fields, the
+/// organisation's payee check, and disposition.
 ///
-/// Match selection: if a paymentId was passed in, the parent populates
-/// [matchedPayment]. Otherwise the user can tap "Pick payment" to select.
-/// Backend doesn't have an auto-match endpoint yet, so this is manual.
+/// The user taps "Pick instalment" to select [matchedCheque] (a register row,
+/// `ChequeDTO`). A payee MISMATCH, or an amount more than AED 1 off the
+/// row's, keeps the confirm button off until the operator ticks "attach
+/// anyway" — the server refuses an unconfirmed payee too.
 class Step3Confirm extends StatefulWidget {
   final ChequeExtractionResult result;
-  final Map<String, dynamic>? matchedPayment;
-  final VoidCallback onPickPayment;
+
+  /// The register row (`ChequeDTO`) this cheque is for, or null.
+  final Map<String, dynamic>? matchedCheque;
+  final VoidCallback onPickCheque;
   final VoidCallback onBack;
   final VoidCallback? onClose;
   final void Function({
@@ -24,6 +31,7 @@ class Step3Confirm extends StatefulWidget {
     required String payerName,
     required DateTime? chequeDate,
     required Disposition disposition,
+    required bool payeeMismatchConfirmed,
   })
   onConfirm;
   final bool submitting;
@@ -32,8 +40,8 @@ class Step3Confirm extends StatefulWidget {
   const Step3Confirm({
     super.key,
     required this.result,
-    required this.matchedPayment,
-    required this.onPickPayment,
+    required this.matchedCheque,
+    required this.onPickCheque,
     required this.onBack,
     required this.onConfirm,
     required this.submitting,
@@ -51,6 +59,8 @@ class _Step3ConfirmState extends State<Step3Confirm> {
   late final TextEditingController _payerNameCtrl;
   DateTime? _chequeDate;
   Disposition _disposition = Disposition.depositToday;
+  bool _payeeConfirmed = false;
+  bool _amountConfirmed = false;
 
   @override
   void initState() {
@@ -153,39 +163,73 @@ class _Step3ConfirmState extends State<Step3Confirm> {
   String _formatDate(DateTime? d, _L l) =>
       d == null ? l.notDetected : DateFormat('dd MMM yyyy').format(d);
 
+  /// A payee that matches none of the organisation's valid names is attached
+  /// only once the operator confirms it (owner ruling 2026-09-29).
+  bool get _payeeBlocks =>
+      widget.result.payeeCheck == PayeeCheck.mismatch && !_payeeConfirmed;
+
+  /// A row whose amount differs from the cheque's needs its own tick, as on
+  /// the web; picking another row asks again.
+  bool get _amountBlocks => _amountMismatch && !_amountConfirmed;
+
+  @override
+  void didUpdateWidget(Step3Confirm old) {
+    super.didUpdateWidget(old);
+    if (old.matchedCheque?['id'] != widget.matchedCheque?['id']) {
+      _amountConfirmed = false;
+    }
+  }
+
   bool get _canConfirm =>
-      widget.matchedPayment != null &&
+      widget.matchedCheque != null &&
       _chequeNumberCtrl.text.isNotEmpty &&
       _bankNameCtrl.text.isNotEmpty &&
       _payerNameCtrl.text.isNotEmpty &&
       _chequeDate != null &&
+      !_payeeBlocks &&
+      !_amountBlocks &&
       !widget.submitting;
 
   /// Human list of what still blocks the confirm button (empty when ready).
   List<String> _missingItems(_L l) => [
-    if (widget.matchedPayment == null) l.missingPayment,
+    if (widget.matchedCheque == null) l.missingCheque,
     if (_chequeNumberCtrl.text.isEmpty) l.missingChequeNumber,
     if (_bankNameCtrl.text.isEmpty) l.missingBankName,
     if (_chequeDate == null) l.missingChequeDate,
     if (_payerNameCtrl.text.isEmpty) l.missingPayerName,
+    if (_payeeBlocks) PayeeL(l.ar).missingConfirm,
+    if (_amountBlocks) amountConfirmMissing(l.ar),
   ];
+
+  /// A post-dated cheque cannot be banked before its date, and only a
+  /// registered row can be deposited (`ChequeService.deposit`).
+  bool get _depositAllowed {
+    final d = _chequeDate;
+    if (d == null) return false;
+    if (widget.matchedCheque?['status'] != 'REGISTERED') return false;
+    final now = DateTime.now();
+    return !DateTime(
+      d.year,
+      d.month,
+      d.day,
+    ).isAfter(DateTime(now.year, now.month, now.day));
+  }
+
+  Disposition get _effectiveDisposition =>
+      _disposition == Disposition.depositToday && !_depositAllowed
+      ? Disposition.holdInSafe
+      : _disposition;
 
   num? get _scannedAmount => widget.result.amount;
 
   num? get _expectedAmount {
-    final raw = widget.matchedPayment?['amount'];
+    final raw = widget.matchedCheque?['amount'];
     if (raw == null) return null;
     return raw is num ? raw : num.tryParse(raw.toString());
   }
 
-  /// Non-blocking, exact-to-the-cent comparison — mirrors the web's
-  /// PaymentScheduleEditor mismatch chip.
-  bool get _amountMismatch {
-    final scanned = _scannedAmount;
-    final expected = _expectedAmount;
-    if (scanned == null || expected == null) return false;
-    return (scanned * 100).round() != (expected * 100).round();
-  }
+  /// More than AED 1 apart, the web's tolerance.
+  bool get _amountMismatch => amountsDiffer(_scannedAmount, _expectedAmount);
 
   String _formatAed(num n) => 'AED ${NumberFormat('#,##0.##').format(n)}';
 
@@ -214,8 +258,8 @@ class _Step3ConfirmState extends State<Step3Confirm> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _MatchCard(
-                  matchedPayment: widget.matchedPayment,
-                  onPick: widget.onPickPayment,
+                  matchedCheque: widget.matchedCheque,
+                  onPick: widget.onPickCheque,
                   l: l,
                 ),
                 if (widget.result.confidence == 'LOW' ||
@@ -298,6 +342,29 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                     ),
                     l: l,
                   ),
+                  CheckboxListTile(
+                    key: const ValueKey('amountMismatchConfirm'),
+                    value: _amountConfirmed,
+                    onChanged: (v) =>
+                        setState(() => _amountConfirmed = v ?? false),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(
+                      amountConfirmLabel(l.ar),
+                      style: bodyFont(fontSize: 12, color: m.textPrimary),
+                    ),
+                  ),
+                ],
+                if (widget.result.payeeCheck != null) ...[
+                  const SizedBox(height: 12),
+                  PayeeCheckNotice(
+                    payeeCheck: widget.result.payeeCheck,
+                    payeeName: widget.result.payeeName,
+                    confirmed: _payeeConfirmed,
+                    onConfirmedChanged: (v) =>
+                        setState(() => _payeeConfirmed = v),
+                  ),
                 ],
                 const SizedBox(height: 18),
                 _SectionLabel(text: l.whatNext, l: l),
@@ -315,17 +382,23 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                         icon: Icons.shield_outlined,
                         label: l.holdInSafe,
                         sub: l.holdInSafeSub,
-                        selected: _disposition == Disposition.holdInSafe,
+                        selected:
+                            _effectiveDisposition == Disposition.holdInSafe,
                         onTap: () => setState(
                           () => _disposition = Disposition.holdInSafe,
                         ),
                         l: l,
                       ),
                       _DispositionRow(
-                        icon: l.ar ? Icons.arrow_back : Icons.arrow_forward,
+                        // Mirrors itself under RTL.
+                        icon: Icons.arrow_forward,
                         label: l.depositToday,
-                        sub: l.depositTodaySub,
-                        selected: _disposition == Disposition.depositToday,
+                        sub: _depositAllowed
+                            ? l.depositTodaySub
+                            : l.depositNotYet,
+                        selected:
+                            _effectiveDisposition == Disposition.depositToday,
+                        disabled: !_depositAllowed,
                         onTap: () => setState(
                           () => _disposition = Disposition.depositToday,
                         ),
@@ -387,7 +460,8 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                           bankName: _bankNameCtrl.text,
                           payerName: _payerNameCtrl.text,
                           chequeDate: _chequeDate,
-                          disposition: _disposition,
+                          disposition: _effectiveDisposition,
+                          payeeMismatchConfirmed: _payeeConfirmed,
                         )
                       : null,
                 ),
@@ -401,19 +475,19 @@ class _Step3ConfirmState extends State<Step3Confirm> {
 }
 
 class _MatchCard extends StatelessWidget {
-  final Map<String, dynamic>? matchedPayment;
+  final Map<String, dynamic>? matchedCheque;
   final VoidCallback onPick;
   final _L l;
 
   const _MatchCard({
-    required this.matchedPayment,
+    required this.matchedCheque,
     required this.onPick,
     required this.l,
   });
 
   @override
   Widget build(BuildContext context) {
-    final hasMatch = matchedPayment != null;
+    final hasMatch = matchedCheque != null;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
         : GoogleFonts.plusJakartaSans;
@@ -467,8 +541,8 @@ class _MatchCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     l.ar
-                        ? (hasMatch ? l.paymentSelected : l.noMatchYet)
-                        : (hasMatch ? l.paymentSelected : l.noMatchYet)
+                        ? (hasMatch ? l.chequeSelected : l.noMatchYet)
+                        : (hasMatch ? l.chequeSelected : l.noMatchYet)
                               .toUpperCase(),
                     style: bodyFont(
                       fontSize: l.ar ? 12.5 : 11,
@@ -482,7 +556,7 @@ class _MatchCard extends StatelessWidget {
               const SizedBox(height: 12),
               if (hasMatch) ...[
                 Text(
-                  matchedPayment!['renterName']?.toString() ?? l.unknownRenter,
+                  matchedCheque!['renterName']?.toString() ?? l.unknownRenter,
                   style: l.ar
                       ? GoogleFonts.notoNaskhArabic(
                           fontSize: 18,
@@ -497,7 +571,7 @@ class _MatchCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${matchedPayment!['propertyName'] ?? ''} · ${matchedPayment!['unitIdentifier'] ?? ''}'
+                  '${matchedCheque!['propertyName'] ?? ''} · ${matchedCheque!['unitIdentifier'] ?? ''}'
                       .trim(),
                   style: bodyFont(
                     fontSize: 12.5,
@@ -512,8 +586,7 @@ class _MatchCard extends StatelessWidget {
                     Expanded(
                       child: _MatchStat(
                         label: l.installment,
-                        value:
-                            '#${matchedPayment!['installmentNumber'] ?? '—'}',
+                        value: '#${matchedCheque!['seqNo'] ?? '—'}',
                         l: l,
                       ),
                     ),
@@ -522,7 +595,7 @@ class _MatchCard extends StatelessWidget {
                       child: _MatchStat(
                         label: l.due,
                         value: _formatDueDate(
-                          matchedPayment!['dueDate']?.toString(),
+                          matchedCheque!['chequeDate']?.toString(),
                           l,
                         ),
                         l: l,
@@ -532,8 +605,7 @@ class _MatchCard extends StatelessWidget {
                     Expanded(
                       child: _MatchStat(
                         label: l.expected,
-                        value:
-                            'AED ${_formatAmount(matchedPayment!['amount'])}',
+                        value: 'AED ${_formatAmount(matchedCheque!['amount'])}',
                         gold: true,
                         l: l,
                       ),
@@ -542,7 +614,7 @@ class _MatchCard extends StatelessWidget {
                 ),
               ] else ...[
                 Text(
-                  l.pickPaymentHint,
+                  l.pickChequeHint,
                   style: bodyFont(
                     fontSize: 13,
                     color: Colors.white.withValues(alpha: 0.7),
@@ -556,7 +628,7 @@ class _MatchCard extends StatelessWidget {
                     foregroundColor: AppColors.gold400,
                   ),
                   icon: const Icon(Icons.touch_app, size: 16),
-                  label: Text(l.pickPayment, style: bodyFont()),
+                  label: Text(l.pickCheque, style: bodyFont()),
                 ),
               ],
             ],
@@ -746,8 +818,7 @@ class _StaticRow extends StatelessWidget {
   }
 }
 
-/// Amber pill matching the web's amount-mismatch chip. Informational only —
-/// it never blocks the confirm action.
+/// Amber pill matching the web's amount-mismatch chip.
 class _MismatchChip extends StatelessWidget {
   final String text;
   final _L l;
@@ -767,10 +838,9 @@ class _MismatchChip extends StatelessWidget {
         ),
         child: Text(
           text,
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
-            fontSize: 11,
-            color: m.warning,
-          ),
+          style: (l.ar
+              ? GoogleFonts.notoNaskhArabic
+              : GoogleFonts.plusJakartaSans)(fontSize: 11, color: m.warning),
         ),
       ),
     );
@@ -826,7 +896,8 @@ class _EditRow extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Icon(
-              l.ar ? Icons.arrow_back_ios : Icons.arrow_forward_ios,
+              // Mirrors itself under RTL.
+              Icons.arrow_forward_ios,
               size: 12,
               color: m.textMuted,
             ),
@@ -961,16 +1032,19 @@ class _L {
   String get depositToday => ar ? 'إيداع اليوم' : 'Deposit today';
   String get depositTodaySub =>
       ar ? 'تحديد الشيك كمودَع' : 'Mark cheque as deposited';
+  String get depositNotYet => ar
+      ? 'لا يمكن إيداع الشيك قبل تاريخه'
+      : 'A cheque cannot be banked before its date';
   String get scheduleDeposit => ar ? 'جدولة الإيداع' : 'Schedule deposit';
   String get comingSoon => ar ? 'قريباً' : 'Coming soon';
 
-  String get paymentSelected => ar ? 'تم اختيار الدفعة' : 'Payment selected';
+  String get chequeSelected => ar ? 'تم اختيار القسط' : 'Instalment selected';
   String get noMatchYet => ar ? 'لا تطابق بعد' : 'No match yet';
   String get unknownRenter => ar ? 'مستأجر غير معروف' : 'Unknown renter';
-  String get pickPaymentHint => ar
-      ? 'اضغط لاختيار الدفعة التي يسدّدها هذا الشيك.'
-      : 'Tap to pick which payment this cheque settles.';
-  String get pickPayment => ar ? 'اختيار دفعة' : 'Pick payment';
+  String get pickChequeHint => ar
+      ? 'اضغط لاختيار القسط الذي يخصّه هذا الشيك.'
+      : 'Tap to pick which instalment this cheque is for.';
+  String get pickCheque => ar ? 'اختيار قسط' : 'Pick instalment';
 
   String get installment => ar ? 'القسط' : 'Installment';
   String get due => ar ? 'الاستحقاق' : 'Due';
@@ -980,7 +1054,7 @@ class _L {
       ? 'لم يتمكن الذكاء الاصطناعي من القراءة بوضوح — يرجى التحقق من القيم.'
       : "AI couldn't read this clearly — please double-check the values.";
 
-  String get missingPayment => ar ? 'اختيار دفعة' : 'pick a payment';
+  String get missingCheque => ar ? 'اختيار قسط' : 'pick an instalment';
   String get missingChequeNumber => ar ? 'رقم الشيك' : 'cheque number';
   String get missingBankName => ar ? 'اسم البنك' : 'bank name';
   String get missingChequeDate => ar ? 'تاريخ الشيك' : 'cheque date';

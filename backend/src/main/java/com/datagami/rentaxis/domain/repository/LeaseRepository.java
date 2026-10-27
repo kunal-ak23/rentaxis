@@ -544,4 +544,19 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
             """)
     List<UUID> findActivePropertyIdsForRenterUser(@Param("tenantId") UUID tenantId,
                                                   @Param("userId") UUID userId);
+
+    /**
+     * A renter's active leases as {@code [propertyId, propertyNameEn, unitNumber]},
+     * earliest start first (id breaks ties) — what a coupon redirect's PROPERTY_NAME
+     * and UNIT_NUMBER parameters are filled from (promoter plan addendum A).
+     */
+    @Query("""
+            SELECT l.unit.property.id, l.unit.property.nameEn, l.unit.unitNumber FROM Lease l
+            WHERE l.tenantId = :tenantId
+              AND l.renter.userId = :userId
+              AND l.status = com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE
+            ORDER BY l.startDate ASC, l.id ASC
+            """)
+    List<Object[]> findActiveLeasePlacesForRenterUser(@Param("tenantId") UUID tenantId,
+                                                      @Param("userId") UUID userId);
 }

@@ -28,6 +28,22 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("select u from User u where lower(trim(u.email)) = lower(trim(:email)) order by u.id")
     List<User> findAllByEmailNormalised(@Param("email") String email);
 
+    /**
+     * Whether any users row anywhere — any organisation, any role, any status — has
+     * this email (trimmed, case-insensitive). Native on purpose: the tenant filter
+     * would answer for the caller's organisation only, and a promoter invite must be
+     * refused for an email that signs in to ANY organisation (promoter plan). Answers
+     * a yes/no only; never returns rows.
+     */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM users u WHERE lower(trim(u.email)) = lower(trim(:email)))",
+            nativeQuery = true)
+    boolean existsAnyLoginWithEmail(@Param("email") String email);
+
+    /** {@link #existsAnyLoginWithEmail} leaving out one row (the user whose address is being changed). */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM users u WHERE lower(trim(u.email)) = lower(trim(:email)) AND u.id <> :id)",
+            nativeQuery = true)
+    boolean existsAnyLoginWithEmailExcept(@Param("email") String email, @Param("id") UUID id);
+
     /** A link to the address was redeemed for these rows: no longer unverified registrations. */
     @Modifying
     @Query(value = "UPDATE users SET self_registered_unverified = false WHERE id IN (:ids)", nativeQuery = true)

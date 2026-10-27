@@ -639,7 +639,7 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
             const refusal = err instanceof ApiError ? refusalOf(err.body) : null;
             setFormError(refusal?.code === "building.floorsOutOfRange"
                 ? t("floorsRange", { min: BUILDING_FLOORS_MIN, max: BUILDING_FLOORS_MAX })
-                : err instanceof ApiError ? err.message : "Failed to save building. Please try again.");
+                : err instanceof ApiError ? err.message : t("buildingSaveFailed"));
         } finally {
             setSubmitting(false);
         }
@@ -648,13 +648,13 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-bold">Buildings</h2>
+                <h2 className="text-lg font-bold">{t("tabBuildings")}</h2>
                 {canCreate && (
                     <button
                         onClick={() => setShowForm(true)}
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
-                        <Plus size={14} /> Add Building
+                        <Plus size={14} /> {t("addBuilding")}
                     </button>
                 )}
             </div>
@@ -662,15 +662,15 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
             {showForm && (
                 <form onSubmit={handleSubmit} className="bg-surface p-6 rounded-xl border border-border mb-6 grid grid-cols-3 gap-4">
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Name (EN)</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("nameEn")}</label>
                         <input required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.nameEn} onChange={e => setFormData({ ...formData, nameEn: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1 text-right">Name (AR)</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1 text-right">{t("nameAr")}</label>
                         <input className="w-full bg-input border border-border rounded-lg p-2 text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.nameAr} onChange={e => setFormData({ ...formData, nameAr: e.target.value })} dir="rtl" />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Floors</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("floors")}</label>
                         <NumberInput required min={BUILDING_FLOORS_MIN} max={BUILDING_FLOORS_MAX} step={1} className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={(v) => setFormData({ ...formData, floors: v })} />
                     </div>
                     {formError && (
@@ -679,8 +679,8 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
                         </div>
                     )}
                     <div className="col-span-3 flex justify-end gap-2 mt-2">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
-                        <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Saving..." : "Save"}</button>
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">{t("cancel")}</button>
+                        <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? t("saving") : t("save")}</button>
                     </div>
                 </form>
             )}
@@ -693,12 +693,12 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
                             {b.nameAr && <p className="text-xs text-muted font-medium" dir="rtl">{b.nameAr}</p>}
                         </div>
                         <div className="text-xs font-bold text-muted bg-background px-2 py-1 rounded-md border border-border">
-                            {b.floors} Floors
+                            {t("buildingFloorsCount", { count: b.floors })}
                         </div>
                     </div>
                 ))}
                 {buildings.length === 0 && !showForm && (
-                    <div className="col-span-3 text-center py-12 text-muted font-medium text-xs">No buildings added yet.</div>
+                    <div className="col-span-3 text-center py-12 text-muted font-medium text-xs">{t("noBuildingsYet")}</div>
                 )}
             </div>
         </div>
@@ -707,9 +707,16 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
 
 // ------ UNITS TAB SUB-COMPONENT ------
 
+// The bulk upload's column headers: the file must use these exact names, in either language.
+const UNIT_CSV_COLUMNS = "unitNumber, type, sizeSqft, expectedRent, status";
+const UNIT_STATUS_KEY: Record<string, string> = {
+    VACANT: "vacant", OCCUPIED: "occupied", RESERVED: "reservedStatus", MAINTENANCE: "maintenanceStatus",
+};
+
 function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const t = useTranslations("MasterData");
     const locale = useLocale();
+    const buildingLabel = (b: any) => (b ? (locale === "ar" && b.nameAr ? b.nameAr : b.nameEn) : "");
     const [showForm, setShowForm] = useState(false);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -759,7 +766,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             const refusal = err instanceof ApiError ? refusalOf(err.body) : null;
             setAddUnitError(refusal?.code === "unit.numberTaken"
                 ? t("unitNumberTaken", { unitNumber: String(refusal.args.unitNumber ?? unitForm.unitNumber), place: String((locale === "ar" && refusal.args.placeAr) || refusal.args.place || "") })
-                : err instanceof ApiError ? err.message : "Failed to save unit. Please try again.");
+                : err instanceof ApiError ? err.message : t("unitSaveFailed"));
         } finally {
             setSubmitting(false);
         }
@@ -792,11 +799,11 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 setBulkError(
                     rows.length > 0
                         ? rows.join("\n")
-                        : data?.message ?? `Upload failed (status ${res.status})`,
+                        : data?.message ?? t("uploadFailedStatus", { status: res.status }),
                 );
             }
         } catch {
-            setBulkError("Upload failed. Please try again.");
+            setBulkError(t("uploadFailedRetry"));
         } finally {
             setSubmitting(false);
         }
@@ -805,20 +812,20 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-bold">Units</h2>
+                <h2 className="text-lg font-bold">{t("tabUnits")}</h2>
                 {canCreate && (
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => { setShowForm(true); setShowBulkUpload(false); setAddUnitError(null); }}
                             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
-                            <Plus size={14} /> Add Unit
+                            <Plus size={14} /> {t("addUnit")}
                         </button>
                         <button
                             onClick={() => { setShowBulkUpload(!showBulkUpload); setShowForm(false); setBulkError(null); }}
                             className="flex items-center gap-2 bg-background text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
-                            <Upload size={14} /> Bulk Upload CSV
+                            <Upload size={14} /> {t("bulkUploadCsv")}
                         </button>
                     </div>
                 )}
@@ -827,7 +834,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             {showForm && (
                 <form onSubmit={handleAddUnit} className="bg-surface p-6 rounded-xl border border-border mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Unit Number</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("unitNumber")}</label>
                         <input required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder={t("unitNumberPlaceholder")} value={unitForm.unitNumber} onChange={e => setUnitForm({ ...unitForm, unitNumber: e.target.value })} />
                     </div>
                     <div>
@@ -837,18 +844,18 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                         </select>
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Size (Sqft)</label>
-                        <input type="number" min={0.01} step="any" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("sizeSqft")}</label>
+                        <input type="number" min={0.01} step="any" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder={t("sizeSqftPlaceholder")} value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Expected Rent (AED/year)</label>
-                        <MoneyTextInput options={{ allowZero: true, max: MONEY_MAX_12_2 }} className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 85000" value={unitForm.expectedRent} onChange={v => setUnitForm({ ...unitForm, expectedRent: v })} />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("expectedRent")}</label>
+                        <MoneyTextInput options={{ allowZero: true, max: MONEY_MAX_12_2 }} className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder={t("expectedRentPlaceholder")} value={unitForm.expectedRent} onChange={v => setUnitForm({ ...unitForm, expectedRent: v })} />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Building</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("building")}</label>
                         <select className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={unitForm.buildingId} onChange={e => setUnitForm({ ...unitForm, buildingId: e.target.value })}>
-                            <option value="">No Building</option>
-                            {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
+                            <option value="">{t("noBuilding")}</option>
+                            {buildings.map((b: any) => <option key={b.id} value={b.id}>{buildingLabel(b)}</option>)}
                         </select>
                     </div>
                     {addUnitError && (
@@ -857,8 +864,8 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                         </div>
                     )}
                     <div className="col-span-2 md:col-span-5 flex justify-end gap-2 mt-2">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
-                        <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Saving..." : "Save Unit"}</button>
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">{t("cancel")}</button>
+                        <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? t("saving") : t("saveUnit")}</button>
                     </div>
                 </form>
             )}
@@ -866,18 +873,18 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             {showBulkUpload && (
                 <form onSubmit={handleBulkUpload} className="bg-surface p-6 rounded-xl border border-border mb-6 flex items-end gap-4">
                     <div className="flex-1">
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">CSV File</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("csvFile")}</label>
                         <input type="file" accept=".csv" required onChange={e => setFile(e.target.files?.[0] || null)} className="w-full text-xs" />
-                        <p className="text-[10px] text-muted mt-1">Format: unitNumber, type, sizeSqft, expectedRent, status</p>
+                        <p className="text-[10px] text-muted mt-1">{t("csvColumns", { columns: UNIT_CSV_COLUMNS })}</p>
                     </div>
                     <div className="flex-1">
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Assign to Building (Optional)</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("assignToBuildingOptional")}</label>
                         <select className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={uploadBuildingId} onChange={e => setUploadBuildingId(e.target.value)}>
-                            <option value="">No Building (Direct to Property)</option>
-                            {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
+                            <option value="">{t("noBuildingDirect")}</option>
+                            {buildings.map((b: any) => <option key={b.id} value={b.id}>{buildingLabel(b)}</option>)}
                         </select>
                     </div>
-                    <button type="submit" disabled={submitting} className="px-6 py-2 bg-primary text-white rounded-lg text-xs font-bold mb-[2px] cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Uploading..." : "Upload"}</button>
+                    <button type="submit" disabled={submitting} className="px-6 py-2 bg-primary text-white rounded-lg text-xs font-bold mb-[2px] cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? t("uploading") : t("upload")}</button>
                 </form>
             )}
 
@@ -888,15 +895,15 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             )}
 
             <div className="bg-surface border border-border rounded-xl overflow-hidden">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-start text-sm">
                     <thead className="bg-background text-muted text-xs font-semibold uppercase tracking-[0.15em]">
                         <tr>
-                            <th className="px-6 py-4">Unit #</th>
-                            <th className="px-6 py-4">Building</th>
-                            <th className="px-6 py-4">Type</th>
-                            <th className="px-6 py-4">Status</th>
-                            <th className="px-6 py-4">Size (Sqft)</th>
-                            <th className="px-6 py-4 text-right">Rent</th>
+                            <th className="px-6 py-4 text-start">{t("unitNumberShort")}</th>
+                            <th className="px-6 py-4 text-start">{t("building")}</th>
+                            <th className="px-6 py-4 text-start">{t("type")}</th>
+                            <th className="px-6 py-4 text-start">{t("status")}</th>
+                            <th className="px-6 py-4 text-start">{t("sizeSqft")}</th>
+                            <th className="px-6 py-4 text-end">{t("rent")}</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -904,7 +911,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                             <tr key={u.id} className="hover:bg-background/50 transition-all duration-200">
                                 <td className="px-6 py-4 font-bold text-foreground">{u.unitNumber}</td>
                                 <td className="px-6 py-4 text-muted font-medium">
-                                    {buildings.find((b: any) => b.id === u.building?.id)?.nameEn || "N/A"}
+                                    {buildingLabel(buildings.find((b: any) => b.id === u.building?.id)) || t("notAvailable")}
                                 </td>
                                 <td className="px-6 py-4">
                                     <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest bg-background rounded-md">
@@ -916,17 +923,17 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                                         "px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md",
                                         u.status === "VACANT" ? "bg-success/10 text-success" : "bg-info/10 text-info"
                                     )}>
-                                        {u.status}
+                                        {UNIT_STATUS_KEY[u.status] ? t(UNIT_STATUS_KEY[u.status]) : u.status}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-muted">{u.sizeSqft}</td>
-                                <td className="px-6 py-4 text-right font-bold">{formatCurrencyCompact(u.expectedRent)}</td>
+                                <td className="px-6 py-4 text-end font-bold">{formatCurrencyCompact(u.expectedRent)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
                 {units.length === 0 && (
-                    <div className="text-center py-12 text-muted font-medium text-xs">No units found.</div>
+                    <div className="text-center py-12 text-muted font-medium text-xs">{t("noUnitsFound")}</div>
                 )}
             </div>
         </div>

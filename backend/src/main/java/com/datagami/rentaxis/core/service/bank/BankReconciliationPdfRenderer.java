@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.bank;
 
 import com.datagami.rentaxis.api.dto.bank.BankRecDTOs;
 import com.datagami.rentaxis.core.util.PdfResourcePolicy;
+import com.datagami.rentaxis.core.util.PdfRow;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -29,7 +30,9 @@ import java.util.stream.Collectors;
  * <p>The stack and resource policy of the supplier statement: openhtmltopdf, the
  * Noto fonts as classpath streams, and {@link PdfResourcePolicy} so nothing but
  * inline {@code data:} URIs loads. Every value from the bank's file or a user is
- * escaped. Amounts and dates use Latin digits in LTR spans inside an RTL page.</p>
+ * escaped. Amounts and dates use Latin digits in LTR spans inside an RTL page. An
+ * Arabic table's cells are written last column first ({@link PdfRow}), so its
+ * columns run right to left, and the header's label-value tables sit at the right.</p>
  */
 @Component
 public class BankReconciliationPdfRenderer {
@@ -135,31 +138,32 @@ public class BankReconciliationPdfRenderer {
                 .append("th { background: #f4f4f4; font-size: 8pt; } td.num, th.num { text-align: " + end + "; } .num span, .ltr { direction: ltr; unicode-bidi: embed; }")
                 .append("tr.total td { font-weight: bold; border-top: 1px solid #999; } .note { color: #666; font-size: 8pt; margin-top: 1mm; }")
                 .append(".footer { margin-top: 4mm; font-size: 8pt; color: #555; page-break-before: avoid; page-break-inside: avoid; }")
-                .append("table.meta { width: auto; margin: 0 0 1mm 0; } table.meta td { border: none; padding: 0.3mm 1.5mm 0.3mm 0; color: #555; }")
+                .append("table.meta { width: auto; margin: 0 0 1mm " + (ar ? "auto" : "0") + "; } table.meta td { border: none; padding: 0.3mm "
+                        + (ar ? "0 0.3mm 1.5mm" : "1.5mm 0.3mm 0") + "; color: #555; }")
                 .append("</style></head><body>");
         b.append("<h1>").append(esc(label("title", ar))).append("</h1>");
-        meta(b, label("bank", ar), esc(r.bankLabel()));
+        meta(b, label("bank", ar), esc(r.bankLabel()), ar);
         // F14-48: an account with no IBAN shows its account number, labelled as one.
         boolean iban = r.ibanMasked() != null && r.ibanMasked().matches("^[A-Za-z]{2}.*");
-        meta(b, label(iban ? "iban" : "accountNo", ar), "<span class=\"ltr\">" + esc(r.ibanMasked()) + "</span>");
-        meta(b, label("leaves", ar), esc(r.leaves().stream().map(l -> l.code() + " " + l.name()).collect(Collectors.joining(", "))));
-        meta(b, label("period", ar), "<span class=\"ltr\">" + DAY.format(r.periodFrom()) + " – " + DAY.format(r.periodTo()) + "</span>");
-        meta(b, label("status", ar), esc(label(r.status(), ar)));
+        meta(b, label(iban ? "iban" : "accountNo", ar), "<span class=\"ltr\">" + esc(r.ibanMasked()) + "</span>", ar);
+        meta(b, label("leaves", ar), esc(r.leaves().stream().map(l -> l.code() + " " + l.name()).collect(Collectors.joining(", "))), ar);
+        meta(b, label("period", ar), "<span class=\"ltr\">" + DAY.format(r.periodFrom()) + " – " + DAY.format(r.periodTo()) + "</span>", ar);
+        meta(b, label("status", ar), esc(label(r.status(), ar)), ar);
 
         // The formula.
         String to = "<span class=\"ltr\">" + DAY.format(r.periodTo()) + "</span>";
         b.append("<table>");
-        row(b, esc(label("perStatement", ar)) + " " + to, r.statementClosing(), false);
-        row(b, esc(label("dit", ar)), r.depositsInTransit(), false);
-        row(b, esc(label("unpresented", ar)), neg(r.unpresentedPayments()), false);
+        row(b, esc(label("perStatement", ar)) + " " + to, r.statementClosing(), false, ar);
+        row(b, esc(label("dit", ar)), r.depositsInTransit(), false, ar);
+        row(b, esc(label("unpresented", ar)), neg(r.unpresentedPayments()), false, ar);
         if (r.bookedAfterPeriod() != null && r.bookedAfterPeriod().signum() != 0) {
-            row(b, esc(label("bookedAfter", ar)), neg(r.bookedAfterPeriod()), false);
+            row(b, esc(label("bookedAfter", ar)), neg(r.bookedAfterPeriod()), false, ar);
         }
-        row(b, esc(label("adjustedBank", ar)), r.adjustedBank(), true);
-        row(b, esc(label("perBooks", ar)) + " " + to, r.bookBalance(), false);
-        row(b, esc(label("unrecorded", ar)), r.unrecordedCredits().subtract(r.unrecordedDebits()), false);
-        row(b, esc(label("adjustedBook", ar)), r.adjustedBook(), true);
-        row(b, esc(label("difference", ar)), r.difference(), true);
+        row(b, esc(label("adjustedBank", ar)), r.adjustedBank(), true, ar);
+        row(b, esc(label("perBooks", ar)) + " " + to, r.bookBalance(), false, ar);
+        row(b, esc(label("unrecorded", ar)), r.unrecordedCredits().subtract(r.unrecordedDebits()), false, ar);
+        row(b, esc(label("adjustedBook", ar)), r.adjustedBook(), true, ar);
+        row(b, esc(label("difference", ar)), r.difference(), true, ar);
         b.append("</table>");
         if (r.statementOpening() != null && r.statementClosing() != null) {
             b.append("<div class=\"note\">").append(esc(label("continuity", ar))).append(": <span class=\"ltr\">")
@@ -176,8 +180,8 @@ public class BankReconciliationPdfRenderer {
         if (r.matchedByMethod().isEmpty()) {
             b.append("<tr><td>").append(esc(label("none", ar))).append("</td></tr>");
         }
-        r.matchedByMethod().forEach((m, n) -> b.append("<tr><td>").append(esc(label(m, ar))).append("</td>")
-                .append(num(String.valueOf(n))).append("</tr>"));
+        r.matchedByMethod().forEach((m, n) -> b.append("<tr>")
+                .append(PdfRow.cells(ar, "<td>" + esc(label(m, ar)) + "</td>", num(String.valueOf(n)))).append("</tr>"));
         b.append("</table>");
 
         b.append("<div class=\"footer\">");
@@ -195,14 +199,15 @@ public class BankReconciliationPdfRenderer {
      * F14-48: label and value in cells of their own, so in Arabic an LTR value
      * ("PROBE-A 0001") cannot run into the RTL label.
      */
-    private static void meta(StringBuilder b, String key, String valueHtml) {
-        b.append("<table class=\"meta\"><tr><td>").append(esc(key)).append(":</td><td><b>").append(valueHtml)
-                .append("</b></td></tr></table>");
+    private static void meta(StringBuilder b, String key, String valueHtml, boolean ar) {
+        b.append("<table class=\"meta\"><tr>")
+                .append(PdfRow.cells(ar, "<td>" + esc(key) + ":</td>", "<td><b>" + valueHtml + "</b></td>"))
+                .append("</tr></table>");
     }
 
-    private static void row(StringBuilder b, String labelHtml, BigDecimal v, boolean total) {
-        b.append("<tr").append(total ? " class=\"total\"" : "").append("><td>").append(labelHtml).append("</td>")
-                .append(num(v == null ? "—" : amount(v))).append("</tr>");
+    private static void row(StringBuilder b, String labelHtml, BigDecimal v, boolean total, boolean ar) {
+        b.append("<tr").append(total ? " class=\"total\"" : "").append(">")
+                .append(PdfRow.cells(ar, "<td>" + labelHtml + "</td>", num(v == null ? "—" : amount(v)))).append("</tr>");
     }
 
     private static void items(StringBuilder b, String title, List<BankRecDTOs.RecItem> items, boolean ar) {
@@ -211,20 +216,23 @@ public class BankReconciliationPdfRenderer {
             b.append("<div class=\"note\">").append(esc(label("none", ar))).append("</div>");
             return;
         }
-        b.append("<table><tr><th>").append(esc(label("date", ar))).append("</th><th>").append(esc(label("document", ar)))
-                .append("</th><th>").append(esc(label("narration", ar))).append("</th><th>").append(esc(label("cheque", ar)))
-                .append("</th><th class=\"num\">").append(esc(label("amount", ar))).append("</th></tr>");
+        b.append("<table><tr>").append(PdfRow.cells(ar, "<th>" + esc(label("date", ar)) + "</th>",
+                "<th>" + esc(label("document", ar)) + "</th>", "<th>" + esc(label("narration", ar)) + "</th>",
+                "<th>" + esc(label("cheque", ar)) + "</th>", "<th class=\"num\">" + esc(label("amount", ar)) + "</th>"))
+                .append("</tr>");
         BigDecimal total = BigDecimal.ZERO;
         for (BankRecDTOs.RecItem i : items) {
             total = total.add(i.amount());
-            b.append("<tr><td><span class=\"ltr\">").append(i.date() == null ? "" : DAY.format(i.date())).append("</span></td>")
-                    .append("<td>").append(esc(i.document())).append("</td>")
-                    .append("<td>").append(esc(i.narration()))
-                    .append(i.withoutEvidence() ? " <i>(" + esc(label("noEvidence", ar)) + ")</i>" : "").append("</td>")
-                    .append("<td><span class=\"ltr\">").append(esc(i.chequeNo())).append("</span></td>")
-                    .append(num(amount(i.amount()))).append("</tr>");
+            b.append("<tr>").append(PdfRow.cells(ar,
+                    "<td><span class=\"ltr\">" + (i.date() == null ? "" : DAY.format(i.date())) + "</span></td>",
+                    "<td>" + esc(i.document()) + "</td>",
+                    "<td>" + esc(i.narration())
+                            + (i.withoutEvidence() ? " <i>(" + esc(label("noEvidence", ar)) + ")</i>" : "") + "</td>",
+                    "<td><span class=\"ltr\">" + esc(i.chequeNo()) + "</span></td>",
+                    num(amount(i.amount())))).append("</tr>");
         }
-        b.append("<tr class=\"total\"><td colspan=\"4\"></td>").append(num(amount(total))).append("</tr></table>");
+        b.append("<tr class=\"total\">").append(PdfRow.cells(ar, "<td colspan=\"4\"></td>", num(amount(total))))
+                .append("</tr></table>");
     }
 
     private static void stamp(StringBuilder b, String what, String who, java.time.Instant when, boolean ar) {

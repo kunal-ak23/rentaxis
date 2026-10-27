@@ -149,7 +149,7 @@ class ChequeGenerationServiceIT extends AbstractPostgresIT {
             assertThat(r.chequeNumber()).isNull();
             // Cleared funds land in the property's own bank leaf, resolved from
             // the template rather than named by the caller.
-            assertThat(r.debitAccountName()).isEqualTo("Emirates Islamic - " + fixtures.propertyName());
+            assertThat(r.debitAccountName()).isEqualTo("Bank - " + fixtures.propertyName());
         });
 
         // A DRAFT lease's cheques are invisible to the register: they are a

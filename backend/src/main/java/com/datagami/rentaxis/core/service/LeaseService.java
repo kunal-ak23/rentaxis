@@ -1175,6 +1175,17 @@ public class LeaseService {
     }
 
     /**
+     * Sim r22 S22-02 / r23 S23-01: the end of the term the contract's own undated lines were
+     * charged for. {@code extend} records the end date it moved away from in
+     * {@code leases.original_end_date} (changeset 182) the first time a lease is extended;
+     * nothing is inferred from line dates, because a contract's own lines may be dated in
+     * steps (stepped rent, a fee from month 3). Never extended, it is the lease's end date.
+     */
+    public static LocalDate originalTermEnd(Lease lease) {
+        return lease.getOriginalEndDate() != null ? lease.getOriginalEndDate() : lease.getEndDate();
+    }
+
+    /**
      * The contract's own RENT line: a RENT line no addendum charged, dated from the
      * lease's start (or undated). Extension and addendum rent lines are not it.
      */
@@ -1631,11 +1642,15 @@ public class LeaseService {
         if (effectiveTerms == null || lease.getPostedAt() == null || !credited) {
             return dtos;
         }
-        java.util.Map<UUID, BigDecimal> current = new java.util.HashMap<>();
+        java.util.Map<UUID, com.datagami.rentaxis.core.service.lease.LeaseEffectiveTerms.EffectiveLine> current =
+                new java.util.HashMap<>();
         for (var e : effectiveTerms.effectiveLines(lease, null)) {
-            if (e.credited()) current.put(e.line().getId(), e.amount());
+            if (e.credited()) current.put(e.line().getId(), e);
         }
-        return dtos.stream().map(d -> current.containsKey(d.id()) ? d.withCurrentAmount(current.get(d.id())) : d).toList();
+        return dtos.stream().map(d -> {
+            var e = current.get(d.id());
+            return e == null ? d : d.withCurrentAmounts(e.amount(), e.headline());
+        }).toList();
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)

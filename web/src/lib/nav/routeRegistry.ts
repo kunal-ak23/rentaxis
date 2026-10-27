@@ -47,6 +47,8 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${D}/gatepass/settings`, "canManageGatePolicy"),
     r(`${D}/renter-portal/gate-passes`, "canRequestGatePasses"),
     r(`${D}/bookings`, "canManageFacilities"), r(`${D}/promotions`, "canManagePromotions"),
+    // The promoter's own portal: PROMOTER only (its endpoints are hasRole('PROMOTER')).
+    r(`${D}/promoter`, "canUsePromoterPortal"),
     r(`${D}/staff`, "canAccessFinanceOps"),
     r(`${D}/settings`, role => buildSettingsSections(role).length > 0),
     r(`${F}/accounts`, "canAccessFinance"), r(`${F}/journals`, "canAccessFinance"), r(`${F}/journals/new`, "canPostJournals"),
@@ -67,6 +69,8 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${F}/reports/property-pl`, "canViewPropertyReports"), r(`${F}/reports/property-statement`, "canViewPropertyReports"),
     r(`${F}/reports/balance-sheet`, "canViewPropertyReports"), r(`${F}/reports/company-pl`, "canViewCompanyReports"),
     r(`${F}/reports/vat-return`, "canViewVatReturn"),
+    // The Reports hub: links to the pages above, for any role that can open one of them.
+    r(`${D}/reports`, "canViewReportsHub"),
     r(`${F}/account-template`, "canManageAccountSetup"), r(`${F}/fiscal`, "canManageAccountSetup"), r(`${F}/charge-types`, "canManageAccountSetup"),
     r(`${D}/renter-portal`, "canViewRenterPortal"), r(`${D}/renter-portal/payments`, "canViewRenterPortal"),
     r(`${D}/renter-portal/penalties`, "canViewRenterPortal"), r(`${D}/renter-portal/facilities`, "canViewRenterPortal"),

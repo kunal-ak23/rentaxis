@@ -247,6 +247,20 @@ export async function rejectBooking(id: string, body: DecisionRequest): Promise<
   )
 }
 
+/**
+ * Follow-up ruling R12: the office cancels an APPROVED amenity booking (reason required).
+ * Its fee is reversed; a fee the renter already paid stays on their account as a credit.
+ */
+export async function staffCancelBooking(id: string, body: DecisionRequest): Promise<BookingRequestDTO> {
+  return handle(
+    await fetch(`${BOOKINGS}/${id}/staff-cancel`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    })
+  )
+}
+
 /** Admin OR the owning renter; APPROVED parking only. */
 export async function releaseBooking(id: string): Promise<BookingRequestDTO> {
   return handle(await fetch(`${BOOKINGS}/${id}/release`, { method: 'POST' }))

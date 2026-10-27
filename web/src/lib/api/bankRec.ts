@@ -222,7 +222,7 @@ export type RecItem = {
     withoutEvidence: boolean;
 };
 
-export type RecCheckCode = "CONTINUITY" | "LINE_ORDER" | "UNRECORDED" | "DIFFERENCE" | "SUGGESTED" | "NOT_FUTURE" | "OPENING_ITEMS" | "CHAIN";
+export type RecCheckCode = "CONTINUITY" | "LINE_ORDER" | "UNRECORDED" | "DIFFERENCE" | "SUGGESTED" | "NOT_FUTURE" | "OPENING_ITEMS" | "CHAIN" | "CLOSING";
 export type RecCheck = { code: RecCheckCode; ok: boolean; message: string };
 
 /** BankRecDTOs.Reconciliation: live while DRAFT, the finalize snapshot afterwards. */
@@ -271,6 +271,8 @@ export type Reconciliation = {
     unprovenDays?: UnprovenDay[];
     /** Final review P3-21: the overall verdict on the typed day totals; null/absent when no day is unproven. */
     dayTotalsVerdict?: "AGREE" | "DISAGREE" | "PENDING" | null;
+    /** Sim r22 S22-04: a statement a check names starts inside the reconciliation finalized through this date. */
+    remedyReopenThrough?: string | null;
 };
 
 /** A day to prove with its paper-statement totals. The lines' own totals are never sent, so they cannot be copied. */
@@ -330,6 +332,8 @@ export type LineCandidates = {
     bankTrnSet: boolean;
     leaves: Leaf[];
     refused?: Refused[];
+    /** Sim r23 S23-03: the line's date is in the locked books; a posting from it is booked on this day. */
+    firstOpenDay?: string | null;
 };
 
 export type ActionResult = { matchId: string | null; journalEntryIds: string[]; entryNumbers: string[] };
@@ -388,7 +392,7 @@ export const bankRecApi = {
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/present`, body),
     post: (body: { statementLineIds: string[]; kind: PostKind; vatIncluded?: boolean; accountId?: string | null;
                    propertyId?: string | null; bankLeafId?: string | null; shared?: boolean; narration?: string | null;
-                   net?: number | null; vat?: number | null }) =>
+                   net?: number | null; vat?: number | null; bookOnFirstOpenDay?: boolean }) =>
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/post`, body),
     reconciliations: (id: string) => apiGet<ReconciliationRow[]>(`${ROOT}/bank-accounts/${id}/reconciliations`),
     createReconciliation: (id: string, body: ReconciliationInput) =>

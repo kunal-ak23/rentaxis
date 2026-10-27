@@ -53,6 +53,14 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
+    /**
+     * Sim r23 S23-01: the end date the lease had before its first extension (changeset 182),
+     * written by {@code LeaseRenewalService.extend}; null when never extended. The term the
+     * contract's own undated lines were charged for ({@code LeaseService.originalTermEnd}).
+     */
+    @Column(name = "original_end_date")
+    private LocalDate originalEndDate;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private LeaseStatus status = LeaseStatus.DRAFT;

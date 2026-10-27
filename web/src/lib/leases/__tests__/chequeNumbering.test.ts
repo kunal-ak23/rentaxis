@@ -83,6 +83,100 @@ describe("CSV import", () => {
         expect(r.edits.s1).toEqual({ chequeNumber: "600001", payeeBank: "ADCB", chequeDate: "2028-01-01" });
     });
 
+    /** Sim r22 S22-05: blank lines before the header, and an Arabic header, are not "invalid dates". */
+    it("skips a header after leading blank lines, and an Arabic header", () => {
+        const drafts = [{ draftId: "d1", keys: ["07-01"], rows: [c("r1", "2028-01-01")] }];
+        const r = applyChequeCsv("\n\ncontract,due,number\n07-01,01/01/2028,910001", drafts, {});
+        expect(r.invalidDates).toEqual([]);
+        expect(r.applied).toBe(1);
+        const ar = applyChequeCsv("العقد,تاريخ الاستحقاق,رقم الشيك\n07-01,01/01/2028,910002", drafts, {});
+        expect(ar.invalidDates).toEqual([]);
+        expect(ar.edits.r1?.chequeNumber).toBe("910002");
+        // Sim r23: a title row above the header is preamble too.
+        const titled = applyChequeCsv("Cheque numbers – Tower A\ncontract,due,number\n07-01,01/01/2028,910003", drafts, {});
+        expect(titled.invalidDates).toEqual([]);
+        expect(titled.edits.r1?.chequeNumber).toBe("910003");
+        // #425 review P3-R4-4: after the header every line is data. A mistyped contract with a bad
+        // date is reported, never dropped as preamble.
+        const typo = applyChequeCsv("Cheque numbers – Tower A\ncontract,due,number\n07-0l,31/02/2028,910004", drafts, {});
+        expect(typo.invalidDates).toEqual([3]);
+        // A line of words after the data is data too (reported), never a late "header".
+        const late = applyChequeCsv("07-01,01/01/2028,910005\nsee notes,below", drafts, {});
+        expect(late.applied).toBe(1);
+        expect(late.invalidDates).toEqual([2]);
+        // A non-date on a later line is still reported.
+        expect(applyChequeCsv("\ncontract,due,number\n07-01,soon,1", drafts, {}).invalidDates).toEqual([3]);
+    });
+
+    /**
+     * Sim r24 S24-04: the header is the first line of known header words (or of words with no
+     * digits) before the first valid data row; a line before it that looks like data is
+     * reported, never dropped; a dated title row does not make the header "data".
+     */
+    it("reports a leading bad row instead of swallowing it, and finds the header under a dated title", () => {
+        const drafts = [{ draftId: "d1", keys: ["RC-1"], rows: [c("r1", "2028-01-01"), c("r2", "2028-02-01")] }];
+        // Unknown contract and a US-order date right after the header: reported as an invalid date.
+        const lead = applyChequeCsv("contract,due,number\nRC-9,12/15/2026,500001\nRC-1,01/01/2028,500002", drafts, {});
+        expect(lead.invalidDates).toEqual([2]);
+        expect(lead.applied).toBe(1);
+        // No header at all: the same bad first line is reported.
+        const bare = applyChequeCsv("RC-l,01-12-2026,500003\nRC-1,01/01/2028,500004", drafts, {});
+        expect(bare.invalidDates).toEqual([1]);
+        expect(bare.edits.r1?.chequeNumber).toBe("500004");
+        // A title carrying a date: the header is the header (never "an invalid date"); the dated
+        // title looks like data, so it is reported as unmatched rather than silently dropped.
+        const dated = applyChequeCsv("Cheques exported,26/10/2026\ncontract,due,number\nRC-1,01/01/2028,500005", drafts, {});
+        expect(dated.invalidDates).toEqual([]);
+        expect(dated.unmatched).toEqual([1]);
+        expect(dated.applied).toBe(1);
+        // Arabic: a dated Arabic title above an Arabic header.
+        const ar = applyChequeCsv("الشيكات المصدرة,26/10/2026\nالعقد,تاريخ الاستحقاق,رقم الشيك\nRC-1,01/02/2028,500006", drafts, {});
+        expect(ar.invalidDates).toEqual([]);
+        expect(ar.unmatched).toEqual([1]);
+        expect(ar.edits.r2?.chequeNumber).toBe("500006");
+        // A data-looking line above a word-only header is reported; a words-only title is not.
+        const above = applyChequeCsv("Tower A cheques\nRC-1,31/02/2028,1\nContract No,Due Date,Cheque No\nRC-1,01/01/2028,500007", drafts, {});
+        expect(above.invalidDates).toEqual([2]);
+        expect(above.unmatched).toEqual([]);
+        expect(above.applied).toBe(1);
+        // A known-word header wins over an earlier words-only title of two cells.
+        const two = applyChequeCsv("Renewals, Tower A\ncontract,due_date,cheque_number\nRC-1,01/01/2028,500008", drafts, {});
+        expect(two.invalidDates).toEqual([]);
+        expect(two.unmatched).toEqual([]);
+        expect(two.applied).toBe(1);
+    });
+
+    /**
+     * Sim r25 S25-02: a one-cell title row with no header under it is preamble (the r22 first-line
+     * fallback), not a line with an invalid date; #435's header rules still hold around it.
+     */
+    it("skips a one-cell title row with no header, and still reports data-looking lines", () => {
+        const drafts = [{ draftId: "d1", keys: ["RC-1"], rows: [c("r1", "2026-12-01"), c("r2", "2027-01-01")] }];
+        const one = applyChequeCsv("Tower A cheques\nRC-1,2026-12-01,500001", drafts, {});
+        expect(one.invalidDates).toEqual([]);
+        expect(one.unmatched).toEqual([]);
+        expect(one.edits.r1?.chequeNumber).toBe("500001");
+        // After blank lines, and in Arabic.
+        const ar = applyChequeCsv("\nشيكات البرج أ\nRC-1,01/01/2027,500002", drafts, {});
+        expect(ar.invalidDates).toEqual([]);
+        expect(ar.edits.r2?.chequeNumber).toBe("500002");
+        // A first line with a digit is not a title: still reported (#435).
+        expect(applyChequeCsv("RC-l,01-12-2026,500003\nRC-1,2026-12-01,500004", drafts, {}).invalidDates).toEqual([1]);
+        // Only the first line can be the title: a words-only line after data is data (reported).
+        const late = applyChequeCsv("RC-1,2026-12-01,500005\nsee notes", drafts, {});
+        expect(late.invalidDates).toEqual([2]);
+    });
+
+    /** #438 review: a first line naming a draft (a letters-only key, no date yet) is data, reported — never a title. */
+    it("reports a header-less first line that names a draft, even with letters only", () => {
+        const drafts = [{ draftId: "d1", keys: ["VILLA-A", "RC-1"], rows: [c("r1", "2026-12-01")] }];
+        const r = applyChequeCsv("VILLA-A,,\nRC-1,2026-12-01,500002", drafts, {});
+        expect(r.invalidDates).toEqual([1]);
+        expect(r.edits.r1?.chequeNumber).toBe("500002");
+        // A title still is one (S25-02).
+        expect(applyChequeCsv("Tower A cheques\nRC-1,2026-12-01,500003", drafts, {}).invalidDates).toEqual([]);
+    });
+
     it("reads a semicolon file by its first line", () => {
         const drafts = [{ draftId: "d1", keys: ["07-01"], rows: [c("r1", "2028-01-01")] }];
         const r = applyChequeCsv("contract;due_date;cheque_number;bank\n07-01;01/01/2028;900001;Emirates NBD, Dubai", drafts, {});

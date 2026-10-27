@@ -243,6 +243,23 @@ describe("RenterFacilitiesPage — tutorial 24", () => {
         expect(await screen.findByText("cancelApprovedConfirm")).toBeInTheDocument();
     });
 
+    it("says the office cancels a booking whose fee is paid (ruling R12), without the generic 'changed' text", async () => {
+        api.fetchMyFacilities.mockResolvedValue({ amenities: [], parkingSpots: [] });
+        api.fetchMyBookings.mockResolvedValue([
+            makeBooking({ id: "paid", resourceType: "AMENITY", amenityId: "a1", parkingSpotId: null, status: "APPROVED",
+                preferredDate: "2099-01-01" }),
+        ]);
+        api.cancelBooking.mockRejectedValue(new ApiError(400, "The fee for this booking is paid",
+            JSON.stringify({ code: "booking.feePaid", args: {}, message: "The fee for this booking is paid" })));
+        render(<RenterFacilitiesPage />);
+        fireEvent.click(await screen.findByTestId("cancel-booking-paid"));
+        await screen.findByText("cancelApprovedConfirm");
+        const confirm = screen.getAllByRole("button").filter(b => b.textContent === "cancelRequest" || b.textContent === "cancelBookingConfirm");
+        fireEvent.click(confirm[confirm.length - 1]);
+        await waitFor(() => expect(screen.getByText("errors.booking.feePaid")).toBeInTheDocument());
+        expect(screen.queryByText("requestChanged")).not.toBeInTheDocument();
+    });
+
     it("does not offer Request on a spot the Tenant already has a pending request for", async () => {
         api.fetchMyFacilities.mockResolvedValue(facilitiesWithSpot(false));
         api.fetchMyBookings.mockResolvedValue([makeBooking({ status: "PENDING" })]);

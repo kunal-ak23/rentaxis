@@ -48,6 +48,16 @@ describe('promoImageSrc (ux6 item 2)', () => {
     expect(promoImageSrc('https://cdn.example.com/art.webp')).toBe('https://cdn.example.com/art.webp')
     expect(promoImageSrc('')).toBe('')
   })
+  it('previews for a promoter through the promoter route, which the admin route refuses them', () => {
+    const id = '0b0f2c1e-1111-4222-8333-944455556666.png'
+    expect(promoImageSrc(`/api/v1/public/promo-images/${id}`, 'promoter')).toBe(`/api/proxy/v1/promoter/images/${id}`)
+    expect(promoImageSrc(`https://app.rentaxis.com/api/v1/public/promo-images/${id}`, 'promoter'))
+      .toBe(`/api/proxy/v1/promoter/images/${id}`)
+    // Hosted elsewhere: untouched whoever asks.
+    expect(promoImageSrc('https://cdn.example.com/art.webp', 'promoter')).toBe('https://cdn.example.com/art.webp')
+    // The default stays the admin's.
+    expect(promoImageSrc(`/api/v1/public/promo-images/${id}`)).toBe(`/api/proxy/v1/promotions/images/${id}`)
+  })
 })
 
 import { storedFileSrc } from '../assetUrl'

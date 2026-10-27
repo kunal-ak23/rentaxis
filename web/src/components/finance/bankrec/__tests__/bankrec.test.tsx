@@ -285,6 +285,72 @@ describe("create-from-line dialogs", () => {
         });
     });
 
+    /** Sim r23 S23-03: a line the bank dated in the locked books is booked on the first open day, only when ticked. */
+    it("books a line dated in the locked books on the first open day once that is ticked, in English and Arabic", async () => {
+        for (const locale of ["en", "ar"] as const) {
+            stubFetch([
+                { match: "/candidates", body: { statementLineId: "d1", clear: [], receive: [], bounce: [], present: [],
+                    suspenseBalance: 0, bankTrnSet: false, leaves: [LEAVES[0]], firstOpenDay: "2026-09-11" } },
+                { method: "POST", match: "/lines/actions/post", body: { matchId: "m9", journalEntryIds: ["e9"], entryNumbers: ["BNK-26/8"] } },
+            ]);
+            const onDone = vi.fn();
+            renderIn(locale, <LineActionDialog lines={[line("d1", "SMS ALERT FEE", -25, { txnDate: "2026-09-07", valueDate: "2026-09-07" })]}
+                                               initial="charge" onClose={() => {}} onDone={onDone} />);
+            const notice = await screen.findByTestId("first-open-day");
+            expect(notice).toHaveTextContent("07/09/2026");
+            expect(notice).toHaveTextContent("11/09/2026");
+            expect(screen.getByTestId("action-submit")).toBeDisabled();
+            fireEvent.click(screen.getByTestId("book-on-first-open-day"));
+            expect(screen.getByTestId("action-submit")).toBeEnabled();
+            fireEvent.click(screen.getByTestId("action-submit"));
+            await waitFor(() => expect(onDone).toHaveBeenCalled());
+            expect(calls.find(c => c.url.includes("/lines/actions/post"))!.body).toMatchObject({ kind: "CHARGE", bookOnFirstOpenDay: true });
+            cleanup();
+        }
+    });
+
+    /** Review P3-4 of #435: the server dates by the latest selected line; so does the dialog. */
+    it("asks for the first open day only when the latest selected line is in the locked books", async () => {
+        const lockedCands = { statementLineId: "d1", clear: [], receive: [], bounce: [], present: [],
+            suspenseBalance: 0, bankTrnSet: false, leaves: [LEAVES[0]], firstOpenDay: "2026-09-11" };
+        stubFetch([{ match: "/candidates", body: lockedCands },
+            { method: "POST", match: "/lines/actions/post", body: { matchId: "m9", journalEntryIds: ["e9"], entryNumbers: ["BNK-26/10"] } }]);
+        // The first line is locked (07/09), the second open (15/09): booked on 15/09, no tick asked.
+        const onDone = vi.fn();
+        renderIn("en", <LineActionDialog lines={[line("d1", "SMS ALERT FEE", -25, { txnDate: "2026-09-07", valueDate: "2026-09-07" }),
+                                                 line("d2", "SMS ALERT FEE", -25)]}
+                                          initial="other" onClose={() => {}} onDone={onDone} />);
+        await screen.findByTestId("posting-preview");
+        await waitFor(() => expect(screen.getByTestId("other-account").querySelectorAll("option").length).toBeGreaterThan(1));
+        expect(screen.queryByTestId("first-open-day")).toBeNull();
+        cleanup();
+        // Both locked (07/09 and 09/09): the hint names the latest line's date and the first open day.
+        stubFetch([{ match: "/candidates", body: lockedCands }]);
+        renderIn("en", <LineActionDialog lines={[line("d1", "SMS ALERT FEE", -25, { txnDate: "2026-09-07", valueDate: "2026-09-07" }),
+                                                 line("d2", "SMS ALERT FEE", -25, { txnDate: "2026-09-09", valueDate: "2026-09-09" })]}
+                                          initial="other" onClose={() => {}} onDone={() => {}} />);
+        const notice = await screen.findByTestId("first-open-day");
+        expect(notice).toHaveTextContent("09/09/2026");
+        expect(notice).toHaveTextContent("11/09/2026");
+        expect(notice).not.toHaveTextContent("07/09/2026");
+    });
+
+    it("sends no first-open-day flag for a line in open books", async () => {
+        stubFetch([
+            { match: "/candidates", body: { statementLineId: "d1", clear: [], receive: [], bounce: [], present: [],
+                suspenseBalance: 0, bankTrnSet: false, leaves: [LEAVES[0]], firstOpenDay: null } },
+            { method: "POST", match: "/lines/actions/post", body: { matchId: "m9", journalEntryIds: ["e9"], entryNumbers: ["BNK-26/9"] } },
+        ]);
+        const onDone = vi.fn();
+        renderIn("en", <LineActionDialog lines={[line("d1", "SMS ALERT FEE", -25)]} initial="charge" onClose={() => {}} onDone={onDone} />);
+        await screen.findByTestId("posting-preview");
+        await waitFor(() => expect(screen.getByTestId("action-submit")).toBeEnabled());
+        expect(screen.queryByTestId("first-open-day")).toBeNull();
+        fireEvent.click(screen.getByTestId("action-submit"));
+        await waitFor(() => expect(onDone).toHaveBeenCalled());
+        expect((calls.find(c => c.url.includes("/lines/actions/post"))!.body as Record<string, unknown>).bookOnFirstOpenDay).toBeUndefined();
+    });
+
     it("refuses a two-line charge whose VAT would be more than 5% before sending it", async () => {
         stubFetch([{ match: "/candidates", body: { statementLineId: "x", clear: [], receive: [], bounce: [], present: [],
             suspenseBalance: 0, bankTrnSet: true, leaves: [LEAVES[0]] } }]);

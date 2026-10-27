@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
  * blob URL, which answers 403 to the renter's phone (bug 26/27).</p>
  *
  * <p>Anyone may load such an image only while something live shows it: an
- * active, unexpired ad of an active business uses it as artwork, or an active
+ * active, unexpired, approved ad of an active business uses it as artwork, or an active
  * business uses it as its logo. Before that (an upload not yet saved, a paused
  * or expired ad) only the organisation's own admins see it, through
  * {@code GET /api/v1/promotions/images/{file}}.</p>
@@ -142,6 +142,28 @@ public class PromotionImageService {
         return BlobStorageService.PROMOTIONS_FOLDER + "/" + file;
     }
 
+    /** Promoter grants (review M6); optional so unit tests constructing the service keep working. */
+    private com.datagami.rentaxis.domain.repository.PromoterBusinessRepository promoterGrants;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setPromoterGrants(com.datagami.rentaxis.domain.repository.PromoterBusinessRepository promoterGrants) {
+        this.promoterGrants = promoterGrants;
+    }
+
+    /**
+     * Review M6: a business a promoter was granted shows its logo to the public only
+     * once an admin has approved one of its ads (that is not archived) — the promoter
+     * may have uploaded it, and nothing a promoter writes is public before approval.
+     * An admin's business (no promoter grants) shows its logo as before.
+     */
+    private boolean logoMayShow(PromoBusiness b) {
+        if (promoterGrants == null || !promoterGrants.existsByTenantIdAndBusinessId(b.getTenantId(), b.getId())) {
+            return true;
+        }
+        return ads.existsByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNull(b.getTenantId(), b.getId(),
+                com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus.APPROVED);
+    }
+
     /**
      * The organisations whose live ad or business shows {@code file}, in no
      * particular order — the only case the anonymous route serves it. The route
@@ -155,13 +177,18 @@ public class PromotionImageService {
         Instant now = Instant.now();
         java.util.LinkedHashSet<UUID> owners = new java.util.LinkedHashSet<>();
         for (PromoBusiness b : businesses.findByLogoUrl(route)) {
-            if (b.isActive() && b.getTenantId() != null) owners.add(b.getTenantId());
+            if (b.isActive() && b.getArchivedAt() == null && b.getTenantId() != null && logoMayShow(b)) {
+                owners.add(b.getTenantId());
+            }
         }
         for (PromoAd ad : ads.findByBackgroundImageUrl(route)) {
             if (!ad.isActive() || (ad.getEndsAt() != null && !ad.getEndsAt().isAfter(now))) continue;
+            // Promoter plan: an ad not approved shows nothing to anyone.
+            if (ad.getApprovalStatus() != com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus.APPROVED) continue;
+            if (ad.getArchivedAt() != null) continue;
             boolean businessLive = businesses.findById(ad.getBusinessId())
                     .filter(b -> Objects.equals(b.getTenantId(), ad.getTenantId()))
-                    .map(PromoBusiness::isActive)
+                    .map(b -> b.isActive() && b.getArchivedAt() == null)
                     .orElse(false);
             if (businessLive) owners.add(ad.getTenantId());
         }

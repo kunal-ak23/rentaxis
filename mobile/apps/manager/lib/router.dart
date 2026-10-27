@@ -153,9 +153,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/scan',
-        builder: (context, state) => ChequeScanFlowScreen(
-          paymentId: state.uri.queryParameters['paymentId'],
-        ),
+        builder: (context, state) => const ChequeScanFlowScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),

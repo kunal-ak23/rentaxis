@@ -5,21 +5,78 @@ import 'package:flutter/services.dart';
 // `manager/lib/screens/cheque_scan/steps/step3_confirm.dart`.
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:rentaxis_core/rentaxis_core.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../utils/promo_url.dart';
+import 'coupon_redirect_sheet.dart';
 
 /// The coupon reveal, shown when a `COUPON` ad is tapped. Ticket-styled: a
-/// dark value panel, a perforation, then the code and its terms. Nothing
-/// leaves the app.
+/// dark value panel, a perforation, then the code and its terms.
+///
+/// Nothing leaves the app unless the ad has a `redirectUrl`: **Copy code**
+/// then also opens that link in the business's own app or browser (see
+/// [_copyAndRedirect]).
 class CouponSheet extends StatelessWidget {
-  const CouponSheet({super.key, required this.ad});
+  const CouponSheet({super.key, required this.ad, this.launcher});
 
   final PromoAd ad;
 
-  static Future<void> show(BuildContext context, PromoAd ad) {
+  /// How the redirect is opened; defaults to `url_launcher`. A seam for tests,
+  /// and how `PromoActions` routes this through its own launcher.
+  final PromoUrlLauncher? launcher;
+
+  static Future<void> show(
+    BuildContext context,
+    PromoAd ad, {
+    PromoUrlLauncher? launcher,
+  }) {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => CouponSheet(ad: ad),
+      builder: (_) => CouponSheet(ad: ad, launcher: launcher),
+    );
+  }
+
+  /// Copy the code, then — only when the ad carries a redirect — send the
+  /// renter on to the business.
+  ///
+  /// The copy always happens first and is never undone: Cancel on the consent
+  /// sheet, a refused link and a failed launch all leave the code on the
+  /// clipboard with nothing else changed, so the renter can still paste it by
+  /// hand. The click for this interaction was already recorded when the card
+  /// was tapped (`recordClick` in the strip and the Offers screen, before
+  /// `handleTap`), so the redirect adds no event of its own.
+  Future<void> _copyAndRedirect(BuildContext context, String code) async {
+    final l = _L(context.isAr);
+    final businessName = ad.business.name(context.isAr);
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l.copied)));
+
+    // Checked before asking for consent, so the renter is never asked to
+    // approve a hop that would then be refused. An absent or unsafe link
+    // (http, no host, userinfo) ends here: plain copy, exactly as before.
+    final target = parseSafePromoUri(ad.redirectUrl);
+    if (target == null) return;
+
+    if (ad.sharedFields.isNotEmpty) {
+      final confirmed = await CouponRedirectSheet.show(
+        context,
+        businessName: businessName,
+        fields: ad.sharedFields,
+      );
+      if (confirmed != true) return;
+    }
+
+    // externalApplication, not the in-app browser the WEBSITE CTA uses: it is
+    // what lets an https universal link open the business's own app.
+    await launchPromoUri(
+      launcher ?? launchUrl,
+      target,
+      LaunchMode.externalApplication,
     );
   }
 
@@ -102,13 +159,7 @@ class CouponSheet extends StatelessWidget {
                   ),
                   TextButton.icon(
                     key: const Key('coupon-copy'),
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: code));
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(l.copied)));
-                    },
+                    onPressed: () => _copyAndRedirect(context, code),
                     icon: const Icon(Icons.copy_rounded, size: 18),
                     label: Text(l.copy),
                   ),

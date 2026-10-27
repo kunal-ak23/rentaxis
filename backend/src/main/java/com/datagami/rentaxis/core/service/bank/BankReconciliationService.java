@@ -309,7 +309,8 @@ public class BankReconciliationService {
                 s.depositsInTransitItems(), s.unpresentedItems(), s.bookedAfterItems(), s.unrecordedItems(),
                 s.withoutEvidenceCount(), s.matchedByMethod(), s.checks(), false, s.preparedAt(), s.preparedByName(),
                 r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
-                s.unprovenDays() == null ? List.of() : s.unprovenDays(), s.dayTotalsVerdict());
+                s.unprovenDays() == null ? List.of() : s.unprovenDays(), s.dayTotalsVerdict(),
+                "DRAFT".equals(r.status()) ? s.remedyReopenThrough() : null);
     }
 
     // ------------------------------------------------------------------ figures
@@ -392,7 +393,8 @@ public class BankReconciliationService {
         Map<LocalDate, Boolean> unconfirmed = unconfirmedDays(t, b, from, to);
         // Review P2-3: an unproven day is proven by the day's total debits and total
         // credits typed from the paper statement, when they agree with its stored lines.
-        List<BankRecDTOs.UnprovenDay> dayVerdicts = dayProof(t, r.id(), unconfirmed, period);
+        Map<LocalDate, List<String>> copies = keptLookalikes(t, b, unconfirmed);
+        List<BankRecDTOs.UnprovenDay> dayVerdicts = dayProof(t, r.id(), unconfirmed, period, copies.keySet());
         // P3-20: the page sees only whether a day's totals were entered, not the verdict.
         List<BankRecDTOs.UnprovenDay> unprovenDays = dayVerdicts.stream().map(d -> "NEEDED".equals(d.status()) ? d
                 : new BankRecDTOs.UnprovenDay(d.date(), d.typedDebits(), d.typedCredits(), "ENTERED")).toList();
@@ -400,9 +402,14 @@ public class BankReconciliationService {
         // S20-02: with the paper's balances typed, the order of an unconfirmed day's
         // lines is not evidence of anything: the total decides there, not the chain.
         Set<LocalDate> chainSkipped = closingTyped && openingKnown ? unconfirmed.keySet() : Set.of();
-        checks.add(continuity(opening, closing, movement, period, from, chainSkipped, unconfirmed.keySet()));
-        lineOrder(unconfirmed, dayVerdicts, closingTyped, openingKnown, first && r.opening() != null)
+        Remedy remedy = remedy(t, b, from, to);
+        checks.add(continuity(opening, closing, movement, period, from, chainSkipped, unconfirmed.keySet(), remedy));
+        lineOrder(unconfirmed, dayVerdicts, closingTyped, openingKnown, first && r.opening() != null, remedy, copies)
                 .ifPresent(checks::add);
+        // Sim r22 S22-03: the derived closing is the last stored line's balance. It is the
+        // bank's closing only if nothing was posted after that line up to the period end;
+        // a file that stopped mid-way through its last date cannot say so.
+        if (!closingTyped && closing != null) closingProof(t, b, to).ifPresent(checks::add);
 
         // ---- book side
         BigDecimal book = sum(jdbc.queryForObject("""
@@ -574,7 +581,7 @@ public class BankReconciliationService {
                 adjustedBank, adjustedBook, difference, dit, unpresented, bookedAfter, unrecorded, withoutEvidence,
                 byMethod, checks, canFinalize, Instant.now(clock), userName(BankStatementImportService.currentUserId()),
                 r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
-                unprovenDays, dayTotalsVerdict(dayVerdicts));
+                unprovenDays, dayTotalsVerdict(dayVerdicts), remedy.reopenThrough());
     }
 
     /**
@@ -611,6 +618,13 @@ public class BankReconciliationService {
     static BankRecDTOs.Check continuity(BigDecimal opening, BigDecimal closing, BigDecimal movement,
                                         List<SL> period, LocalDate from, Set<LocalDate> chainSkipped,
                                         Set<LocalDate> unconfirmed) {
+        return continuity(opening, closing, movement, period, from, chainSkipped, unconfirmed, Remedy.NONE);
+    }
+
+    /** As above; the messages name the statement to import ({@link Remedy}) where one would settle the gap. */
+    static BankRecDTOs.Check continuity(BigDecimal opening, BigDecimal closing, BigDecimal movement,
+                                        List<SL> period, LocalDate from, Set<LocalDate> chainSkipped,
+                                        Set<LocalDate> unconfirmed, Remedy remedy) {
         if (opening == null) {
             return new BankRecDTOs.Check("CONTINUITY", false, "Type the statement balance at "
                     + from.minusDays(1).format(DMY) + ": no statement line gives it");
@@ -620,20 +634,30 @@ public class BankReconciliationService {
                     "The statement lines carry no running balance: type the closing balance from the paper statement");
         }
         BigDecimal running = opening;
+        LocalDate previous = null;
         for (SL l : period) {
             running = running.add(l.amount());
-            if (chainSkipped.contains(l.txn())) continue;
+            if (chainSkipped.contains(l.txn())) {
+                previous = l.txn();
+                continue;
+            }
             if (l.balance() != null && l.balance().compareTo(running) != 0 && unconfirmed.contains(l.txn())) {
                 return new BankRecDTOs.Check("CONTINUITY", false, "The lines on " + l.txn().format(DMY)
                         + " came from more than one file and do not chain in the order they were imported: lines may be "
                         + "missing, or only their order is unknown. Type the closing balance from the paper statement "
-                        + "(the total then decides), or import a statement that runs from the day before to the day after.");
+                        + "(the total then decides)" + remedy.orImport(l.txn(), l.txn()) + ".");
             }
             if (l.balance() != null && l.balance().compareTo(running) != 0) {
+                // S21-01: the gap lies between the line before (or the period's start) and this
+                // one; a statement that holds both their days whole brings it without leaving a
+                // day to settle.
+                LocalDate gapFrom = previous == null ? l.txn() : previous;
                 return new BankRecDTOs.Check("CONTINUITY", false, "Lines may be missing before " + l.txn().format(DMY)
                         + ": the statement balance there is " + StatementValues.money(l.balance()) + ", the lines add up to "
-                        + StatementValues.money(running) + ". Import the missing lines.");
+                        + StatementValues.money(running) + ". Import the missing lines" + remedy.importing(gapFrom, l.txn())
+                        + ".");
             }
+            previous = l.txn();
         }
         BigDecimal added = opening.add(movement);
         boolean ok = added.compareTo(closing) == 0;
@@ -667,6 +691,299 @@ public class BankReconciliationService {
         return out;
     }
 
+    /**
+     * Sim r22 S22-03 (ruling): a reconciliation is finalized at a derived closing only when
+     * nothing can follow the last stored line up to the period end: an import that brought
+     * lines of the period's last line-day runs past that day, or carries a Closing row dated
+     * after the period end. ({@code end_known} is not enough: a Closing row dated after the
+     * day but before the period end proves the day's end, not the days after it.) Otherwise the closing must
+     * be typed from the paper statement (one figure); CONTINUITY then checks it against
+     * the lines. Absent when the closing is proven.
+     */
+    private Optional<BankRecDTOs.Check> closingProof(UUID t, UUID b, LocalDate to) {
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("b", b).addValue("to", to);
+        LocalDate last = jdbc.queryForObject("""
+                select max(txn_date) from bank_statement_lines where tenant_id = :t and bank_account_id = :b
+                and txn_date <= :to""", p, LocalDate.class);
+        if (last == null) return Optional.empty();
+        p.addValue("d", last);
+        // Proof that nothing follows the last stored line up to the period end: an import that
+        // brought lines of that day and either runs past it (a contiguous file: its lines of the
+        // day are the day's last ones, and its next line lies beyond the period) or carries an
+        // agreeing Closing row dated after the period end (the export reached past it). A
+        // Closing row dated on or before the period end proves nothing about the end of that
+        // day: an export taken during the period's last day prints one too.
+        Boolean ended = jdbc.queryForObject("""
+                select exists (select 1 from bank_statement_lines l
+                                 join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
+                                 join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
+                                where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d
+                                  and (i.last_date > :d or i.closing_row_date > :to))""", p, Boolean.class);
+        if (Boolean.TRUE.equals(ended)) return Optional.empty();
+        String d = last.format(DMY);
+        return Optional.of(new BankRecDTOs.Check("CLOSING", false, "The imported lines end on " + d
+                + ", and no imported file shows that day ended there: a line the bank posted later that day"
+                + (last.isBefore(to) ? ", or after it up to " + to.format(DMY) + "," : "")
+                + " would not show in any balance. Type the closing balance at " + to.format(DMY)
+                + " from the paper statement, or import a statement that runs past " + d + "."));
+    }
+
+    /**
+     * Sim r21 S21-02: how to keep overlapping exports from needing day totals. A day is
+     * settled without typing only when one file holds it whole, and a file can show
+     * that only for a day that is neither its first nor its last (or one its boundary
+     * rows, dated outside its lines, prove): an export taken during the day, and the
+     * next one starting on that day, leave the day held whole by neither.
+     */
+    static final String AVOID = " To avoid this with later statements, export whole days: end each export on a day "
+            + "before the day you download it, and start the next export on the day after.";
+
+    /**
+     * Sim r21 S21-01: the statement to import to settle some days without leaving a new
+     * day to settle. A file holds every day strictly between its first and last dates
+     * whole, so those days settle (#97). Its first and last days are only partly held:
+     * importing it leaves them as they were only when they are already complete (their
+     * stored lines known to start and end the day, in the bank's order, nothing taken
+     * for an identical line) or inside a finalized reconciliation; otherwise a line of
+     * the file there may be taken for an identical stored one and the day becomes
+     * unproven (S20-01) — which is what "the day before to the day after" did to its own
+     * last day. So the edges are the nearest complete days before and after.
+     */
+    static final class Remedy {
+        static final Remedy NONE = new Remedy(new TreeSet<>(), null);
+
+        /**
+         * An import's first and last statement dates, and whether it brought (owns) a line
+         * dated inside the finalized period — such an import cannot be deleted.
+         */
+        record Span(LocalDate first, LocalDate last, boolean ownsLocked, String fileName) {
+            Span(LocalDate first, LocalDate last) {
+                this(first, last, false, null);
+            }
+
+            Span(LocalDate first, LocalDate last, boolean ownsLocked) {
+                this(first, last, ownsLocked, null);
+            }
+        }
+
+        /** The statement {@link #replacing} names, and the imports it replaces (each deletable). */
+        record Replacement(LocalDate first, LocalDate last, List<Span> chained) { }
+
+        private final TreeSet<LocalDate> complete;
+        private final LocalDate locked;
+        private final List<Span> imports;
+        /** S25-01: the last line-day before the period (its opening day), or null. */
+        private final LocalDate openingDay;
+        /** Sim r22 S22-04: set when a named statement starts inside the finalized period. */
+        private LocalDate reopenThrough;
+
+        Remedy(TreeSet<LocalDate> complete, LocalDate locked) {
+            this(complete, locked, List.of());
+        }
+
+        Remedy(TreeSet<LocalDate> complete, LocalDate locked, List<Span> imports) {
+            this(complete, locked, imports, null);
+        }
+
+        Remedy(TreeSet<LocalDate> complete, LocalDate locked, List<Span> imports, LocalDate openingDay) {
+            this.complete = complete;
+            this.locked = locked;
+            this.imports = imports;
+            this.openingDay = openingDay;
+        }
+
+        /**
+         * Sim r23 S23-05: the statement that can replace every import it overlaps. The
+         * imports that brought {@code first}..{@code last}, and, again and again, every import
+         * overlapping the span they reach: a statement over that whole span holds every line
+         * of them, and after they are deleted no other import touches any of its days, so each
+         * is that one statement's stretch (settled). Taking only the imports that brought the
+         * days left an edge day shared with a kept import, which the import then unproved.
+         *
+         * <p>Sim r25 P3-6: days inside the finalized reconciliation are left as they are by any
+         * import (it may bring no new line there), so an import whose lines all lie there joins
+         * nothing and stays. One that runs from a finalized day into the open period joins the
+         * chain and moves its start into the finalized period — on a bank whose exports repeat
+         * the boundary day, each month's first import — provided it brought no line of the
+         * finalized days (its lines there were already the earlier import's): then it can be
+         * deleted. Empty when a chained import owns a finalized line (it cannot be deleted) or
+         * none is known.</p>
+         */
+        Optional<LocalDate[]> replacing(LocalDate first, LocalDate last) {
+            return replacement(first, last).map(w -> new LocalDate[]{w.first(), w.last()});
+        }
+
+        /** As {@link #replacing}, with the chained imports — the ones the user is to delete. */
+        Optional<Replacement> replacement(LocalDate first, LocalDate last) {
+            LocalDate a = first, z = last;
+            boolean grew = true;
+            // Identity: two imports may share a name and dates.
+            Set<Span> chained = Collections.newSetFromMap(new IdentityHashMap<>());
+            List<Span> order = new ArrayList<>();
+            while (grew) {
+                grew = false;
+                for (Span s : imports) {
+                    if (s.first() == null || s.last() == null || s.last().isBefore(a) || s.first().isAfter(z)) continue;
+                    if (locked != null && !s.last().isAfter(locked)) continue;
+                    if (locked != null && !s.first().isAfter(locked) && s.ownsLocked()) return Optional.empty();
+                    if (chained.add(s)) order.add(s);
+                    if (s.first().isBefore(a)) { a = s.first(); grew = true; }
+                    if (s.last().isAfter(z)) { z = s.last(); grew = true; }
+                }
+            }
+            if (chained.isEmpty()) return Optional.empty();
+            return Optional.of(new Replacement(a, z, List.copyOf(order)));
+        }
+
+        /**
+         * #438 review: imports dated inside {@code a}..{@code z} that are not chained — wholly inside
+         * the finalized period — and own a finalized line, so {@code delete()} refuses them.
+         */
+        private boolean undeletableInside(LocalDate a, LocalDate z, List<Span> chained) {
+            for (Span s : imports) {
+                if (s.first() == null || s.last() == null || chained.stream().anyMatch(c -> c == s)) continue;
+                if (!s.first().isBefore(a) && !s.last().isAfter(z) && s.ownsLocked()) return true;
+            }
+            return false;
+        }
+
+        /** The finalized period a named statement reaches into, or null (S22-04). */
+        LocalDate reopenThrough() {
+            return reopenThrough;
+        }
+
+        /**
+         * S22-04: a statement whose first day is finalized imports only if it brings no new
+         * line there. The nearest settled day before is the latest one, so when it is
+         * finalized no open day could start the statement instead; say what to do if the
+         * import is refused.
+         */
+        private String lockNote(LocalDate a) {
+            if (locked == null || a.isAfter(locked)) return "";
+            reopenThrough = locked;
+            return " (it starts inside the reconciliation finalized through " + locked.format(DMY)
+                    + ": if the import is refused because it brings a line there, reopen that reconciliation first)";
+        }
+
+        /** The first and last dates of a statement that holds {@code first}..{@code last} whole. */
+        Optional<LocalDate[]> span(LocalDate first, LocalDate last) {
+            LocalDate a = complete.lower(first), z = complete.higher(last);
+            return a == null || z == null ? Optional.empty() : Optional.of(new LocalDate[]{a, z});
+        }
+
+        /** "; or import one statement that runs from … to …", or how to settle it when none can be named. */
+        String orImport(LocalDate first, LocalDate last) {
+            if (this == NONE) return "";
+            Optional<LocalDate[]> s = span(first, last);
+            if (s.isPresent()) {
+                return "; or import one statement that runs from " + s.get()[0].format(DMY) + " to " + s.get()[1].format(DMY)
+                        + ", which holds " + (first.equals(last) ? first.format(DMY) : "those days") + " whole"
+                        + endDay(s.get()[1]) + lockNote(s.get()[0]);
+            }
+            Optional<Replacement> o = replacement(first, last);
+            if (o.isEmpty()) return "";
+            Replacement w = o.get();
+            String head = "; or import one statement that runs from " + w.first().format(DMY) + " to " + w.last().format(DMY);
+            String tail = " (the lines it also holds stay, with their matches): no statement can yet hold "
+                    + (first.equals(last) ? "that day" : "them") + " between two settled days" + lockNote(w.first());
+            if (undeletableInside(w.first(), w.last(), w.chained())) {
+                // #438 review: an import dated inside the span cannot be deleted (it owns a finalized
+                // line); name the ones to delete instead of "every import dated inside".
+                if (w.chained().stream().anyMatch(sp -> sp.fileName() == null)) return "";
+                return head + " and holds every line of these imports, then delete these imports: "
+                        + w.chained().stream().map(sp -> sp.fileName() + " (" + sp.first().format(DMY) + "–"
+                                + sp.last().format(DMY) + ")").collect(Collectors.joining(", ")) + tail;
+            }
+            return head + " and holds every line of the imports that brought "
+                    + (first.equals(last) ? first.format(DMY) + "'s" : "those days'") + " lines and of every import"
+                    + " dated inside those dates, then delete all of those imports" + tail;
+        }
+
+        /**
+         * ": one statement that runs from … to … brings them …", or nothing when none can be named.
+         *
+         * <p>Sim r25 S25-01: a balance that breaks between two lines need not be a line missing
+         * between them. When the bank back-values a line — adds it later, dated earlier — every
+         * balance after it moves in its later exports, and the break shows where a stored line
+         * from an earlier export meets one from a later export, however far the line itself
+         * lies before. So the statement named holds the period's opening day (the last line-day
+         * before it) whole too: it starts on the settled day before that, which brings a line
+         * back-valued to the end of the previous period (the usual case) and anything between.
+         * Its first day may be finalized; the lock note says to reopen if the import is refused.
+         * Without a settled day before the opening day, the nearest settled days around the gap.</p>
+         */
+        String importing(LocalDate first, LocalDate last) {
+            if (this == NONE) return "";
+            LocalDate z = complete.higher(last);
+            LocalDate a = openingDay == null || openingDay.isAfter(first) ? null : complete.lower(openingDay);
+            if (a != null && z != null) {
+                return ": one statement that runs from " + a.format(DMY) + " to " + z.format(DMY) + " brings them"
+                        + " (it holds " + openingDay.format(DMY) + ", the day before the period,"
+                        + " whole too, in case the bank has since added a line dated earlier)" + endDay(z) + lockNote(a);
+            }
+            return span(first, last).map(s -> ": one statement that runs from " + s[0].format(DMY) + " to "
+                    + s[1].format(DMY) + " brings them" + endDay(s[1]) + lockNote(s[0])).orElse("");
+        }
+
+        /**
+         * #441 review: what a named statement leaves. Every day strictly inside it is held whole,
+         * and its first day, already complete, runs to its end in the file; but a file cannot
+         * show that its last day ended where it stops (the bank may since have added a line in
+         * front of an identical one there, S25-P1), so that day is left to settle by its paper
+         * totals — the one day the statement leaves, said as it is.
+         */
+        private static String endDay(LocalDate z) {
+            return "; it leaves only " + z.format(DMY) + ", the day it ends on, to settle: type that day's total debits"
+                    + " and total credits from the paper statement";
+        }
+    }
+
+    /**
+     * The period's neighbourhood, for {@link Remedy}: each line-day within 45 days of the
+     * period that is complete, or inside the finalized reconciliation and not its first
+     * reconciled line-day unless that day's start is known (review P3-2).
+     */
+    private Remedy remedy(UUID t, UUID b, LocalDate from, LocalDate to) {
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("b", b)
+                .addValue("lo", from.minusDays(45)).addValue("hi", to.plusDays(45));
+        TreeSet<LocalDate> complete = new TreeSet<>();
+        jdbc.query("""
+                select x.txn_date from (select distinct txn_date from bank_statement_lines
+                                         where tenant_id = :t and bank_account_id = :b
+                                           and txn_date between :lo and :hi) x
+                join bank_accounts ba on ba.id = :b and ba.tenant_id = :t
+                left join bank_statement_days d on d.tenant_id = :t and d.bank_account_id = :b and d.txn_date = x.txn_date
+                where (x.txn_date <= ba.reconciled_through
+                       -- review P3-2: a finalized day is whole at its end (finalize needs the
+                       -- paper closing) but the first reconciled line-day may have begun mid-day
+                       -- with a typed opening; a statement starting there would bring earlier
+                       -- lines into the finalized period and be refused.
+                       and (coalesce(d.start_known, false)
+                            or exists (select 1 from bank_statement_lines e
+                                        where e.tenant_id = :t and e.bank_account_id = :b
+                                          and e.txn_date < x.txn_date
+                                          and e.txn_date >= coalesce(ba.rec_start_date, e.txn_date))))
+                   or (d.order_confirmed and not d.merge_unproven and d.start_known and d.end_known)""", p,
+                rs -> { complete.add(rs.getObject("txn_date", LocalDate.class)); });
+        LocalDate locked = jdbc.queryForObject("select reconciled_through from bank_accounts where id = :b and tenant_id = :t",
+                p, LocalDate.class);
+        List<Remedy.Span> spans = jdbc.query("""
+                select i.first_date, i.last_date, i.file_name,
+                       exists (select 1 from bank_statement_lines l
+                                join bank_accounts ba on ba.id = l.bank_account_id and ba.tenant_id = l.tenant_id
+                               where l.tenant_id = :t and l.import_id = i.id
+                                 and l.txn_date <= ba.reconciled_through) as owns_locked
+                  from bank_statement_imports i
+                 where i.tenant_id = :t and i.bank_account_id = :b and i.first_date is not null and i.last_date is not null
+                 order by i.imported_at, i.id""", p,
+                (rs, i) -> new Remedy.Span(rs.getObject("first_date", LocalDate.class), rs.getObject("last_date", LocalDate.class),
+                        rs.getBoolean("owns_locked"), rs.getString("file_name")));
+        LocalDate openingDay = jdbc.queryForObject("""
+                select max(txn_date) from bank_statement_lines where tenant_id = :t and bank_account_id = :b
+                and txn_date < :from""", p.addValue("from", from), LocalDate.class);
+        return new Remedy(complete, locked, spans, openingDay);
+    }
+
     private static String dayList(Collection<LocalDate> days) {
         return days.stream().limit(5).map(d -> d.format(DMY)).collect(Collectors.joining(", "))
                 + (days.size() > 5 ? " and " + (days.size() - 5) + " more" : "");
@@ -689,7 +1006,8 @@ public class BankReconciliationService {
      */
     private static Optional<BankRecDTOs.Check> lineOrder(Map<LocalDate, Boolean> unconfirmed,
                                                         List<BankRecDTOs.UnprovenDay> unprovenDays, boolean closingTyped,
-                                                        boolean openingKnown, boolean typedOpening) {
+                                                        boolean openingKnown, boolean typedOpening, Remedy remedy,
+                                                        Map<LocalDate, List<String>> copies) {
         if (unconfirmed.isEmpty()) return Optional.empty();
         List<LocalDate> mismatch = unprovenDays.stream().filter(d -> "MISMATCH".equals(d.status()))
                 .map(BankRecDTOs.UnprovenDay::date).toList();
@@ -700,24 +1018,42 @@ public class BankReconciliationService {
                     + " a line in one file was taken for an identical line already imported from another, but the file "
                     + "did not hold the whole day, so it may have been a second, separate line (a fee charged twice, say). "
                     + "A typed closing balance cannot settle this. Type " + (needed.size() == 1 ? "that day's" : "each day's")
-                    + " total debits and total credits from the paper statement; or import a statement that runs from "
-                    + "the day before to the day after; or delete the imports that brought its lines and import one "
-                    + "statement holding the whole day."));
+                    + " total debits and total credits from the paper statement"
+                    + remedy.orImport(needed.get(0), needed.get(needed.size() - 1)) + "." + AVOID));
         }
         // Review P3-20: only once every unproven day's totals are typed, and only the
         // overall result — no per-day verdict to probe the stored totals with.
         if (!mismatch.isEmpty()) {
             List<LocalDate> all = unprovenDays.stream().map(BankRecDTOs.UnprovenDay::date).toList();
+            Optional<LocalDate> copied = mismatch.stream().filter(copies::containsKey).findFirst();
             return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "The total debits and credits typed from the "
                     + "paper statement for " + dayList(all) + " do not all agree with the imported lines: a line is "
-                    + "missing. Check the figures against the paper statement; or import a statement that runs from the "
-                    + "day before to the day after each such day; or delete the imports that brought their lines and "
-                    + "import one statement holding the whole day."));
+                    + "missing" + copied.map(d -> ", or on " + d.format(DMY) + " a line an import kept is a copy of one "
+                            + "already imported at another balance").orElse("")
+                    + ". Check the figures against the paper statement"
+                    + remedy.orImport(all.get(0), all.get(all.size() - 1))
+                    + copied.map(d -> ". If " + d.format(DMY) + " is still not settled after a statement holding it whole, "
+                            + "the kept line is a copy: delete " + String.join(", ", copies.get(d))
+                            + " (every import holding it), then type the day's totals again").orElse("") + "."));
+        }
+        // #441 review: totals that agree on a day holding a kept look-alike prove nothing.
+        List<LocalDate> copy = unprovenDays.stream().filter(d -> "COPY".equals(d.status()))
+                .map(BankRecDTOs.UnprovenDay::date).toList();
+        if (!copy.isEmpty()) {
+            LocalDate d = copy.get(0);
+            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(copy) + " an import kept a line "
+                    + "beside one already imported with the same amount and narration at another running balance: the bank "
+                    + "may have moved balances since (a line added earlier), so it may be a copy of that line or a separate "
+                    + "one, and agreeing totals cannot tell (a copy can stand in for a line missing that day). Import a "
+                    + "statement that holds " + d.format(DMY) + " whole" + remedy.orImport(d, d).replaceFirst("^; or import", "; for instance")
+                    + ". If the day is still not settled after it, the kept line is a copy: delete "
+                    + String.join(", ", copies.getOrDefault(d, List.of("the import that brought it")))
+                    + " (every import holding it), then type the day's totals again."));
         }
         // Days proven by their typed totals have all their lines, but not a known order:
         // like any unconfirmed day they need the typed closing (an order that chains by
         // chance can hide a line missing elsewhere behind a wrong derived closing).
-        Map<LocalDate, Boolean> rest = new TreeMap<>(unconfirmed);
+        TreeMap<LocalDate, Boolean> rest = new TreeMap<>(unconfirmed);
         String list = dayList(rest.keySet());
         boolean ok = closingTyped && openingKnown;
         // Review P3-11: the check knows only that a balance was typed, not that it
@@ -729,9 +1065,8 @@ public class BankReconciliationService {
                 : "Lines on " + list + " came from more than one file, so their order and completeness are not "
                         + "confirmed and a missing line could go unnoticed. Type the "
                         + (openingKnown ? "closing balance" : "opening and closing balances")
-                        + " from the paper statement (not the figure the imported lines give), or import a statement "
-                        + "that runs from the day before to the day after "
-                        + (rest.size() == 1 ? "that day" : "each of them") + "."));
+                        + " from the paper statement (not the figure the imported lines give)"
+                        + remedy.orImport(rest.firstKey(), rest.lastKey()) + "."));
     }
 
     /**
@@ -744,7 +1079,8 @@ public class BankReconciliationService {
      * some of the bank's lines (a line is stored only from a file), so equal debit
      * and credit totals mean no line with an amount is missing.</p>
      */
-    private List<BankRecDTOs.UnprovenDay> dayProof(UUID t, UUID recId, Map<LocalDate, Boolean> unconfirmed, List<SL> period) {
+    private List<BankRecDTOs.UnprovenDay> dayProof(UUID t, UUID recId, Map<LocalDate, Boolean> unconfirmed, List<SL> period,
+                                                   Set<LocalDate> lookalike) {
         List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
         if (unproven.isEmpty()) return List.of();
         Map<LocalDate, BigDecimal[]> typed = new HashMap<>();
@@ -754,6 +1090,9 @@ public class BankReconciliationService {
                 new MapSqlParameterSource("t", t).addValue("r", recId),
                 rs -> { typed.put(rs.getObject("txn_date", LocalDate.class),
                         new BigDecimal[]{rs.getBigDecimal("debit_total"), rs.getBigDecimal("credit_total")}); });
+        // #441 review: on a day holding a line kept beside a look-alike at another balance (it may
+        // be a copy of that line), agreeing totals prove nothing: a copy can stand in for a line
+        // lost that day.
         List<BankRecDTOs.UnprovenDay> out = new ArrayList<>();
         for (LocalDate d : unproven) {
             BigDecimal[] tt = typed.get(d);
@@ -762,8 +1101,33 @@ public class BankReconciliationService {
                 continue;
             }
             boolean agree = totalsAgree(dayTotals(period, d), tt[0], tt[1]);
-            out.add(new BankRecDTOs.UnprovenDay(d, tt[0], tt[1], agree ? "PROVEN" : "MISMATCH"));
+            out.add(new BankRecDTOs.UnprovenDay(d, tt[0], tt[1], !agree ? "MISMATCH" : lookalike.contains(d) ? "COPY" : "PROVEN"));
         }
+        return out;
+    }
+
+    /**
+     * #441 review (changeset 183): the period's unproven days that hold a line an import kept
+     * beside a stored look-alike at another running balance ({@code lookalike_kept}), each with
+     * the names of the imports that hold such a line (deleting all of them removes it).
+     */
+    private Map<LocalDate, List<String>> keptLookalikes(UUID t, UUID b, Map<LocalDate, Boolean> unconfirmed) {
+        List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
+        Map<LocalDate, List<String>> out = new TreeMap<>();
+        if (unproven.isEmpty()) return out;
+        jdbc.query("""
+                select l.txn_date, i.file_name, i.first_date, i.last_date from bank_statement_lines l
+                join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
+                join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
+                where l.tenant_id = :t and l.bank_account_id = :b and l.lookalike_kept and l.txn_date in (:d)
+                order by l.txn_date, i.imported_at, i.id""",
+                new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", unproven),
+                rs -> {
+                    String name = rs.getString("file_name") + " (" + rs.getObject("first_date", LocalDate.class).format(DMY)
+                            + "–" + rs.getObject("last_date", LocalDate.class).format(DMY) + ")";
+                    List<String> names = out.computeIfAbsent(rs.getObject("txn_date", LocalDate.class), k -> new ArrayList<>());
+                    if (!names.contains(name)) names.add(name);
+                });
         return out;
     }
 
@@ -778,7 +1142,7 @@ public class BankReconciliationService {
     /** P3-21: the overall verdict on the typed day totals, for the page to show without parsing a message. */
     static String dayTotalsVerdict(List<BankRecDTOs.UnprovenDay> verdicts) {
         if (verdicts.isEmpty()) return null;
-        if (verdicts.stream().anyMatch(d -> "NEEDED".equals(d.status()))) return "PENDING";
+        if (verdicts.stream().anyMatch(d -> "NEEDED".equals(d.status()) || "COPY".equals(d.status()))) return "PENDING";
         return verdicts.stream().anyMatch(d -> "MISMATCH".equals(d.status())) ? "DISAGREE" : "AGREE";
     }
 
@@ -919,7 +1283,7 @@ public class BankReconciliationService {
                 v.bookedAfterPeriod(), v.unrecordedCredits(), v.unrecordedDebits(), v.adjustedBank(), v.adjustedBook(),
                 v.difference(), v.depositsInTransitItems(), v.unpresentedItems(), v.bookedAfterItems(),
                 v.unrecordedItems(), v.withoutEvidenceCount(), v.matchedByMethod(), v.checks(), false, v.preparedAt(),
-                v.preparedByName(), now, userName(user), null, null, null, v.unprovenDays(), v.dayTotalsVerdict());
+                v.preparedByName(), now, userName(user), null, null, null, v.unprovenDays(), v.dayTotalsVerdict(), null);
         String snapshot;
         try {
             snapshot = json.writeValueAsString(snap);

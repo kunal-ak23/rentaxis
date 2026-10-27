@@ -371,6 +371,9 @@ public class AccountService {
         // F14-18: periodic fees billed for the whole term and earned month by month
         // (role UNEARNED_CHARGES). Changeset 128.
         seed(byCode, "B-01-08", "Unearned charges", "رسوم غير مكتسبة", AccountType.LIABILITY, AccountSubType.ADVANCE, "B-01", null, false);
+        // Follow-up ruling R5: utilities recovered at cost, held until recovered
+        // (role UTILITIES_RECOVERABLE). Changeset 179.
+        seed(byCode, "B-01-09", "Utilities recoverable (held)", "مرافق مستردة (محتجزة)", AccountType.LIABILITY, AccountSubType.ADVANCE, "B-01", null, false);
         seed(byCode, "B-02", "PDC Payables", "شيكات مؤجلة مستحقة الدفع", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B", null, true);
         // Finance-ops spec §2: post-dated cheques we issued, until the bank pays them
         // (role PDC_PAYABLE). Changeset 112 adds it to charts seeded before it existed.

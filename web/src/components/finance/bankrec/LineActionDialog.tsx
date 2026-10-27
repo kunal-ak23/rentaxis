@@ -39,6 +39,13 @@ export function actionsFor(lines: StatementLine[]): LineAction[] {
     return ["other"];
 }
 
+/** The ISO day before an ISO date. */
+function isoDayBefore(iso: string): string {
+    const d = new Date(`${iso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+}
+
 const CONTROL = new Set(["RECEIVABLE", "PDC_RECEIVABLE", "DEPOSIT_HELD", "PAYABLE", "PDC_PAYABLE", "ADVANCE"]);
 
 /**
@@ -60,6 +67,8 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     const [reason, setReason] = useState("");
     const [accountId, setAccountId] = useState("");
     const [narration, setNarration] = useState("");
+    // Sim r23 S23-03: a line dated in the locked books is booked on the first open day, when ticked.
+    const [onFirstOpenDay, setOnFirstOpenDay] = useState(false);
     // A charge over several lines states its split (PR #353 review P2-3): prefilled with
     // the larger line as the charge and the smaller as VAT only when that is at most 5%.
     const multiCharge = lines.length > 1;
@@ -147,6 +156,14 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         }
     })();
 
+    // Review P3-4 of #435: the server dates a posting by the latest selected line (value date,
+    // else transaction date), and candidates name the first open day for the first line only.
+    // That day less one is the lock; the posting is locked only when the latest line is inside it.
+    const bankDate = lines.map(l => l.valueDate ?? l.txnDate).sort().slice(-1)[0];
+    const lockedThrough = cands?.firstOpenDay ? isoDayBefore(cands.firstOpenDay) : null;
+    const lockedLine = ["charge", "interest", "suspense", "other"].includes(action)
+        && !!lockedThrough && !!bankDate && bankDate <= lockedThrough;
+
     const ready = (() => {
         if (needsLeaf && !leafId) return false;
         switch (action) {
@@ -154,10 +171,11 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
             case "receive": case "receiveSuspense": case "present": return picked.size === 1;
             // PR #400 review P3-4: the bank's reason is chosen, never defaulted.
             case "bounce": return picked.size === 1 && !!reason;
-            case "other": return !!accountId;
+            case "other": return !!accountId && (!lockedLine || onFirstOpenDay);
             // Batch 4 review #5: a refused net or VAT is named under its field and never booked as 0.
-            case "charge": return !split.error && !(multiCharge && (moneyTextInvalid(netText, SPLIT) || moneyTextInvalid(vatText, SPLIT)));
-            default: return true;
+            case "charge": return !split.error && !(multiCharge && (moneyTextInvalid(netText, SPLIT) || moneyTextInvalid(vatText, SPLIT)))
+                && (!lockedLine || onFirstOpenDay);
+            default: return !lockedLine || onFirstOpenDay;
         }
     })();
 
@@ -180,6 +198,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                         vatIncluded, accountId: action === "other" ? accountId : null, bankLeafId: leafId || null,
                         net: action === "charge" && stated ? stated.net : null, vat: action === "charge" && stated ? stated.vat : null,
                         shared: shared ?? undefined, narration: narration || null,
+                        bookOnFirstOpenDay: lockedLine ? onFirstOpenDay : undefined,
                     });
             }
             onDone(r);
@@ -308,6 +327,15 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                         )}
                         <input className={`${field} w-full`} placeholder={t("narration")} value={narration}
                                onChange={e => setNarration(e.target.value)} maxLength={500} />
+                        {lockedLine && cands?.firstOpenDay && (
+                            <label className="flex items-start gap-2 text-xs text-warning" data-testid="first-open-day">
+                                <input type="checkbox" checked={onFirstOpenDay} onChange={e => setOnFirstOpenDay(e.target.checked)}
+                                       data-testid="book-on-first-open-day" />
+                                <span>{t("bookOnFirstOpenDay", {
+                                    date: dmy(bankDate),
+                                    firstOpen: dmy(cands.firstOpenDay) })}</span>
+                            </label>
+                        )}
                     </>
                 )}
 

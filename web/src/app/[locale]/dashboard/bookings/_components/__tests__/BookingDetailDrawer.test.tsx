@@ -20,6 +20,7 @@ const api = vi.hoisted(() => ({
   approveBooking: vi.fn(),
   rejectBooking: vi.fn(),
   releaseBooking: vi.fn(),
+  staffCancelBooking: vi.fn(),
 }));
 
 // Keep the real ApiError class — the drawer branches on `instanceof ApiError`.
@@ -217,5 +218,31 @@ describe("BookingDetailDrawer — break-it R3 ops3 F7/F9", () => {
     render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={() => {}} />);
     await waitFor(() => expect(screen.getByText(/bookedFor 12\/10\/2026 · 10:00–12:30/)).toBeInTheDocument());
     expect(screen.queryByText(/01\/09\/2026/)).toBeNull();
+  });
+});
+
+describe("BookingDetailDrawer staff cancel (ruling R12)", () => {
+  const approvedAmenity = makeRequest({ resourceType: "AMENITY", amenityId: "am-1", parkingSpotId: null,
+    resourceName: "Hall", status: "APPROVED" });
+
+  it("cancels an approved amenity booking with the reason, and needs one", async () => {
+    api.fetchBooking.mockResolvedValue({ request: approvedAmenity, otherRequests: [] });
+    api.staffCancelBooking.mockResolvedValue({ ...approvedAmenity, status: "CANCELLED", adminNote: "Hall closed" });
+    const onChanged = vi.fn();
+    render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={onChanged} />);
+    const button = await screen.findByTestId("booking-staff-cancel");
+    expect(button).toBeDisabled();
+    expect(screen.getByText("cancelCreditHint")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("booking-cancel-reason"), { target: { value: "  Hall closed " } });
+    fireEvent.click(button);
+    await waitFor(() => expect(api.staffCancelBooking).toHaveBeenCalledWith("req-1", { adminNote: "Hall closed" }));
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: "CANCELLED" }));
+  });
+
+  it("offers no cancel on an approved parking booking (it is released)", async () => {
+    api.fetchBooking.mockResolvedValue({ request: makeRequest({ status: "APPROVED" }), otherRequests: [] });
+    render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText("release");
+    expect(screen.queryByTestId("booking-staff-cancel")).toBeNull();
   });
 });

@@ -336,7 +336,8 @@ for (const { role } of ROLES) {
                     await expect(page.getByTestId(`ledger-bf-${picks[0]}`)).toBeVisible();
                     await expect(page.getByTestId('ledger-report-total')).toBeVisible();
                     await expect(page.getByTestId('ledger-col-tower')).toBeVisible();
-                    await check(page, `/${locale}/dashboard/finance/tenant-ledger?renterId=${renterId}`, role, failures);
+                    // The one-tenant statement is the "All accounts" view; a bare ?renterId= opens PACT's receivable view.
+                    await check(page, `/${locale}/dashboard/finance/tenant-ledger?view=all&renterId=${renterId}`, role, failures);
                     await expect(page.getByTestId('ledger-report-total')).toBeVisible();
                 }
                 await context.close();

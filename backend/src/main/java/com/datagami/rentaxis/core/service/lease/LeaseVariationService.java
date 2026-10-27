@@ -362,7 +362,8 @@ public class LeaseVariationService {
                 return new com.datagami.rentaxis.api.dto.lease.LeaseAddendumCreditDTO(c.getLeaseLineId(),
                         type == null ? null : type.getCode(), type == null ? null : type.getNameEn(),
                         type == null ? null : type.getNameAr(), c.getNewLineAmount(), c.getRemainingBefore(),
-                        c.getRemainingAfter(), c.getCreditAmount(), c.getVatAmount());
+                        c.getRemainingAfter(), c.getCreditAmount(), c.getVatAmount(), c.getNewGrossAmount(),
+                        c.getNewRentFreeAmount());
             }).toList();
         }
         return new LeaseAddendumDTO(a.getId(), a.getAddendumNumber(), a.getEffectiveFrom(), a.getContractDate(),

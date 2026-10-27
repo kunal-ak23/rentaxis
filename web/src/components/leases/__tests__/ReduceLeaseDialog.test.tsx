@@ -21,7 +21,7 @@ vi.mock("@/lib/api/leasing", async orig => {
     };
 });
 
-import ReduceLeaseDialog, { reducibleLines } from "../ReduceLeaseDialog";
+import ReduceLeaseDialog, { headlineOf, reducibleLines } from "../ReduceLeaseDialog";
 
 const base: LeaseLine = {
     id: "rent", seqNo: 1, chargeTypeId: "ct-rent", chargeTypeCode: "RENT", chargeTypeName: "Rent",
@@ -80,6 +80,24 @@ describe("ReduceLeaseDialog (F14-32)", () => {
         fireEvent.click(screen.getByTestId("reduce-confirm"));
         await waitFor(() => expect(onReduced).toHaveBeenCalled());
         expect(reduce).toHaveBeenCalledWith("lease-1", expect.objectContaining({ returnChequeIds: [], cheques: [] }));
+    });
+
+    /** Follow-up ruling R7: the new amount is the headline; a rent-free line says its concession is re-applied. */
+    it("starts a cut from the headline, not the net after the concession", () => {
+        const free: LeaseLine = { ...base, grossAmount: 72000, rentFreeAmount: 6000, netAmount: 66000 };
+        expect(headlineOf(free)).toBe(72000);
+        expect(headlineOf({ ...free, currentAmount: 55000, currentGrossAmount: 60000 })).toBe(60000);
+        // A credit written before the headline was stored carries only its net figure.
+        expect(headlineOf({ ...free, currentAmount: 55000, currentGrossAmount: null })).toBe(55000);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ReduceLeaseDialog open lease={{ ...LEASE, lines: [free] } as LeaseDetail} onClose={() => {}} onReduced={() => {}} />
+            </NextIntlClientProvider>,
+        );
+        expect(screen.getByTestId("reduce-current-rent")).toHaveTextContent("72,000.00");
+        expect(screen.getByTestId("reduce-concession-rent")).toHaveTextContent("6,000.00");
+        fireEvent.click(screen.getByTestId("reduce-pick-rent"));
+        expect(screen.getByTestId("reduce-amount-rent")).toHaveValue("72000");
     });
 
     it("handing cheques back must come to the credit before it can post", async () => {

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -151,6 +152,18 @@ class _Step1CaptureState extends State<Step1Capture>
     widget.onCaptured(File(picked.path));
   }
 
+  /// A PDF of scans, or a photo already on the device. One file may hold
+  /// several cheques: the server returns one item per cheque.
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif'],
+    );
+    final path = result?.files.single.path;
+    if (path == null) return;
+    widget.onCaptured(File(path));
+  }
+
   void _toggleFlash() {
     setState(() => _flashOn = !_flashOn);
   }
@@ -231,6 +244,28 @@ class _Step1CaptureState extends State<Step1Capture>
                     style: bodyFont(fontSize: 11, color: m.textMuted),
                   ),
                 ),
+                const SizedBox(height: 14),
+                Center(
+                  child: Text(
+                    l.severalHint,
+                    textAlign: TextAlign.center,
+                    style: bodyFont(fontSize: 11.5, color: m.textSecondary),
+                  ),
+                ),
+                Center(
+                  child: TextButton.icon(
+                    key: const ValueKey('chequeScanPickFile'),
+                    onPressed: _pickFile,
+                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                    label: Text(
+                      l.pickFile,
+                      style: bodyFont(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -254,6 +289,10 @@ class _L {
       : 'Use the gallery icon to pick a photo';
   String get tapToCapture =>
       ar ? 'اضغط على الزر الذهبي للالتقاط' : 'Tap the gold button to capture';
+  String get severalHint => ar
+      ? 'يمكن أن تحتوي صورة واحدة على عدة شيكات — سيُقرأ كل شيك على حدة.'
+      : 'One photo can hold several cheques — each is read separately.';
+  String get pickFile => ar ? 'اختيار ملف PDF أو صورة' : 'Choose a PDF or file';
   String get noCamera => ar
       ? 'لا توجد كاميرا متاحة على هذا الجهاز.'
       : 'No camera available on this device.';

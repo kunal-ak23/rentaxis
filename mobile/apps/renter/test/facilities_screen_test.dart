@@ -28,6 +28,57 @@ DioException _dioError(Object? data, {int statusCode = 400}) {
 }
 
 void main() {
+  testWidgets(
+    'paid amenity quotes its fee and requires a date before posting',
+    (tester) async {
+      final fake = FakeFacilityService(
+        amenities: [
+          {
+            'id': 'am-paid',
+            'propertyId': 'prop-1',
+            'propertyName': 'Tower',
+            'nameEn': 'Meeting room',
+            'bookable': true,
+            'pendingCount': 0,
+            'feeType': 'PER_BOOKING',
+            'feeAmount': 125.50,
+          },
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            facilityServiceProvider.overrideWithValue(fake),
+            activeLeasesProvider.overrideWith(
+              (ref) async => [
+                {
+                  'id': 'lease-1',
+                  'unitId': 'unit-1',
+                  'unitIdentifier': '1204',
+                  'propertyId': 'prop-1',
+                  'status': 'ACTIVE',
+                },
+              ],
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: const FacilitiesScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('125.50'), findsOneWidget);
+      await tester.tap(find.text('REQUEST'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('125.50'), findsWidgets);
+      await tester.ensureVisible(find.byKey(const Key('booking-submit')));
+      await tester.tap(find.byKey(const Key('booking-submit')));
+      await tester.pumpAndSettle();
+      expect(fake.createCalls, isEmpty);
+      expect(find.textContaining('date'), findsWidgets);
+    },
+  );
   testWidgets('request sheet posts resourceType, resourceId, unitId and note', (
     tester,
   ) async {
@@ -392,6 +443,34 @@ void main() {
         expect(find.text('REQUEST'), findsOneWidget);
       },
     );
+
+    testWidgets('an APPROVED booking whose date is over is not shown as '
+        'current; an upcoming one is', (tester) async {
+      String day(int offset) => DateTime.now()
+          .add(Duration(days: offset))
+          .toIso8601String()
+          .substring(0, 10);
+      Map<String, dynamic> booking(int offset) => {
+        'id': 'bk-$offset',
+        'amenityId': 'am-1',
+        'status': 'APPROVED',
+        'preferredDate': day(offset),
+        'preferredStartTime': '09:00:00',
+        'preferredEndTime': '10:00:00',
+      };
+
+      await pumpScreen(
+        tester,
+        fake: FakeFacilityService(amenities: [pool], bookings: [booking(-2)]),
+      );
+      expect(find.text('APPROVED'), findsNothing);
+
+      await pumpScreen(
+        tester,
+        fake: FakeFacilityService(amenities: [pool], bookings: [booking(2)]),
+      );
+      expect(find.text('APPROVED'), findsOneWidget);
+    });
 
     testWidgets(
       'a PENDING request keys off amenityId/parkingSpotId — it blocks '

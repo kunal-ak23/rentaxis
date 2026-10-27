@@ -56,6 +56,14 @@ export function reducibleLines(lines: LeaseLine[]): LeaseLine[] {
     });
 }
 
+/**
+ * Follow-up ruling R7: the amount a cut starts from is the line's HEADLINE (gross, before
+ * the rent-free concession), as it stands after any earlier credit addendum.
+ */
+export function headlineOf(l: LeaseLine): number {
+    return l.currentGrossAmount ?? (l.currentAmount != null ? l.currentAmount : l.grossAmount);
+}
+
 export default function ReduceLeaseDialog({ open, lease, onClose, onReduced, previewOnly = false }: Props) {
     const t = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
@@ -209,14 +217,22 @@ export default function ReduceLeaseDialog({ open, lease, onClose, onReduced, pre
                                                            checked={cut !== undefined}
                                                            onChange={e => setCuts(c => {
                                                                const next = { ...c };
-                                                               if (e.target.checked) next[l.id] = String(l.netAmount);
+                                                               if (e.target.checked) next[l.id] = String(headlineOf(l));
                                                                else delete next[l.id];
                                                                return next;
                                                            })} />
                                                     {lineName(l)}
                                                 </label>
                                             </td>
-                                            <td className={`${td} text-end tabular-nums`}>{bdi(l.netAmount)}</td>
+                                            <td className={`${td} text-end tabular-nums`} data-testid={`reduce-current-${l.id}`}>
+                                                {bdi(headlineOf(l))}
+                                                {(l.rentFreeAmount ?? 0) > 0 && (
+                                                    <span className="block text-[10px] text-muted" data-testid={`reduce-concession-${l.id}`}>
+                                                        {t("reduction.concessionReapplied", {
+                                                            amount: fmtAmount(priced?.newRentFree ?? l.rentFreeAmount ?? 0) })}
+                                                    </span>
+                                                )}
+                                            </td>
                                             <td className={td}>
                                                 {cut !== undefined && (
                                                     <span className="inline-flex items-center gap-2">

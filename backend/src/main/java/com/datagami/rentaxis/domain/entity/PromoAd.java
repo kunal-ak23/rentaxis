@@ -1,12 +1,17 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -82,6 +87,57 @@ public class PromoAd extends BaseTenantEntity {
 
     @Column(nullable = false)
     private boolean active = true;
+
+    /**
+     * Only APPROVED ads reach renters (changeset 183). APPROVED by default: an
+     * admin's ad is live on create; a promoter's write sets PENDING explicitly.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_status", nullable = false, length = 16)
+    private PromoApprovalStatus approvalStatus = PromoApprovalStatus.APPROVED;
+
+    /** The promoter who last wrote the ad; null for an ad only admins have written. */
+    @Column(name = "promoter_user_id")
+    private UUID promoterUserId;
+
+    /**
+     * Review M4: a promoter has written this ad at some point. Never cleared, and kept
+     * when {@code promoterUserId} goes null (the promoter's login deleted): such an ad
+     * then shows to no renter, rather than becoming an admin ad.
+     */
+    @Column(name = "written_by_promoter", nullable = false)
+    private boolean writtenByPromoter;
+
+    /** When a promoter last sent the ad for approval. */
+    @Column(name = "submitted_at")
+    private Instant submittedAt;
+
+    @Column(name = "reviewed_by")
+    private UUID reviewedBy;
+
+    @Column(name = "reviewed_at")
+    private Instant reviewedAt;
+
+    /** The admin's reason when REJECTED; null otherwise. */
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
+    /**
+     * Addendum B: set when a delete found view history, so the ad was archived
+     * instead (and deactivated). Archived ads are hidden from every list and from
+     * renters; an admin can restore one.
+     */
+    @Column(name = "archived_at")
+    private Instant archivedAt;
+
+    /** COUPON only (addendum A): opened after "Copy code"; allowlisted like a WEBSITE ctaUrl. */
+    @Column(name = "redirect_url", length = 2048)
+    private String redirectUrl;
+
+    /** COUPON only (addendum A): query parameters appended per renter; null = none. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "redirect_params", columnDefinition = "jsonb")
+    private List<PromoRedirectParam> redirectParams;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

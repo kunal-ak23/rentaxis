@@ -346,6 +346,13 @@ class YearEndCloseIT extends AbstractPostgresIT {
         assertThat(closed.journalId()).isNotNull();
         assertThat(lock()).isEqualTo(LocalDate.of(2025, 1, 31));
         assertThat(balance(FY24_END, AccountRole.RETAINED_EARNINGS, false)).isEqualByComparingTo("-19200");
+        // Follow-up ruling R2: the lock before the close is shown (the re-open dialog says
+        // "the lock was 31/01/2025 before this close") and kept as audit; re-open does not restore it.
+        assertThat(closed.lockBefore()).isEqualTo(LocalDate.of(2025, 1, 31));
+        FiscalYearDTO reopened = closes.reopen(2024, "Missed a supplier invoice", TODAY);
+        assertThat(reopened.lockBefore()).as("audit field survives the re-open").isEqualTo(LocalDate.of(2025, 1, 31));
+        assertThat(lock()).as("not restored: the spec moves it to the day before the year")
+                .isEqualTo(LocalDate.of(2023, 12, 31));
     }
 
     /**

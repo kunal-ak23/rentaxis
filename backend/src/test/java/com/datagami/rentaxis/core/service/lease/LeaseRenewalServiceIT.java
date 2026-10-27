@@ -1146,6 +1146,42 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
      * receivable back to zero (every charge covered by a cheque), income at the
      * amended split and not the sum of two postings, and one live TCO.</p>
      */
+    /**
+     * Sim r22 S22-02 follow-through: an amendment of an EXTENDED lease rebuilds the schedule of
+     * its undated periodic fee over the term the fee was charged for (02/10/2026 – 01/10/2027),
+     * not over the extended term the lease's end date now names. Parking 3,650 amended to 4,650
+     * (rent 51,000 to 50,000, same cheques): the live schedule ends on 01/10/2027 and earns
+     * exactly 4,650; nothing is planned in the extension's months.
+     */
+    @Test
+    void amendingAnExtendedLeaseKeepsAnUndatedFeeOnItsOwnTerm() {
+        UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("PARKING_FEE", "3650")), 4, null).lease().getId();
+        renewal.extend(leaseId, extension("12000", "12000"));
+        posting.amendLines(leaseId, List.of(
+                line("RENT", "50000"),
+                line("PARKING_FEE", "4650"),
+                linePeriod("RENT", "12000", END.plusDays(1), NEW_END)), "Parking repriced");
+
+        String live = """
+                select %s from rent_segments s join lease_lines l on l.id = s.lease_line_id
+                  join charge_types c on c.id = l.charge_type_id
+                 where s.lease_id = ? and c.code = 'PARKING_FEE' and s.status in ('ACTIVE', 'TRUNCATED')""";
+        assertThat(jdbc.queryForObject(live.formatted("max(s.to_date)"), LocalDate.class, leaseId))
+                .as("the fee's own term, not the extension's").isEqualTo(END);
+        String planned = """
+                select coalesce(sum(e.amount), 0) from recognition_entries e
+                  join rent_segments s on s.id = e.segment_id join lease_lines l on l.id = s.lease_line_id
+                  join charge_types c on c.id = l.charge_type_id
+                 where e.lease_id = ? and c.code = 'PARKING_FEE' and e.status in ('PLANNED', 'POSTED')""";
+        assertThat(jdbc.queryForObject(planned, BigDecimal.class, leaseId)).isEqualByComparingTo("4650");
+        assertThat(jdbc.queryForObject("""
+                select count(*) from recognition_entries e join rent_segments s on s.id = e.segment_id
+                  join lease_lines l on l.id = s.lease_line_id join charge_types c on c.id = l.charge_type_id
+                 where e.lease_id = ? and c.code = 'PARKING_FEE' and e.status in ('PLANNED', 'POSTED')
+                   and e.period_start > ?""", Long.class, leaseId, END)).isZero();
+    }
+
     @Test
     void amendingAnExtendedLeaseReversesEveryTcoAndDoesNotDoubleBookTheExtension() {
         UUID leaseId = postedWithFee();                       // 51,000 rent + 2,000 fee

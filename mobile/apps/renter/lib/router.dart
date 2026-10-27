@@ -7,6 +7,8 @@ import 'screens/login_screen.dart';
 import 'screens/set_password_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/payments_screen.dart';
+import 'screens/contracts_screen.dart';
+import 'screens/renewals_screen.dart';
 import 'screens/tickets_screen.dart';
 import 'screens/create_ticket_screen.dart';
 import 'screens/ticket_detail_screen.dart';
@@ -123,6 +125,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/',
             pageBuilder: (context, state) =>
                 fadeTransition(const HomeScreen(), state),
+          ),
+          GoRoute(
+            path: '/contracts',
+            pageBuilder: (context, state) =>
+                fadeTransition(const ContractsScreen(), state),
+          ),
+          GoRoute(
+            path: '/renewals',
+            pageBuilder: (context, state) =>
+                fadeTransition(const RenewalsScreen(), state),
           ),
           GoRoute(
             path: '/payments',

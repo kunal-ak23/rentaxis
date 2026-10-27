@@ -125,6 +125,24 @@ function separatorOf(first: string): string {
     return first.includes(";") && !first.includes(",") ? ";" : ",";
 }
 
+/** A cell that reads like a date: digits split by `/`, `-` or `.` (real or not). */
+const DATE_LIKE = /\d{1,4}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{1,4}/;
+/** A cell that is a number (a cheque number, an amount). */
+const NUMERIC = /^\d[\d\s,.]*$/;
+
+/** The words a header of this CSV is made of, English and Arabic (lower case, no diacritics). */
+const HEADER_WORDS = new Set([
+    "contract", "contracts", "lease", "unit", "id", "due", "date", "duedate", "cheque", "check", "chq", "number", "no",
+    "num", "bank", "payee", "chequedate", "chequenumber", "dueday",
+    "العقد", "عقد", "رقم", "الشيك", "شيك", "البنك", "بنك", "تاريخ", "الاستحقاق", "استحقاق", "الوحدة", "وحدة",
+]);
+
+/** Whether a cell is made of header words only: "due_date", "Cheque No.", "تاريخ الاستحقاق". */
+function isHeaderWordCell(cell: string): boolean {
+    const words = cell.toLowerCase().split(/[^a-z\u0600-\u06FF]+/).filter(Boolean);
+    return words.length > 0 && !/[0-9\u0660-\u0669\u06F0-\u06F9]/.test(cell) && words.every(w => HEADER_WORDS.has(w));
+}
+
 export interface CsvResult {
     edits: Record<string, Edit>;
     applied: number;
@@ -138,7 +156,7 @@ export interface CsvResult {
  * Apply a CSV of `contract, due_date, cheque_number[, bank[, cheque_date]]` to the grid. The
  * contract is any key of a draft (its own or the renewed contract's number, the unit, the id),
  * the due date the row's date as loaded; dates are `yyyy-mm-dd` or `dd/mm/yyyy`. A header line
- * is skipped. A line that names no row, or that two rows could both take (a unit number shared
+ * and words-only title lines above it are skipped; any other line is data. A line that names no row, or that two rows could both take (a unit number shared
  * by two buildings, or two cheques of one draft on the same date), is reported by line number
  * and changes nothing; so is a line with a date that is not real — never a guess.
  */
@@ -155,11 +173,42 @@ export function applyChequeCsv(text: string, drafts: CsvDraft[], edits: Record<s
     let applied = 0;
     const lines = text.replace(/^﻿/, "").split(/\r?\n/);
     const sep = separatorOf(lines.find(l => l.trim()) ?? "");
+    // Sim r22 S22-05 / r23 / #425 review P3-R4-4 / r24 S24-04: blank lines and a title may
+    // come before the header. The header is, before the first valid data row (a real due date
+    // on a contract the batch knows), the first line of known header words (English or
+    // Arabic), else the first line of words with no digits. Every line after it is data,
+    // reported if it is wrong. A line before it that looks like data (a date-like or numeric
+    // cell) is read as data too — reported, never silently dropped; only words are preamble.
+    const hasDigit = (l: string) => /[0-9\u0660-\u0669\u06F0-\u06F9]/.test(l);
+    const cellsOf = (l: string) => csvCells(l, sep);
+    const wordy = (l: string) => cellsOf(l).filter(c => /[a-z\u0600-\u06FF]/i.test(c)).length >= 2;
+    const knownHeader = (l: string) => cellsOf(l).filter(isHeaderWordCell).length >= 2;
+    const validData = (l: string) => {
+        const [contract = "", due = ""] = cellsOf(l);
+        return !!csvDate(due) && byKey.has(norm(contract));
+    };
+    const firstValid = lines.findIndex(l => l.trim() !== "" && validData(l));
+    const beforeData = (i: number) => firstValid < 0 || i < firstValid;
+    let headerAt = lines.findIndex((l, i) => beforeData(i) && l.trim() !== "" && knownHeader(l));
+    if (headerAt < 0) headerAt = lines.findIndex((l, i) => beforeData(i) && l.trim() !== "" && wordy(l) && !hasDigit(l));
+    const looksLikeData = (l: string) => cellsOf(l).some(c => DATE_LIKE.test(westernDigits(c)) || NUMERIC.test(westernDigits(c)));
+    // Sim r25 S25-02: the r22 first-line fallback, kept under #435's rules. With no header, a
+    // first line of words (letters, no digit, so no due date) before the data is a title
+    // ("Tower A cheques"), however many cells it has — skipped, not reported as a bad date.
+    // #438 review: unless its first cell names a draft ("VILLA-A,,"): that is a data line
+    // missing its date, reported, never silently dropped.
+    if (headerAt < 0) {
+        const first = lines.findIndex(l => l.trim() !== "");
+        if (first >= 0 && beforeData(first) && !hasDigit(lines[first]) && /[a-z\u0600-\u06FF]/i.test(lines[first])
+            && !byKey.has(norm(cellsOf(lines[first])[0] ?? ""))) {
+            headerAt = first;
+        }
+    }
     lines.forEach((line, i) => {
-        if (!line.trim()) return;
+        if (!line.trim() || i === headerAt) return;
+        if (i < headerAt && !looksLikeData(line)) return;
         const [contract = "", due = "", number = "", bank = "", chequeDate = ""] = csvCells(line, sep);
         const dueIso = csvDate(due);
-        if (i === 0 && !dueIso && /[a-z]/i.test(due)) return; // a header
         const chequeIso = chequeDate.trim() ? csvDate(chequeDate) : null;
         if (!dueIso || (chequeDate.trim() && !chequeIso)) {
             invalidDates.push(i + 1);

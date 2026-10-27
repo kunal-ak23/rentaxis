@@ -88,4 +88,60 @@ void main() {
     expect(tab1, closeTo(bar.center.dx, 0.5));
     expect(tab1 - tab0, closeTo(tab2 - tab1, 0.5));
   });
+
+  for (final inset in [0.0, 34.0, 48.0]) {
+    testWidgets('a ${inset}pt system inset is the bar\'s whole bottom margin, '
+        'or 8pt with none', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: MediaQuery(
+            data: MediaQueryData(
+              size: const Size(400, 800),
+              padding: EdgeInsets.only(bottom: inset),
+            ),
+            child: Scaffold(
+              bottomNavigationBar: MiftahNavBar(
+                key: barKey,
+                currentIndex: 0,
+                onTap: (_) {},
+                items: const [
+                  MiftahNavItem(icon: Icons.circle, label: 'Tab 0'),
+                  MiftahNavItem(icon: Icons.circle, label: 'Tab 1'),
+                  MiftahNavItem(icon: Icons.circle, label: 'Tab 2'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final bar = tester.getRect(find.byKey(barKey));
+      final row = tester.getRect(
+        find
+            .descendant(of: find.byKey(barKey), matching: find.byType(Row))
+            .first,
+      );
+      // The home indicator / navigation bar is the margin; no 8pt on top of it.
+      expect(bar.bottom - row.bottom, inset > 8 ? inset : 8);
+    });
+  }
+
+  testWidgets('the raised action adds no height to the bar', (tester) async {
+    // Regression: the circle was moved up with Transform.translate, which
+    // left its 52pt in the layout, so the bar was ~30pt taller than its tabs.
+    final plain = await pumpBar(tester, itemCount: 4, withCentre: false);
+    final raised = await pumpBar(tester, itemCount: 4, withCentre: true);
+
+    expect(raised.height, plain.height);
+    final circle = tester.getRect(
+      find.byKey(const Key('miftah-nav-centre-circle')),
+    );
+    expect(circle.size, const Size(52, 52));
+    // It overhangs the bar's top edge, as the design draws it.
+    expect(circle.top, lessThan(raised.top));
+  });
 }

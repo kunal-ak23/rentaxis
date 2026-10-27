@@ -21,7 +21,7 @@ type Translator = {
 };
 
 /** Values the sentences carry as numbers, for their plurals. */
-const NUMERIC = new Set(["days", "seq"]);
+const NUMERIC = new Set(["days", "seq", "adCount"]);
 
 /**
  * A notification's title and body in the viewer's language (#81).
@@ -44,7 +44,7 @@ export function notificationText(
     if (!key || !t.has(`messages.${key}.title`) || !t.has(`messages.${key}.body`)) return fallback;
 
     const p = n.params ?? {};
-    const values = localizedValues(p, t, locale, tMeetings);
+    const values = localizedValues(p, t, locale, tMeetings, key);
 
     const title = render(t, `messages.${key}.title`, values);
     let body = render(t, `messages.${key}.body`, values);
@@ -88,6 +88,7 @@ function localizedValues(
     t: Translator,
     locale: string,
     tMeetings?: Translator,
+    key?: string,
 ): Record<string, string | number> {
     const v: Record<string, string | number> = {};
     const label = (group: string, code: string) => (t.has(`${group}.${code}`) ? t(`${group}.${code}`) : code);
@@ -106,6 +107,9 @@ function localizedValues(
     if (p.chequeNo) v.ref = t("refCheque", { number: isolate(p.chequeNo) });
     else if (p.seq != null) v.ref = t("refInstalment", { seq: Number(p.seq) });
     if (p.reason) v.reason = label(p.reason in REASON_GROUP ? REASON_GROUP[p.reason] : "failureReason", p.reason);
+    // An admin's reason for rejecting an ad is free text, never a code to translate:
+    // shown as written, isolated so it keeps its place in an Arabic sentence.
+    if (key === "PROMO_AD_REJECTED" && p.reason) v.reason = isolate(p.reason);
     if (p.intent) v.intent = label("renewalIntent", p.intent);
     if (p.resourceType === "PARKING" && p.resourceName) v.resource = t("parkingSpot", { spot: isolate(p.resourceName) });
     else if (p.resourceType === "AMENITY" && p.resourceName) v.resource = isolate(p.resourceName);

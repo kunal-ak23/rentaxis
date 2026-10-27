@@ -103,7 +103,7 @@ export default function LedgerTable({ ledgers, showTenantColumns = true, subBand
         return (
             <>
                 <tr>
-                    <td colSpan={cols} className="px-3 py-1.5 text-xs font-bold text-white" style={{ background: "#C8651B" }}>
+                    <td colSpan={cols} className="px-3 py-1.5 text-xs font-bold bg-report-band text-report-band-fg">
                         {t("accountCodeLabel")} :: <bdi dir="ltr">{l.accountCode}</bdi> &nbsp;&nbsp; {t("accountNameLabel")} :: <bdi>{accountName(l, locale)}</bdi>
                     </td>
                 </tr>

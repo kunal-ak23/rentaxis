@@ -159,7 +159,7 @@ public final class BankRecDTOs {
                                  Instant preparedAt, String preparedByName, Instant finalizedAt,
                                  String finalizedByName, Instant reopenedAt, String reopenedByName,
                                  String reopenReason, List<UnprovenDay> unprovenDays,
-                                 String dayTotalsVerdict) { }
+                                 String dayTotalsVerdict, LocalDate remedyReopenThrough) { }
 
     /**
      * Review P2-3: a day of the period where a file's line was taken for an identical
@@ -171,6 +171,8 @@ public final class BankRecDTOs {
      */
     public record UnprovenDay(LocalDate date, BigDecimal typedDebits, BigDecimal typedCredits, String status) { }
 
+    // Sim r22 S22-04: remedyReopenThrough on Reconciliation — the finalized period a statement a
+    // check names starts inside (the web says to reopen it if the import is refused), else null.
     // Final review P3-21: dayTotalsVerdict on Reconciliation — null when no day is unproven;
     // PENDING while a day's totals are still needed; AGREE / DISAGREE once all are entered.
 
@@ -194,13 +196,24 @@ public final class BankRecDTOs {
     public record PresentInput(@NotNull UUID statementLineId, @NotNull UUID issuedChequeId) { }
 
     /** {@code kind}: CHARGE, INTEREST, SUSPENSE or OTHER. {@code bankLeafId} picks the leaf when the set has several. */
+    /**
+     * {@code bookOnFirstOpenDay} (sim r23 S23-03): the line's date is inside the locked books;
+     * book it on the first open day instead, as booked after the period, its narration naming
+     * the bank's date. Without it such a line is refused ({@code bankrec.lineDateLocked}).
+     */
     public record PostLinesInput(@NotNull List<UUID> statementLineIds, @NotNull String kind, Boolean vatIncluded,
                                  UUID accountId, UUID propertyId, UUID bankLeafId, Boolean shared,
-                                 @Size(max = 500) String narration, @com.datagami.rentaxis.api.validation.Money BigDecimal net, @com.datagami.rentaxis.api.validation.Money BigDecimal vat) {
+                                 @Size(max = 500) String narration, @com.datagami.rentaxis.api.validation.Money BigDecimal net, @com.datagami.rentaxis.api.validation.Money BigDecimal vat,
+                                 Boolean bookOnFirstOpenDay) {
         /** Without the stated split (a single line, or a kind that has none). */
         public PostLinesInput(List<UUID> statementLineIds, String kind, Boolean vatIncluded, UUID accountId,
                               UUID propertyId, UUID bankLeafId, Boolean shared, String narration) {
-            this(statementLineIds, kind, vatIncluded, accountId, propertyId, bankLeafId, shared, narration, null, null);
+            this(statementLineIds, kind, vatIncluded, accountId, propertyId, bankLeafId, shared, narration, null, null, null);
+        }
+
+        public PostLinesInput(List<UUID> statementLineIds, String kind, Boolean vatIncluded, UUID accountId,
+                              UUID propertyId, UUID bankLeafId, Boolean shared, String narration, BigDecimal net, BigDecimal vat) {
+            this(statementLineIds, kind, vatIncluded, accountId, propertyId, bankLeafId, shared, narration, net, vat, null);
         }
     }
 
@@ -210,9 +223,20 @@ public final class BankRecDTOs {
                             UUID propertyId, String status, boolean preselected) { }
 
     /** The documents a statement line's actions would use, and the charge split it would post. */
+    /**
+     * {@code firstOpenDay} (sim r23 S23-03): set when the line's date is inside the locked
+     * books — the day a charge, interest, unidentified receipt or other posting from it would
+     * be booked on, after the period; null when the line's own date is open.
+     */
     public record LineCandidates(UUID statementLineId, List<Candidate> clear, List<Candidate> receive,
                                  List<Candidate> bounce, List<Candidate> present, BigDecimal suspenseBalance,
-                                 boolean bankTrnSet, List<Leaf> leaves, List<Refused> refused) { }
+                                 boolean bankTrnSet, List<Leaf> leaves, List<Refused> refused, LocalDate firstOpenDay) {
+        public LineCandidates(UUID statementLineId, List<Candidate> clear, List<Candidate> receive,
+                              List<Candidate> bounce, List<Candidate> present, BigDecimal suspenseBalance,
+                              boolean bankTrnSet, List<Leaf> leaves, List<Refused> refused) {
+            this(statementLineId, clear, receive, bounce, present, suspenseBalance, bankTrnSet, leaves, refused, null);
+        }
+    }
 
     /**
      * A document that fits the line by amount but that the action would refuse, and

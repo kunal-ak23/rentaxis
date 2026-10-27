@@ -23,12 +23,12 @@ class _L {
   static String gatePasses(bool ar) => ar ? 'تصاريح الدخول' : 'Gate passes';
   static String gatePassesSub(bool ar) => ar ? 'للزوار' : 'For your visitors';
   static String approvals(bool ar) => ar ? 'الموافقات' : 'Approvals';
-  static String approvalsSub(bool ar) =>
-      ar ? 'بانتظار ردك' : 'Waiting on you';
+  static String approvalsSub(bool ar) => ar ? 'بانتظار ردك' : 'Waiting on you';
   static String penalties(bool ar) => ar ? 'الغرامات' : 'Penalties';
   static String penaltiesSub(bool ar) => ar ? 'رسوم التأخير' : 'Late fees';
   static String saved(bool ar) => ar ? 'المحفوظة' : 'Saved listings';
-  static String savedSub(bool ar) => ar ? 'العقارات المحفوظة' : 'Your shortlist';
+  static String savedSub(bool ar) =>
+      ar ? 'العقارات المحفوظة' : 'Your shortlist';
   static String account(bool ar) => ar ? 'حسابي' : 'Account';
   static String accountSub(bool ar) =>
       ar ? 'الملف الشخصي والمستندات' : 'Profile and documents';
@@ -42,6 +42,20 @@ class ServicesHubScreen extends ConsumerWidget {
     final ar = context.isAr;
 
     final entries = <_Service>[
+      _Service(
+        icon: Icons.description_outlined,
+        tone: MiftahTone.brass,
+        label: ar ? 'العقود' : 'Contracts',
+        sub: ar ? 'مراجعة وحفظ العقد' : 'Review and save your contract',
+        route: '/contracts',
+      ),
+      _Service(
+        icon: Icons.event_repeat,
+        tone: MiftahTone.info,
+        label: ar ? 'التجديد' : 'Renewals',
+        sub: ar ? 'خطط إقامتك القادمة' : 'Plan your next tenancy',
+        route: '/renewals',
+      ),
       _Service(
         icon: Icons.handyman_rounded,
         tone: MiftahTone.info,
@@ -112,7 +126,7 @@ class ServicesHubScreen extends ConsumerWidget {
       children: [
         Text(
           _L.subtitle(ar),
-          style: ar ? MiftahType.ar(size: 13) : MiftahType.body(),
+          style: ar ? MiftahType.ar(size: 13) : MiftahType.body(color: context.miftah.textSecondary),
         ),
         const SizedBox(height: 18),
         GridView.count(
@@ -167,7 +181,7 @@ class _ServiceTile extends StatelessWidget {
             service.label,
             style: ar
                 ? MiftahType.ar(size: 15, weight: FontWeight.w700)
-                : MiftahType.cardTitle(),
+                : MiftahType.cardTitle(color: context.miftah.textPrimary),
           ),
           const SizedBox(height: 3),
           Text(

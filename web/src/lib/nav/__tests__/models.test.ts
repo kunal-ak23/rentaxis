@@ -5,7 +5,7 @@ import { accountingHome, buildAccountingNav, isBooksLive } from "../accountingNa
 import { buildCollectionsTabs } from "../collectionsModel";
 import { buildSettingsSections } from "../settingsModel";
 
-const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER", "RENTER", "SECURITY_GUARD"];
+const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER", "RENTER", "SECURITY_GUARD", "PROMOTER"];
 const hrefs = (role: UserRole, booksLive = true) =>
     buildAccountingNav(role, { booksLive }).flatMap(g => g.items.map(i => i.href));
 
@@ -19,7 +19,7 @@ describe("buildAccountingNav", () => {
             ["registers", ["general-ledger", "tenant-ledger", "trial-balance", "cheque-registers"]],
             ["receivablesPayables", ["aging", "opening-items", "vendors", "recognition", "penalties"]],
             ["bank", ["bank-accounts", "bank-reconciliation"]],
-            ["finalReports", ["balance-sheet", "company-pl", "property-pl", "property-statement", "vat-return"]],
+            ["finalReports", ["reports-hub", "balance-sheet", "company-pl", "property-pl", "property-statement", "vat-return"]],
             ["yearEnd", ["fiscal"]],
             ["setup", ["account-template", "charge-types", "import-batches", "reconciliation"]],
         ]);
@@ -38,7 +38,7 @@ describe("buildAccountingNav", () => {
         ]));
     });
 
-    it("offers a property manager the property reports, balance sheet and payables aging only", () => {
+    it("offers a property manager the property reports, balance sheet, payables aging and the Reports hub only", () => {
         const own = buildAccountingNav("PROPERTY_MANAGER", { booksLive: true })
             .flatMap(g => g.items).filter(i => !i.crossLink).map(i => i.href);
         expect(own.sort()).toEqual([
@@ -46,6 +46,7 @@ describe("buildAccountingNav", () => {
             "/dashboard/finance/reports/balance-sheet",
             "/dashboard/finance/reports/property-pl",
             "/dashboard/finance/reports/property-statement",
+            "/dashboard/reports",
         ]);
     });
 

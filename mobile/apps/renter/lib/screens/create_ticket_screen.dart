@@ -1,11 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../utils/renter_rules.dart';
+import '../utils/ticket_photo.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _ticketServiceProvider = Provider<TicketService>((ref) {
@@ -22,7 +23,12 @@ final _myLeasesForTicketProvider = FutureProvider.autoDispose<List<dynamic>>((
   ref,
 ) {
   final service = ref.watch(_leaseServiceProvider);
-  return service.getMyLeases();
+  return service.getMyLeases().then(
+    (rows) => rows
+        .whereType<Map<String, dynamic>>()
+        .where(isCurrentRenterLease)
+        .toList(),
+  );
 });
 
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
@@ -48,8 +54,6 @@ class _L {
   String get gallery => ar ? 'المعرض' : 'Gallery';
   String get document => ar ? 'مستند' : 'Document';
   String get submitTicket => ar ? 'إرسال الطلب' : 'Submit Ticket';
-  String get cameraPermissionRequired =>
-      ar ? 'إذن الكاميرا مطلوب' : 'Camera permission required';
   String get selectCategory =>
       ar ? 'الرجاء اختيار فئة' : 'Please select a category';
   String get selectPropertyUnit =>
@@ -150,35 +154,13 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   }
 
   Future<void> _pickFromCamera() async {
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_L(context.isAr).cameraPermissionRequired)),
-        );
-      }
-      return;
-    }
-
-    final picker = ImagePicker();
-    final image = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      maxHeight: 1080,
-      imageQuality: 80,
-    );
-    if (image != null) {
-      setState(() => _attachments.add(File(image.path)));
+    final path = await takeTicketPhoto(context);
+    if (path != null && mounted) {
+      setState(() => _attachments.add(File(path)));
     }
   }
 
   Future<void> _pickFromGallery() async {
-    final status = await Permission.photos.request();
-    // On some platforms, photos permission might not exist
-    if (!status.isGranted && !status.isLimited) {
-      // Try picking anyway - some platforms don't need explicit permission
-    }
-
     final picker = ImagePicker();
     final images = await picker.pickMultiImage(
       maxWidth: 1920,
@@ -216,7 +198,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_isSubmitting || !_formKey.currentState!.validate()) return;
     final l = _L(context.isAr);
     if (_selectedCategory == null) {
       ScaffoldMessenger.of(
@@ -248,13 +230,14 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       final ticket = await ref.read(_ticketServiceProvider).createTicket(data);
 
       // Upload attachments
+      var failedAttachments = 0;
       if (_attachments.isNotEmpty && ticket['id'] != null) {
         final service = ref.read(_ticketServiceProvider);
         for (final file in _attachments) {
           try {
             await service.uploadAttachment(ticket['id'], file.path);
           } catch (_) {
-            // Continue uploading remaining attachments
+            failedAttachments++;
           }
         }
       }
@@ -262,11 +245,17 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(l.ticketCreated),
+            content: Text(
+              failedAttachments == 0
+                  ? l.ticketCreated
+                  : (context.isAr
+                        ? 'تم إنشاء التذكرة، لكن تعذر رفع بعض المرفقات. أعد المحاولة من التذكرة.'
+                        : 'Ticket created, but some attachments failed. Retry from the ticket.'),
+            ),
             backgroundColor: AppColors.success,
           ),
         );
-        context.pop();
+        context.pushReplacement('/tickets/${ticket['id']}');
       }
     } catch (e) {
       if (mounted) {

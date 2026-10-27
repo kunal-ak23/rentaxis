@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.PromoAdDTO;
+import com.datagami.rentaxis.api.dto.PromoAdDtos;
 import com.datagami.rentaxis.api.dto.PromoAdRequest;
 import com.datagami.rentaxis.api.dto.PromoAdStatsDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessDTO;
@@ -121,11 +122,20 @@ public class PromotionAdminController {
         return tenantId;
     }
 
+    /** Live businesses; the shape callers used before addendum B. */
+    public ResponseEntity<Page<PromoBusinessDTO>> listBusinesses(Pageable pageable) {
+        return listBusinesses(false, pageable);
+    }
+
+    /** Live businesses, or with {@code ?archived=true} the archived ones only (addendum B). */
     @GetMapping("/businesses")
     public ResponseEntity<Page<PromoBusinessDTO>> listBusinesses(
+            @RequestParam(defaultValue = "false") boolean archived,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         UUID tenantId = requireTenant();
-        Page<PromoBusiness> page = promotionService.listBusinesses(tenantId, pageable);
+        Page<PromoBusiness> page = archived
+                ? promotionService.listBusinesses(tenantId, true, pageable)
+                : promotionService.listBusinesses(tenantId, pageable);
         // One grouped query for the page, not a COUNT per row. Spring Data's
         // default max page size is 2000, so per-row counting would let a single
         // request fire 2001 queries.
@@ -145,23 +155,49 @@ public class PromotionAdminController {
                                                            @Valid @RequestBody PromoBusinessRequest req) {
         UUID tenantId = requireTenant();
         PromoBusiness updated = promotionService.updateBusiness(tenantId, id, req);
-        return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessId(updated.getId())));
+        return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessIdAndArchivedAtIsNull(updated.getId())));
     }
 
+    /** Always succeeds (addendum B): {@code {"outcome": "DELETED" | "ARCHIVED"}}. */
     @DeleteMapping("/businesses/{id}")
-    public ResponseEntity<Void> deleteBusiness(@PathVariable UUID id) {
-        promotionService.deleteBusiness(requireTenant(), id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<Map<String, String>> deleteBusiness(@PathVariable UUID id) {
+        return ResponseEntity.ok(Map.of("outcome", promotionService.deleteBusiness(requireTenant(), id).name()));
+    }
+
+    /** An archived business back in the lists, still inactive; 400 if its name was taken meanwhile. */
+    @PostMapping("/businesses/{id}/restore")
+    public ResponseEntity<PromoBusinessDTO> restoreBusiness(@PathVariable UUID id) {
+        UUID tenantId = requireTenant();
+        PromoBusiness restored = promotionService.restoreBusiness(tenantId, id);
+        return ResponseEntity.ok(toDTO(restored, adRepository.countByBusinessIdAndArchivedAtIsNull(restored.getId())));
     }
 
     // -------------------------------------------------------------------- ads
 
+    /** Who last wrote each promoter ad (changeset 183); optional so unit tests building the controller keep working. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.UserRepository users;
+
+    /** Every approval state; the shape callers used before changeset 183. */
+    public ResponseEntity<Page<PromoAdDTO>> listAds(UUID businessId, Pageable pageable) {
+        return listAds(businessId, null, false, pageable);
+    }
+
+    /**
+     * {@code approvalStatus} (PENDING / APPROVED / REJECTED) narrows the list; omitted,
+     * every state. Live ads, or with {@code ?archived=true} the archived ones only
+     * (addendum B).
+     */
     @GetMapping("/ads")
     public ResponseEntity<Page<PromoAdDTO>> listAds(
             @RequestParam(required = false) UUID businessId,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus approvalStatus,
+            @RequestParam(defaultValue = "false") boolean archived,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         UUID tenantId = requireTenant();
-        Page<PromoAd> page = promotionService.listAds(tenantId, businessId, pageable);
+        Page<PromoAd> page = approvalStatus == null && !archived
+                ? promotionService.listAds(tenantId, businessId, pageable)
+                : promotionService.listAds(tenantId, businessId, approvalStatus, archived, pageable);
 
         List<UUID> adIds = page.getContent().stream().map(PromoAd::getId).toList();
         // Three batched queries for the whole page, never one per row.
@@ -169,11 +205,13 @@ public class PromotionAdminController {
         Map<UUID, PromotionStatsService.Totals> totals =
                 adIds.isEmpty() ? Map.of() : statsService.totals(tenantId, adIds);
         Map<UUID, String> businessNames = batchBusinessNames(tenantId, page.getContent());
+        Map<UUID, String> writers = writerNames(tenantId, page.getContent());
 
         return ResponseEntity.ok(page.map(a -> toDTO(a,
                 businessNames.getOrDefault(a.getBusinessId(), ""),
                 targeting.getOrDefault(a.getId(), List.of()),
-                totals.getOrDefault(a.getId(), PromotionStatsService.Totals.EMPTY))));
+                totals.getOrDefault(a.getId(), PromotionStatsService.Totals.EMPTY),
+                a.getPromoterUserId() == null ? null : writers.get(a.getPromoterUserId()))));
     }
 
     @PostMapping("/ads")
@@ -195,13 +233,28 @@ public class PromotionAdminController {
                 promotionService.getBusiness(tenantId, updated.getBusinessId()).getNameEn(),
                 promotionService.targetedPropertyIds(id),
                 statsService.totals(tenantId, List.of(id))
-                        .getOrDefault(id, PromotionStatsService.Totals.EMPTY)));
+                        .getOrDefault(id, PromotionStatsService.Totals.EMPTY),
+                updated.getPromoterUserId() == null ? null
+                        : writerNames(tenantId, List.of(updated)).get(updated.getPromoterUserId())));
     }
 
+    /** Always succeeds (addendum B): {@code {"outcome": "DELETED" | "ARCHIVED"}}. */
     @DeleteMapping("/ads/{id}")
-    public ResponseEntity<Void> deleteAd(@PathVariable UUID id) {
-        promotionService.deleteAd(requireTenant(), id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<Map<String, String>> deleteAd(@PathVariable UUID id) {
+        return ResponseEntity.ok(Map.of("outcome", promotionService.deleteAd(requireTenant(), id).name()));
+    }
+
+    /** An archived ad back in the lists, still inactive; 400 while its business is archived. */
+    @PostMapping("/ads/{id}/restore")
+    public ResponseEntity<PromoAdDTO> restoreAd(@PathVariable UUID id) {
+        UUID tenantId = requireTenant();
+        PromoAd restored = promotionService.restoreAd(tenantId, id);
+        return ResponseEntity.ok(toDTO(restored,
+                promotionService.getBusiness(tenantId, restored.getBusinessId()).getNameEn(),
+                promotionService.targetedPropertyIds(id),
+                statsService.totals(tenantId, List.of(id)).getOrDefault(id, PromotionStatsService.Totals.EMPTY),
+                restored.getPromoterUserId() == null ? null
+                        : writerNames(tenantId, List.of(restored)).get(restored.getPromoterUserId())));
     }
 
     @GetMapping("/ads/{id}/stats")
@@ -218,6 +271,18 @@ public class PromotionAdminController {
         List<UUID> businessIds = ads.stream().map(PromoAd::getBusinessId).distinct().toList();
         return businessRepository.findByTenantIdAndIdIn(tenantId, businessIds).stream()
                 .collect(Collectors.toMap(PromoBusiness::getId, PromoBusiness::getNameEn));
+    }
+
+    /** Names of the promoters who last wrote these ads, in one query; empty when none did. */
+    private Map<UUID, String> writerNames(UUID tenantId, List<PromoAd> ads) {
+        List<UUID> ids = ads.stream().map(PromoAd::getPromoterUserId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty() || users == null) {
+            return Map.of();
+        }
+        return users.findByTenantIdAndIdIn(tenantId, ids).stream()
+                .collect(Collectors.toMap(com.datagami.rentaxis.domain.entity.User::getId,
+                        com.datagami.rentaxis.domain.entity.User::getName));
     }
 
     private Map<UUID, Long> batchAdCounts(UUID tenantId, List<PromoBusiness> businesses) {
@@ -239,29 +304,17 @@ public class PromotionAdminController {
     }
 
     private PromoBusinessDTO toDTO(PromoBusiness b, long adCount) {
-        List<String> domains = b.getAllowedDomains() == null || b.getAllowedDomains().isBlank()
-                ? List.of()
-                : Arrays.stream(b.getAllowedDomains().split(",")).map(String::trim).toList();
-        return new PromoBusinessDTO(b.getId(), b.getNameEn(), b.getNameAr(), imageForDto(b.getLogoUrl()),
-                b.getCategory(), b.getPhoneE164(), b.getWhatsappE164(), domains,
-                b.isActive(), adCount, b.getCreatedAt(), b.getUpdatedAt());
+        return PromoAdDtos.business(b, adCount, this::imageForDto);
     }
 
-    /**
-     * 26 positional arguments, seven pairs of which are adjacent and share a
-     * type. Keep the arguments one per line and in the record's declared order
-     * so a transposition is visible in review — the compiler cannot catch one.
-     * {@code listAds_mapsEverySwapProneFieldToTheRightSlot} is the backstop.
-     */
+    /** See {@link PromoAdDtos#ad}; {@code submittedByName} is the promoter who last wrote the ad. */
     private PromoAdDTO toDTO(PromoAd a, String businessName, List<UUID> propertyIds,
                             PromotionStatsService.Totals totals) {
-        return new PromoAdDTO(a.getId(), a.getBusinessId(), businessName,
-                a.getTitleEn(), a.getTitleAr(), a.getSubtitleEn(), a.getSubtitleAr(),
-                imageForDto(a.getBackgroundImageUrl()), a.getAccentColor(),
-                a.getCtaType(), a.getCtaLabelEn(), a.getCtaLabelAr(), a.getCtaUrl(),
-                a.getCouponCode(), a.getCouponTermsEn(), a.getCouponTermsAr(),
-                a.getStartsAt(), a.getEndsAt(), a.getPriority(), a.getPlacement(), a.isActive(),
-                propertyIds, totals.impressions(), totals.clicks(),
-                a.getCreatedAt(), a.getUpdatedAt());
+        return toDTO(a, businessName, propertyIds, totals, null);
+    }
+
+    private PromoAdDTO toDTO(PromoAd a, String businessName, List<UUID> propertyIds,
+                            PromotionStatsService.Totals totals, String submittedByName) {
+        return PromoAdDtos.ad(a, businessName, propertyIds, totals, submittedByName, this::imageForDto);
     }
 }

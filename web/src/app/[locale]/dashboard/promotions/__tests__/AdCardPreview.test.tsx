@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
-import { AdCardPreview, toCssColour } from '../_components/AdCardPreview'
+import { AdCardPreview, toCssColour, whiteReadsBetter } from '../_components/AdCardPreview'
 
 afterEach(() => {
     cleanup()
@@ -75,3 +75,54 @@ describe('AdCardPreview fallback surface', () => {
     })
 
 })
+
+describe('AdCardPreview business logo', () => {
+    const base = { title: 'Half off shawarma', businessName: 'Spice Bazaar' }
+    const route = '/api/v1/public/promo-images/0b0f2c1e-1111-4222-8333-944455556666.png'
+
+    it('shows the logo through the admin image route, beside the copy and above the CTA', () => {
+        render(<AdCardPreview {...base} ctaType="COUPON" logoUrl={route} />)
+        const logo = screen.getByTestId('ad-card-logo')
+        expect(logo.getAttribute('src'))
+            .toBe('/api/proxy/v1/promotions/images/0b0f2c1e-1111-4222-8333-944455556666.png')
+        // Top row, at its end: after the title in DOM order (dir="rtl" mirrors
+        // it, as Flutter's Row does) and before the CTA's own row.
+        expect(screen.getByText('Half off shawarma').compareDocumentPosition(logo)
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(logo.compareDocumentPosition(screen.getByTestId('ad-card-cta'))
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(logo.className).toContain('h-11 w-11')
+    })
+
+    it('shows the logo on a card with no call to action', () => {
+        render(<AdCardPreview {...base} ctaType="NONE" logoUrl={route} />)
+        expect(screen.getByTestId('ad-card-logo')).toBeInTheDocument()
+        expect(screen.queryByTestId('ad-card-cta')).toBeNull()
+    })
+
+    it('draws no logo when the business has none', () => {
+        render(<AdCardPreview {...base} ctaType="COUPON" />)
+        expect(screen.queryByTestId('ad-card-logo')).toBeNull()
+    })
+})
+
+describe('AdCardPreview copy colour follows the accent, as on the phone', () => {
+    it('picks white only where it beats ink: a deep blue, not Material blue', () => {
+        expect(whiteReadsBetter('#2F5FE0')).toBe(true)
+        expect(whiteReadsBetter('#FF2F5FE0')).toBe(true)
+        expect(whiteReadsBetter('#2196F3')).toBe(false)
+        expect(whiteReadsBetter('#FBF3E2')).toBe(false)
+    })
+
+    it('puts white copy and a white pill on a dark accent', () => {
+        render(<AdCardPreview title="20% off" subtitle="Coffee" ctaType="COUPON" accentColor="#2F5FE0" />)
+        expect(screen.getByText('20% off').style.color).toBe('rgb(255, 255, 255)')
+        expect(screen.getByTestId('ad-card-cta').style.background).toBe('rgb(255, 255, 255)')
+    })
+
+    it('keeps ink copy on a light accent', () => {
+        render(<AdCardPreview title="20% off" subtitle="Coffee" ctaType="COUPON" accentColor="#FBF3E2" />)
+        expect(screen.getByText('20% off').style.color).not.toBe('rgb(255, 255, 255)')
+    })
+})
+

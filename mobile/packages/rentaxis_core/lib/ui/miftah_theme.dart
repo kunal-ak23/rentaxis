@@ -14,6 +14,28 @@ class MiftahTheme {
   static ThemeData get light => _build(Brightness.light);
   static ThemeData get dark => _build(Brightness.dark);
 
+  /// System bar icons for content of [backdrop] brightness, with the
+  /// navigation bar painted [navigationBar] where Android still paints it
+  /// (before Android 15; from 15 the app draws behind both bars).
+  ///
+  /// Screens without an AppBar set nothing themselves, so each app applies this
+  /// at its root and the dark sign-in screens apply the dark variant: otherwise
+  /// the icons keep whatever the previous screen set, often white on white.
+  static SystemUiOverlayStyle systemBars(
+    Brightness backdrop, {
+    required Color navigationBar,
+  }) {
+    final dark = backdrop == Brightness.dark;
+    final icons = dark ? Brightness.light : Brightness.dark;
+    return SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: icons,
+      statusBarBrightness: backdrop, // iOS names the backdrop, not the icons
+      systemNavigationBarColor: navigationBar,
+      systemNavigationBarIconBrightness: icons,
+    );
+  }
+
   static ThemeData _build(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
 
@@ -62,9 +84,9 @@ class MiftahTheme {
         centerTitle: false,
         titleSpacing: MiftahSpacing.page,
         titleTextStyle: MiftahType.title(color: textPrimary),
-        systemOverlayStyle: isDark
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+        // Not SystemUiOverlayStyle.dark: that one also paints the navigation
+        // bar black under a light screen.
+        systemOverlayStyle: systemBars(brightness, navigationBar: surface),
         iconTheme: IconThemeData(color: textPrimary, size: 22),
       ),
 
@@ -114,6 +136,15 @@ class MiftahTheme {
           borderRadius: BorderRadius.circular(MiftahRadii.tile),
           borderSide: const BorderSide(color: MiftahColors.danger),
         ),
+      ),
+
+      // Without this the caret takes colorScheme.primary — ink in light mode,
+      // invisible on the dark fields of the sign-in screens. Brass reads on
+      // those and on the light inputs alike.
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: MiftahColors.brass,
+        selectionHandleColor: MiftahColors.brass,
+        selectionColor: MiftahColors.brass.withValues(alpha: 0.32),
       ),
 
       filledButtonTheme: FilledButtonThemeData(

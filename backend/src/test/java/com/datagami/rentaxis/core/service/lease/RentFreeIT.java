@@ -6,6 +6,8 @@ import com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO;
+import com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest;
+import com.datagami.rentaxis.api.dto.lease.ReductionPreviewDTO;
 import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.AccountService;
@@ -50,6 +52,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RentFreeIT extends AbstractPostgresIT {
 
     @Autowired RentFreeService rentFree;
+    @Autowired LeaseReductionService reductions;
+    @Autowired LeaseTransferService transfers;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseAddendumCreditRepository addendumCredits;
     @Autowired LeaseRenewalService renewal;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
@@ -136,6 +141,59 @@ class RentFreeIT extends AbstractPostgresIT {
         String rows = tx.execute(s -> contracts.buildSection3Rows(leaseRepo.findById(leaseId).orElseThrow()));
         assertThat(rows).contains("Rent-free period 01/06/2026 – 30/06/2026 (30 days): AED 6,000.00")
                 .contains("فترة إعفاء من الإيجار").contains("66,000.00");
+    }
+
+    /**
+     * Follow-up ruling R7 (100-h): a reduction's new amount is the new HEADLINE. On a line of
+     * 72,000 with a 6,000 free June (net 66,000), "60,000 from 01/01/2027" re-applies the
+     * concession at the new rate (6,000 × 60/72 = 5,000), so the rest of the term (151 of 365
+     * days) is worth 55,000 × 151 ÷ 365 = 22,753.42 — not 60,000 × 151 ÷ 365 = 24,821.92, which
+     * would drop the concession. The credit stores the headline and the concession, so a renewal
+     * re-grosses from 60,000 (concessions do not renew) and a transfer carries 60,000 pro rata.
+     */
+    @Test
+    void aReductionOnARentFreeLineTakesTheNewHeadlineAndReappliesTheConcession() {
+        UUID leaseId = draft();
+        rentFree.replace(leaseId, List.of(JUNE_EXACT));
+        chequeGeneration.generate(leaseId, new GenerateChequesRequest(4, null, null, "Emirates NBD", null, false, null));
+        fixtures.numberGrid(leaseId, LeaseTestFixtures.nextChequeBook());
+        posting.post(leaseId);
+        UUID rentLine = rentLine(leaseId).id();
+        LocalDate e = LocalDate.of(2027, 1, 1);
+        ReduceLeaseRequest cut = new ReduceLeaseRequest(e, null, "Rent renegotiated", null,
+                List.of(new ReduceLeaseRequest.LineReduction(rentLine, new BigDecimal("60000"))), "CREDIT", List.of(), List.of());
+
+        ReductionPreviewDTO preview = reductions.preview(leaseId, cut);
+        assertThat(preview.problems()).isEmpty();
+        assertThat(preview.lines()).singleElement().satisfies(l -> {
+            assertThat(l.remainingDays()).isEqualTo(151);
+            assertThat(l.currentHeadline()).isEqualByComparingTo("72000");
+            assertThat(l.newHeadline()).isEqualByComparingTo("60000");
+            assertThat(l.newRentFree()).isEqualByComparingTo("5000.00");
+            assertThat(l.newLineAmount()).isEqualByComparingTo("55000.00");
+            assertThat(l.remainingAfter()).isEqualByComparingTo("22753.42");
+            assertThat(l.credit()).isEqualByComparingTo(l.remainingBefore().subtract(new BigDecimal("22753.42")));
+        });
+
+        reductions.reduce(leaseId, cut);
+        var stored = tx.execute(s -> addendumCredits.findByLeaseLineIdIn(List.of(rentLine))).get(0);
+        assertThat(stored.getNewGrossAmount()).isEqualByComparingTo("60000");
+        assertThat(stored.getNewRentFreeAmount()).isEqualByComparingTo("5000.00");
+        assertThat(stored.getNewLineAmount()).isEqualByComparingTo("55000.00");
+        assertThat(rentLine(leaseId).currentGrossAmount()).isEqualByComparingTo("60000");
+        assertThat(rentLine(leaseId).currentAmount()).isEqualByComparingTo("55000.00");
+
+        var same = renewal.planFor(leaseId, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(null,
+                LocalDate.of(2027, 6, 1), LocalDate.of(2028, 5, 31), null, true, null, null, null));
+        assertThat(same.baseRent()).as("re-grossed: the concession does not renew").isEqualByComparingTo("60000");
+        assertThat(same.newRent()).isEqualByComparingTo("60000");
+
+        var moved = tx.execute(s -> transfers.defaultLines(leaseRepo.findById(leaseId).orElseThrow(),
+                LocalDate.of(2027, 3, 1), LocalDate.of(2027, 5, 31)));
+        // 92 of 365 days of the 60,000 headline.
+        assertThat(moved).filteredOn(l -> l.grossAmount().compareTo(new BigDecimal("5000")) != 0)
+                .extracting(com.datagami.rentaxis.api.dto.lease.LeaseLineInput::grossAmount)
+                .contains(new BigDecimal("15123.29"));
     }
 
     @Test
