@@ -54,6 +54,8 @@ public class BankStatementImportService {
     private final NamedParameterJdbcTemplate jdbc;
     private final java.time.Clock clock;
     private final com.datagami.rentaxis.core.service.ledger.BankLockService bankLock;
+    /** #441 r6: the check, re-run on a delete that names its proof (lazily: it reads this service's tables). */
+    private final org.springframework.beans.factory.ObjectProvider<BankReconciliationService> reconciliations;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -65,8 +67,10 @@ public class BankStatementImportService {
     public BankStatementImportService(BankAccountLedgerService ledgers, BankStatementProfileRepository profiles,
                                       BankStatementImportRepository imports, CsvStatementParser csv,
                                       XlsxStatementParser xlsx, NamedParameterJdbcTemplate jdbc, java.time.Clock clock,
-                                      com.datagami.rentaxis.core.service.ledger.BankLockService bankLock) {
+                                      com.datagami.rentaxis.core.service.ledger.BankLockService bankLock,
+                                      org.springframework.beans.factory.ObjectProvider<BankReconciliationService> reconciliations) {
         this.bankLock = bankLock;
+        this.reconciliations = reconciliations;
         this.clock = clock;
         this.ledgers = ledgers;
         this.profiles = profiles;
@@ -1306,6 +1310,18 @@ public class BankStatementImportService {
      */
     @Transactional
     public void delete(UUID importId) {
+        delete(importId, null);
+    }
+
+    /**
+     * As {@link #delete(UUID)}; {@code proofImportId} (#441 r6): the statement the reconciliation
+     * check names as proof in its delete step — only its own button sends it. The server re-runs
+     * the check: only when it offers deleting this import on that statement's word does a line the
+     * statement does not hold go despite undone match history (with an audit record of the proof
+     * and the text shown). An unknown or forged proof is refused.
+     */
+    @Transactional
+    public void delete(UUID importId, UUID proofImportId) {
         UUID t = BankAccountLedgerService.requireTenant();
         BankStatementImport imp = imports.findById(importId).orElseThrow(() -> new NotFoundException("Import not found"));
         if (!t.equals(imp.getTenantId())) throw new NotFoundException("Import not found");
@@ -1332,40 +1348,36 @@ public class BankStatementImportService {
                     + "matches, so importing a statement that holds these lines too, before deleting, also works.",
                     "count", confirmed);
         }
-        // #441 review r2: proven copies only this import brought go with it, history or not (their
-        // audit record keeps it); none is in a confirmed match (refused above).
-        // #441 r4/r5: a line is left out by the whole statement the check names for its day — an
-        // import made after this one, holding lines of that day and the day whole (its lines run
-        // before and after it), that does not hold the line. Worked out now, against that one
-        // statement only; the check told the user this relies on it being exported after this import.
-        jdbc.update("""
-                update bank_statement_lines l set copy_proven_by = (
-                    select w.id from bank_statement_imports w
-                     where w.tenant_id = l.tenant_id and w.bank_account_id = l.bank_account_id and w.id <> :i
-                       and w.imported_at > (select x.imported_at from bank_statement_imports x where x.id = :i and x.tenant_id = :t)
-                       and w.first_date < l.txn_date and w.last_date > l.txn_date
-                       and exists (select 1 from bank_statement_line_sources ws
-                                     join bank_statement_lines wl on wl.id = ws.line_id and wl.tenant_id = ws.tenant_id
-                                    where ws.import_id = w.id and ws.tenant_id = w.tenant_id and wl.txn_date = l.txn_date)
-                       and not exists (select 1 from bank_statement_line_sources s
-                                        where s.line_id = l.id and s.tenant_id = l.tenant_id and s.import_id = w.id)
-                     order by w.imported_at desc, w.id limit 1)
-                where l.tenant_id = :t and l.import_id = :i and l.copy_proven_by is null and """ + ONLY_THIS_IMPORT, p);
-        List<String> copies = jdbc.queryForList("""
-                select l.line_hash from bank_statement_lines l
-                where l.tenant_id = :t and l.import_id = :i
-                  and l.copy_proven_by is not null and """ + ONLY_THIS_IMPORT
-                + """
-                  and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)""",
-                p, String.class);
-        List<LocalDate> copyDays = copies.isEmpty() ? List.of() : jdbc.queryForList("""
-                select distinct txn_date from bank_statement_lines
-                where tenant_id = :t and bank_account_id = :b and line_hash in (:h)""",
-                new MapSqlParameterSource(p.getValues()).addValue("h", copies), LocalDate.class);
-        if (!copies.isEmpty()) {
-            removeCopies(t, imp.getBankAccountId(), copies, "removed with its import " + imp.getFileName()
-                    + " on the user's word that the statement named as proof, imported after it and holding its day whole"
-                    + " without it, is the bank's current one (a copy, or a line the bank has since moved or dropped)");
+        // #441 r6: a line with undone match history goes only on the check's own offer — the request
+        // names the statement the check names as proof, and the check, re-run now, offers deleting
+        // this import on that statement's word for the day. Otherwise delete is exactly as before.
+        List<LocalDate> copyDays = List.of();
+        if (proofImportId != null) {
+            List<BankReconciliationService.DeleteOffer> offers = reconciliations.getObject().deleteOffers(imp.getBankAccountId())
+                    .stream().filter(o -> o.proof().equals(proofImportId) && o.imports().contains(importId)).toList();
+            if (offers.isEmpty()) {
+                throw BankRecRefusal.refuse("deleteNotOffered", "The reconciliation check does not offer deleting this import "
+                        + "on the word of that statement; delete it without it, or follow the check as it reads now");
+            }
+            copyDays = offers.stream().map(BankReconciliationService.DeleteOffer::day).toList();
+            String shown = offers.stream().map(BankReconciliationService.DeleteOffer::text).collect(java.util.stream.Collectors.joining(" | "));
+            MapSqlParameterSource cp = new MapSqlParameterSource(p.getValues()).addValue("w", proofImportId).addValue("d", copyDays);
+            // The lines only this import holds on those days that the named statement does not hold.
+            List<String> copies = jdbc.queryForList("""
+                    select l.line_hash from bank_statement_lines l
+                    where l.tenant_id = :t and l.import_id = :i and l.txn_date in (:d) and """ + ONLY_THIS_IMPORT + """
+                      and not exists (select 1 from bank_statement_line_sources s
+                                       where s.line_id = l.id and s.tenant_id = l.tenant_id and s.import_id = :w)
+                      and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)""",
+                    cp, String.class);
+            if (!copies.isEmpty()) {
+                jdbc.update("""
+                        update bank_statement_lines set copy_proven_by = :w
+                        where tenant_id = :t and bank_account_id = :b and line_hash in (:h)""", cp.addValue("h", copies));
+                removeCopies(t, imp.getBankAccountId(), copies, "removed with its import " + imp.getFileName()
+                        + " on the user's word, from the reconciliation check's own step, that the statement named as proof is the"
+                        + " bank's current one; the check read: " + shown);
+            }
         }
         Integer history = jdbc.queryForObject("""
                 select count(*) from bank_statement_lines l

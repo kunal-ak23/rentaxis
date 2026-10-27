@@ -262,6 +262,17 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 .filter(d -> !skip.contains(d)).toArray(LocalDate[]::new));
     }
 
+    /**
+     * #441 r6: deletes {@code importId} the way the page's own button for the check's delete step
+     * does — with the proof the current check names for it — or plainly when the check offers none.
+     */
+    private void deleteAsOffered(UUID importId, UUID recId) {
+        UUID proof = recs.get(recId).deleteOffers().stream()
+                .filter(o -> o.imports().stream().anyMatch(i -> i.id().equals(importId)))
+                .map(BankRecDTOs.DeleteOffer::proofImportId).findFirst().orElse(null);
+        imports.delete(importId, proof);
+    }
+
     private boolean backValueSeen() {
         return jdbc.queryForObject("select back_value_seen from bank_accounts where id = ?", Boolean.class, ei.getId());
     }
@@ -2281,7 +2292,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         assertThat(check(r, "LINE_ORDER").message()).contains("On 11/09/2026 an import kept a line")
                 .contains("Import a statement that holds 11/09/2026 whole, exported now from the bank")
-                .contains("this check then names the import to delete");
+                .contains("this check then names the imports to delete on its word");
         assertThatThrownBy(() -> recs.finalizeRec(id)).isInstanceOf(RuntimeException.class);
         assertThat(reconciledThrough()).isNull();
 
@@ -2308,7 +2319,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "LINE_ORDER").message()).contains("the statement whole.csv held the day whole")
                 .contains("If whole.csv was exported from the bank after the import that brought them")
                 .contains("delete cut.csv (11/09/2026–11/09/2026)").doesNotContain("undo the match");
-        imports.delete(cut.importId());
+        deleteAsOffered(cut.importId(), id);
         assertThat(jdbc.queryForList("select running_balance || ' ' || file_name || ' ' || proof_file_name from bank_statement_removed_lines "
                 + "where bank_account_id = ? order by running_balance", String.class, ei.getId()))
                 .containsExactly("990.00 cut.csv whole.csv", "995.00 cut.csv whole.csv");
@@ -2378,11 +2389,11 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         List<UUID> copies = jdbc.queryForList("select id from bank_statement_lines where bank_account_id = ? and import_id = ?",
                 UUID.class, ei.getId(), cut.importId());
         String refusal1 = null;
-        try { imports.delete(cut.importId()); } catch (RuntimeException e) { refusal1 = e.getMessage(); }
+        try { deleteAsOffered(cut.importId(), id); } catch (RuntimeException e) { refusal1 = e.getMessage(); }
         assertThat(refusal1).contains("undo those matches first");
         for (UUID c : copies) if (matchOf.get(c) != null) matches.undo(matchOf.get(c), true, SEP_30, "copy");
         String refusal2 = null;
-        try { imports.delete(cut.importId()); } catch (RuntimeException e) { refusal2 = e.getMessage(); }
+        try { deleteAsOffered(cut.importId(), id); } catch (RuntimeException e) { refusal2 = e.getMessage(); }
         assertThat(refusal2).as("the remedy the check names can be carried out").isNull();
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ? "
                 + "and match_ids is not null and proof_file_name = 'whole.csv'", Integer.class, ei.getId())).isEqualTo(2);
@@ -2509,8 +2520,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         // In that order: delete first is refused, undo then delete goes through.
         assertThatThrownBy(() -> imports.delete(a.importId())).hasMessageContaining("undo those matches first");
         matches.undo(chqMatch, true, SEP_30, "re-dated by the bank");
-        imports.delete(a.importId());
-        imports.delete(b.importId());
+        deleteAsOffered(a.importId(), id);
+        deleteAsOffered(b.importId(), id);
         // #441 r4: on an account that back-values, the statement no longer confirms 10/09 either.
         assertThat(dayRows()).filteredOn(d -> !d.endsWith(":true:false")).containsExactly("2026-09-10:false:true",
                 "2026-09-11:false:true", "2026-09-12:false:true");
@@ -2681,7 +2692,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         for (BankRecDTOs.ImportRow row : imports.history(ei.getId())) {
             if (row.fileName().equals("sep-now.csv")) continue;
             if (!msg.contains(row.fileName())) continue;
-            try { imports.delete(row.id()); } catch (RuntimeException e) { refusals.add(row.fileName() + ": " + e.getMessage()); }
+            try { deleteAsOffered(row.id(), id); } catch (RuntimeException e) { refusals.add(row.fileName() + ": " + e.getMessage()); }
         }
         assertThat(refusals).as("every import the text names can be deleted").isEmpty();
         // #441 r5: old-cut.csv came after sep-now.csv, which cannot override it; the check asks for a newer
@@ -2702,13 +2713,13 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(msg).contains("the statement sep-now-2.csv, which holds the day whole").contains("old-cut.csv");
         for (BankRecDTOs.ImportRow row : imports.history(ei.getId())) {
             if (row.fileName().equals("sep-now-2.csv") || !msg.contains(row.fileName())) continue;
-            imports.delete(row.id());
+            deleteAsOffered(row.id(), id);
         }
         // Then the check names sep-now.csv too (it holds the day's lines, imported before sep-now-2.csv).
         msg = check(recs.get(id), "LINE_ORDER").message();
         for (BankRecDTOs.ImportRow row : imports.history(ei.getId())) {
             if (row.fileName().equals("sep-now-2.csv") || !msg.contains(row.fileName())) continue;
-            imports.delete(row.id());
+            deleteAsOffered(row.id(), id);
         }
         assertThat(jdbc.queryForObject("select proof_file_name from bank_statement_removed_lines where bank_account_id = ? "
                 + "and description = 'MISC'", String.class, ei.getId())).isEqualTo("sep-now-2.csv");
@@ -2806,8 +2817,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         String msg = check(recs.get(id), "LINE_ORDER").message();
         assertThat(msg).contains("the statement sep-now-again.csv, which holds the day whole")
                 .contains("make the day its alone: delete sep-old.csv (10/09/2026–12/09/2026), cut.csv (11/09/2026–11/09/2026)");
-        imports.delete(a.importId());
-        imports.delete(b.importId());
+        deleteAsOffered(a.importId(), id);
+        deleteAsOffered(b.importId(), id);
         assertThat(jdbc.queryForObject("select proof_file_name from bank_statement_removed_lines where bank_account_id = ? "
                 + "and description = 'CHQ 000123'", String.class, ei.getId())).isEqualTo("sep-now-again.csv");
         recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(new BankRecDTOs.DayTotalInput(sep11, new BigDecimal("10.00"),
@@ -2822,6 +2833,111 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
+
+
+    private UUID r6Setup() {
+        jv(AUG_31, marinaBank, "1000.00");
+        imports.importFile(ei.getId(), "sep-old.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,025.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        BankRecDTOs.ImportResult d = imports.importFile(ei.getId(), "day.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,NEW FEE,,7.00,,"1,013.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        UUID m = book("NEW FEE", "CHARGE").matchId();
+        matches.undo(m, true, SEP_30, "rebook");
+        return d.importId();
+    }
+
+    private String r6Delete(UUID imp) {
+        try { imports.delete(imp); return null; } catch (RuntimeException e) { return e.getMessage(); }
+    }
+
+    private int newFees() {
+        return jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and description = 'NEW FEE'",
+                Integer.class, ei.getId());
+    }
+
+    private static final String STALE_WHOLE = """
+            10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+            11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+            12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,025.00"
+
+            """;
+
+    /** REVIEW PROBE r6a: a newer statement spanning 11/09 with no line on it proves nothing. */
+    @Test
+    void reviewProbeR6aNewerSpanWithoutTheDay() {
+        UUID d = r6Setup();
+        imports.importFile(ei.getId(), "span.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,025.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        String r = r6Delete(d);
+        assertThat(r).isNotNull();
+        assertThat(newFees()).isEqualTo(1);
+    }
+
+    /** REVIEW PROBE r6b: two later whole statements, the newest holding the line: it stays. */
+    @Test
+    void reviewProbeR6bTwoWholeStatements() {
+        UUID d = r6Setup();
+        imports.importFile(ei.getId(), "stale-whole.csv", (HEAD + STALE_WHOLE).getBytes(StandardCharsets.UTF_8), null, false);
+        imports.importFile(ei.getId(), "now-whole.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,NEW FEE,,7.00,,"1,013.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,018.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        String r = r6Delete(d);
+        assertThat(newFees()).isEqualTo(1);
+    }
+
+    /** REVIEW PROBE r6c: the proof statement deleted first: the history refusal stands again. */
+    @Test
+    void reviewProbeR6cProofDeletedFirst() {
+        UUID d = r6Setup();
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "stale-whole.csv", (HEAD + STALE_WHOLE).getBytes(StandardCharsets.UTF_8), null, false);
+        String rw = r6Delete(w.importId());
+        String r = r6Delete(d);
+        assertThat(rw).isNull();
+        assertThat(r).isNotNull();
+        assertThat(newFees()).isEqualTo(1);
+    }
+
+    /**
+     * #441 review r6 (r6d): a later stale whole download, then an ordinary delete (no proof sent): it is
+     * refused for the undone match history exactly as on main, and nothing is removed.
+     */
+    @Test
+    void reviewProbeR6dLaterStaleWholeOrdinaryDelete() {
+        UUID d = r6Setup();
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "stale-whole.csv", (HEAD + STALE_WHOLE).getBytes(StandardCharsets.UTF_8), null, false);
+        String r = r6Delete(d);
+        assertThat(w.status()).isEqualTo("IMPORTED");
+        assertThat(r).contains("match history");
+        assertThat(newFees()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+    }
+
+    /**
+     * #441 r6: a forged proof — a statement the check does not name for this import — is refused, and
+     * nothing is removed; the plain delete keeps main's refusal.
+     */
+    @Test
+    void aDeleteWithAProofTheCheckDoesNotNameIsRefused() {
+        UUID d = r6Setup();
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "stale-whole.csv", (HEAD + STALE_WHOLE).getBytes(StandardCharsets.UTF_8), null, false);
+        assertThatThrownBy(() -> imports.delete(d, w.importId())).hasMessageContaining("does not offer deleting this import");
+        assertThatThrownBy(() -> imports.delete(d, d)).hasMessageContaining("does not offer deleting this import");
+        assertThat(newFees()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+    }
+
 
     /**
      * #438 review: the whole-then-delete remedy never tells the user to delete an import that

@@ -582,7 +582,7 @@ public class BankReconciliationService {
                 adjustedBank, adjustedBook, difference, dit, unpresented, bookedAfter, unrecorded, withoutEvidence,
                 byMethod, checks, canFinalize, Instant.now(clock), userName(BankStatementImportService.currentUserId()),
                 r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
-                unprovenDays, dayTotalsVerdict(dayVerdicts), remedy.reopenThrough());
+                unprovenDays, dayTotalsVerdict(dayVerdicts), remedy.reopenThrough(), offersFor(t, copies));
     }
 
     /**
@@ -1142,9 +1142,19 @@ public class BankReconciliationService {
      * {@code booked}: those of them in a confirmed match.
      */
     record KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked, String whole,
-                      List<String> others, List<String> othersBooked) {
+                      List<String> others, List<String> othersBooked, List<UUID> holderIds, UUID proofId, UUID wholeId,
+                      List<UUID> otherIds) {
         KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked) {
-            this(holders, proof, proven, booked, null, List.of(), List.of());
+            this(holders, proof, proven, booked, null, List.of(), List.of(), new ArrayList<>(), null, null, List.of());
+        }
+
+        /** #441 r6: the statement the check names as proof for deleting imports, and the imports it names. */
+        UUID offerProof() {
+            return proof != null ? proofId : wholeId;
+        }
+
+        List<UUID> offerImports() {
+            return proof != null ? holderIds : wholeId != null ? otherIds : List.of();
         }
     }
 
@@ -1153,8 +1163,8 @@ public class BankReconciliationService {
         Map<LocalDate, KeptCopies> out = new TreeMap<>();
         if (unproven.isEmpty()) return out;
         jdbc.query("""
-                select l.txn_date, l.description, l.amount, l.running_balance, i.file_name, i.first_date, i.last_date,
-                       pi.file_name as proof_file,
+                select l.txn_date, l.description, l.amount, l.running_balance, i.id as import_id, i.file_name, i.first_date,
+                       i.last_date, pi.file_name as proof_file, l.copy_proven_by,
                        exists (select 1 from bank_match_statement_lines ml
                                  join bank_matches m on m.id = ml.match_id and m.tenant_id = ml.tenant_id
                                 where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id and not ml.released
@@ -1174,13 +1184,16 @@ public class BankReconciliationService {
                     String name = rs.getString("file_name") + " (" + rs.getObject("first_date", LocalDate.class).format(DMY)
                             + "–" + rs.getObject("last_date", LocalDate.class).format(DMY) + ")";
                     if (!k.holders().contains(name)) k.holders().add(name);
+                    UUID holder = rs.getObject("import_id", UUID.class);
+                    if (!k.holderIds().contains(holder)) k.holderIds().add(holder);
                     if (rs.getBoolean("proven")) {
                         String line = rs.getString("description") + " " + StatementValues.money(rs.getBigDecimal("amount").abs())
                                 + " at " + StatementValues.money(rs.getBigDecimal("running_balance"));
                         if (!k.proven().contains(line)) k.proven().add(line);
                         if (rs.getBoolean("booked") && !k.booked().contains(line)) k.booked().add(line);
                         if (k.proof() == null) out.put(d, k = new KeptCopies(k.holders(), rs.getString("proof_file"), k.proven(),
-                                k.booked()));
+                                k.booked(), null, List.of(), List.of(), k.holderIds(), rs.getObject("copy_proven_by", UUID.class), null,
+                                List.of()));
                     }
                 });
         // #441 review r3: a statement holding the day whole imported after the kept lines, which
@@ -1255,8 +1268,51 @@ public class BankReconciliationService {
                             + rs.getObject("txn_date", LocalDate.class).format(DMY)); });
             KeptCopies k = e.getValue();
             out.put(e.getKey(), new KeptCopies(k.holders(), null, k.proven(), k.booked(), (String) whole.get(0).get("file_name"),
-                    others, othersBooked));
+                    others, othersBooked, k.holderIds(), null, w, otherIds));
         }
+        return out;
+    }
+
+    /** #441 r6: the page's view of the deletes the check offers this period (file names for the buttons). */
+    private List<BankRecDTOs.DeleteOffer> offersFor(UUID t, Map<LocalDate, KeptCopies> copies) {
+        List<BankRecDTOs.DeleteOffer> out = new ArrayList<>();
+        copies.forEach((d, k) -> {
+            if (k.offerProof() == null || k.offerImports().isEmpty()) return;
+            Map<UUID, String> names = new HashMap<>();
+            List<UUID> ids = new ArrayList<>(k.offerImports());
+            ids.add(k.offerProof());
+            jdbc.query("select id, file_name from bank_statement_imports where tenant_id = :t and id in (:i)",
+                    new MapSqlParameterSource("t", t).addValue("i", ids),
+                    rs -> { names.put(rs.getObject("id", UUID.class), rs.getString("file_name")); });
+            out.add(new BankRecDTOs.DeleteOffer(d, k.offerProof(), names.get(k.offerProof()),
+                    k.offerImports().stream().map(i -> new BankRecDTOs.ImportRef(i, names.get(i))).toList()));
+        });
+        return out;
+    }
+
+    /** #441 r6: a delete the check offers: on {@code day}, deleting {@code imports} on the word of {@code proof}. */
+    public record DeleteOffer(LocalDate day, UUID proof, List<UUID> imports, String text) { }
+
+    /**
+     * #441 r6: the deletes the check currently offers for the account's unproven days that hold a kept
+     * look-alike, each with the statement it names as proof, the imports it names and its text.
+     * Delete re-runs this on the server before removing a line with undone match history.
+     */
+    @Transactional(readOnly = true)
+    public List<DeleteOffer> deleteOffers(UUID bankAccountId) {
+        UUID t = BankAccountLedgerService.requireTenant();
+        Map<LocalDate, Boolean> unproven = new TreeMap<>();
+        jdbc.query("""
+                select d.txn_date from bank_statement_days d
+                where d.tenant_id = :t and d.bank_account_id = :b and not d.order_confirmed and d.merge_unproven""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId),
+                rs -> { unproven.put(rs.getObject("txn_date", LocalDate.class), true); });
+        List<DeleteOffer> out = new ArrayList<>();
+        keptLookalikes(t, bankAccountId, unproven).forEach((d, k) -> {
+            if (k.offerProof() == null || k.offerImports().isEmpty()) return;
+            out.add(new DeleteOffer(d, k.offerProof(), List.copyOf(k.offerImports()),
+                    copySteps(d, k, remedy(t, bankAccountId, d, d))));
+        });
         return out;
     }
 
@@ -1312,8 +1368,10 @@ public class BankReconciliationService {
                 + "so it may be a copy of that line or a separate one, and the paper's totals cannot tell (a copy can stand "
                 + "in for a line missing that day). Import a statement that holds " + d.format(DMY) + " whole, " + fresh
                 + remedy.orImport(d, d).replaceFirst("^; or import", "; for instance")
-                + ". If the kept line is a separate line it holds it, and the day's totals, typed, then settle the day; "
-                + "if it shows a copy, this check then names the import to delete.";
+                + ". If the kept line is a separate line it holds it, and the day's totals, typed, then settle the day. "
+                + "If it shows a copy, or the day still differs elsewhere, this check then names the imports to delete on "
+                + "its word (with a button for each), then the day's totals; if an import was made after it, the check asks "
+                + "for a newer whole-day export instead.";
     }
 
     /**

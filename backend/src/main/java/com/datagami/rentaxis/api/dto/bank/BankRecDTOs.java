@@ -159,7 +159,42 @@ public final class BankRecDTOs {
                                  Instant preparedAt, String preparedByName, Instant finalizedAt,
                                  String finalizedByName, Instant reopenedAt, String reopenedByName,
                                  String reopenReason, List<UnprovenDay> unprovenDays,
-                                 String dayTotalsVerdict, LocalDate remedyReopenThrough) { }
+                                 String dayTotalsVerdict, LocalDate remedyReopenThrough,
+                                 List<DeleteOffer> deleteOffers) {
+        public Reconciliation(UUID id, UUID bankAccountId, String bankLabel, String bankName, String ibanMasked,
+                              List<Leaf> leaves, LocalDate periodFrom, LocalDate periodTo, String status,
+                              boolean first, BigDecimal statementOpening, BigDecimal statementClosing,
+                              boolean closingTyped, BigDecimal statementMovement, BigDecimal bookBalance,
+                              BigDecimal bookBalanceAtStart, BigDecimal openingItemsTotal,
+                              BigDecimal depositsInTransit, BigDecimal unpresentedPayments,
+                              BigDecimal bookedAfterPeriod, BigDecimal unrecordedCredits,
+                              BigDecimal unrecordedDebits, BigDecimal adjustedBank, BigDecimal adjustedBook,
+                              BigDecimal difference, List<RecItem> depositsInTransitItems,
+                              List<RecItem> unpresentedItems, List<RecItem> bookedAfterItems,
+                              List<RecItem> unrecordedItems, int withoutEvidenceCount,
+                              Map<String, Integer> matchedByMethod, List<Check> checks, boolean canFinalize,
+                              Instant preparedAt, String preparedByName, Instant finalizedAt,
+                              String finalizedByName, Instant reopenedAt, String reopenedByName,
+                              String reopenReason, List<UnprovenDay> unprovenDays,
+                              String dayTotalsVerdict, LocalDate remedyReopenThrough) {
+            this(id, bankAccountId, bankLabel, bankName, ibanMasked, leaves, periodFrom, periodTo, status, first, statementOpening,
+                    statementClosing, closingTyped, statementMovement, bookBalance, bookBalanceAtStart, openingItemsTotal,
+                    depositsInTransit, unpresentedPayments, bookedAfterPeriod, unrecordedCredits, unrecordedDebits, adjustedBank,
+                    adjustedBook, difference, depositsInTransitItems, unpresentedItems, bookedAfterItems, unrecordedItems,
+                    withoutEvidenceCount, matchedByMethod, checks, canFinalize, preparedAt, preparedByName, finalizedAt,
+                    finalizedByName, reopenedAt, reopenedByName, reopenReason, unprovenDays, dayTotalsVerdict,
+                    remedyReopenThrough, List.of());
+        }
+    }
+
+    /**
+     * #441 r6: a delete the LINE_ORDER check offers on {@code day}: deleting each of {@code imports},
+     * on the word of the statement {@code proofImportId}. The page's own button sends that id with
+     * the delete; the server re-runs the check before removing anything with match history.
+     */
+    public record DeleteOffer(LocalDate day, UUID proofImportId, String proofFileName, List<ImportRef> imports) { }
+
+    public record ImportRef(UUID id, String fileName) { }
 
     /**
      * Review P2-3: a day of the period where a file's line was taken for an identical
