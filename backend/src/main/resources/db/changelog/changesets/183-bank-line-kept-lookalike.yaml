@@ -1,13 +1,19 @@
-# S25-P1 follow-up (#441 review, ruling 4): a statement line an import kept although a stored
-# line of its day has the same amount and narration at another running balance (#438
+# S25-P1 follow-up (#441 review, rulings 4 and r2): a statement line an import kept although a
+# stored line of its day has the same amount and narration at another running balance (#438
 # "twinned": once the bank back-values, it may be that stored line at a moved balance, i.e. a
 # copy, or a separate line). While a day holds such a line its paper day totals cannot prove
-# it: a copy and a line lost elsewhere that day can add up to the paper's totals. Only a
-# statement holding the day whole (which clears the flag) or deleting the import that brought
-# the copy settles it.
+# it: a copy and a line lost elsewhere that day can add up to the paper's totals.
 #
 #   - bank_statement_lines.lookalike_kept: true for such a line until its day is confirmed.
-#     Existing rows: false (the pre-#441 behaviour for lines already imported).
+#     Existing rows: false (lines imported before this changeset are not flagged).
+#   - bank_statement_lines.copy_proven_by: the import that held the line's day whole and left
+#     it unclaimed with every other line of the day matched — the bank's day has one such line
+#     fewer, so the kept line is a copy. A copy in no confirmed match is removed at once; one
+#     in a confirmed match waits until the match is undone and the import that brought it is
+#     deleted.
+#   - bank_statement_removed_lines: the audit record of each copy removed — the line as it
+#     was, the matches it had been in (undone; their journal entries stay), who removed it,
+#     when, why, and the import that proved it a copy. Tenant-scoped like the lines.
 databaseChangeLog:
   - changeSet:
       id: 183-bank-line-kept-lookalike
@@ -21,5 +27,37 @@ databaseChangeLog:
                   type: boolean
                   defaultValueBoolean: false
                   constraints: { nullable: false }
+              - column: { name: copy_proven_by, type: uuid }
+        - createTable:
+            tableName: bank_statement_removed_lines
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_removed_lines_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_removed_lines_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: line_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: import_id, type: uuid }
+              - column: { name: file_name, type: varchar(255) }
+              - column: { name: txn_date, type: date, constraints: { nullable: false } }
+              - column: { name: value_date, type: date }
+              - column: { name: description, type: text }
+              - column: { name: reference, type: text }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: running_balance, type: "numeric(14,2)" }
+              - column: { name: line_hash, type: varchar(128) }
+              - column: { name: match_ids, type: text }
+              - column: { name: proof_import_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: proof_file_name, type: varchar(255) }
+              - column: { name: reason, type: text, constraints: { nullable: false } }
+              - column: { name: removed_by, type: uuid }
+              - column: { name: removed_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex:
+            tableName: bank_statement_removed_lines
+            indexName: ix_bank_removed_lines_account
+            columns:
+              - column: { name: tenant_id }
+              - column: { name: bank_account_id }
+              - column: { name: txn_date }
       rollback:
+        - dropTable: { tableName: bank_statement_removed_lines }
+        - dropColumn: { tableName: bank_statement_lines, columnName: copy_proven_by }
         - dropColumn: { tableName: bank_statement_lines, columnName: lookalike_kept }

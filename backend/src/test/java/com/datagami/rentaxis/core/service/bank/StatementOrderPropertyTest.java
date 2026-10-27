@@ -331,6 +331,10 @@ class StatementOrderPropertyTest {
                     ? new BankStatementImportService.StoredLine(l.hash(), l.amount(), l.description(), m.moved().get(l.hash()),
                             null, null, l.lookalike())
                     : l).toList());
+            // #441 review r2: kept look-alikes this file proves copies are removed (none is booked here).
+            Set<String> copies = BankStatementImportService.provenCopies(rows, m.hashes(), stored, spec.openingProves(),
+                    spec.closingProves());
+            if (!copies.isEmpty()) stored.replaceAll((d, ls) -> ls.stream().filter(l -> !copies.contains(l.hash())).toList());
             TreeMap<LocalDate, List<Integer>> fileDays = new TreeMap<>();
             for (int i = 0; i < rows.size(); i++) fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(i);
             for (Map.Entry<LocalDate, List<Integer>> day : fileDays.entrySet()) {
@@ -1095,9 +1099,10 @@ class StatementOrderPropertyTest {
     @Test
     void aCutReExportAfterABackValueNeverLosesALine() {
         Random rnd = new Random(2503);
-        // 200,000 by default: before S25-P1 the first loss with one back-valued line is trial 175,752.
-        int finalized = 0, refused = 0, unprovenDays = 0, sameBytes = 0, trials = r25Trials(200_000);
-        List<String> lost = new ArrayList<>();
+        // 400,000 by default: the first loss with one back-valued line is trial 175,752 before S25-P1,
+        // and 373,159 with #441 v1's day-start rule (sameLinesAgainExamples pins that one too).
+        int finalized = 0, refused = 0, unprovenDays = 0, sameBytes = 0, trials = r25Trials(400_000);
+        List<String> lost = new ArrayList<>(), stuck = new ArrayList<>();
         for (int trial = 0; trial < trials; trial++) {
             List<Bank> old = statement(rnd);
             if (old.size() < 3) continue;
@@ -1117,6 +1122,16 @@ class StatementOrderPropertyTest {
             Books books = importFiles(files);
             if (books.lines().isEmpty()) continue;
             unprovenDays += books.unproven().size();
+            // #441 review r2: no remedy dead-ends — whatever was imported, the statement holding
+            // every day whole (what the check names) settles every day, with the bank's lines.
+            List<FileSpec> remedied = new ArrayList<>(files);
+            remedied.add(new FileSpec(now, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null));
+            Books after = importFiles(remedied);
+            if (!after.unconfirmed().isEmpty() || !after.copies().isEmpty()) {
+                if (stuck.size() < 5) stuck.add(String.format("trial %d: unconfirmed %s, copies %s after the whole statement; "
+                        + "now %s, files %s, books %s %s", trial, after.unconfirmed(), after.copies(), now,
+                        files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList(), after.lines(), after.dates()));
+            }
             Set<Integer> arrived = books.arrived();
             Map<String, Integer> have = new HashMap<>(), brought = new HashMap<>();
             for (int i = 0; i < books.lines().size(); i++) {
@@ -1173,6 +1188,7 @@ class StatementOrderPropertyTest {
         System.out.printf("S25-P1 CUTS: trials %d, finalized %d, refused %d, unproven days %d, lost the same bytes as a re-export %d%n",
                 trials, finalized, refused, unprovenDays, sameBytes);
         assertThat(lost).as("finalized with a line a file brought lost").isEmpty();
+        assertThat(stuck).as("a day the whole statement does not settle").isEmpty();
         // The residue, on its own: two back-valued lines, a file byte-identical to a re-export.
         assertThat(sameBytes).as("lost in a file byte-identical to a re-export").isLessThanOrEqualTo(trials / 2_000);
         assertThat(finalized).as("finalized").isGreaterThan(trials / 40);
