@@ -1978,6 +1978,59 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
     }
 
     /**
+     * Sim r25 review, the property model's counterexample: 10/09 was imported whole and
+     * settled. The bank then back-values an SMS charge in front of an identical one on 10/09
+     * (every later balance moves by −5.00), and two later exports arrive: 10/09 cut right
+     * after the new charge, and 11/09 alone. The first one's charge has the narration, amount
+     * and balance of the stored one (a re-export of the same lines looks exactly like it), so
+     * it is taken and 10/09 stays settled. The second's FEE D has the stored FEE D's narration
+     * and amount at a moved balance: the import cannot tell a moved line from a new one, so it
+     * keeps it (stored, never dropped). Kept silently, that false duplicate balanced the lost
+     * charge and a typed closing finalized; now 11/09 is unproven, and the paper's day totals
+     * refuse it.
+     */
+    @Test
+    void aFalseDuplicateNeverBalancesALineLostOnASettledDay() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                09/09/2026,09/09/2026,CREDIT A,,,10.00,"1,010.00"
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,020.00"
+                10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,015.00"
+                10/09/2026,10/09/2026,FEE C,,10.00,,"1,005.00"
+                11/09/2026,11/09/2026,FEE D,,5.00,,"1,000.00"
+                """);
+        assertThat(dayRows()).contains("2026-09-10:true:false");
+        // After the back-value: 10/09 is CREDIT B 1,020, SMS 1,015 (new), SMS 1,010, FEE C 1,000; 11/09 FEE D 995.
+        assertThat(importText("""
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,020.00"
+                10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,015.00"
+                """).linesNew()).isZero();
+        BankRecDTOs.ImportResult eleventh = importText("""
+                11/09/2026,11/09/2026,FEE D,,5.00,,995.00
+                """);
+        assertThat(eleventh.linesNew()).as("a moved line or a new one: kept").isEqualTo(1);
+        assertThat(jdbc.queryForObject("select merge_unproven and not order_confirmed from bank_statement_days "
+                + "where bank_account_id = ? and txn_date = ?", Boolean.class, ei.getId(), LocalDate.of(2026, 9, 11)))
+                .as("11/09 unproven").isTrue();
+        book("SMS CHARGE", "CHARGE");
+        book("FEE C", "CHARGE");
+        for (BankRecDTOs.StatementLine l : ws().statementLines()) {
+            if (l.description().equals("FEE D")) {
+                actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), "CHARGE", false, null, null, marinaBank.getId(), true, null));
+            }
+        }
+        for (String d : List.of("CREDIT A", "CREDIT B")) book(d, "INTEREST");
+        // The bank's true September: opening 1,000.00, closing 995.00.
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("995.00"))).id();
+        assertThat(check(recs.get(id), "LINE_ORDER").ok()).isFalse();
+        BankRecDTOs.Reconciliation r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 11), new BigDecimal("5.00"), BigDecimal.ZERO))));
+        assertThat(r.dayTotalsVerdict()).isEqualTo("DISAGREE");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
+    }
+
+    /**
      * Sim r25 P3-6: a bank whose exports repeat the boundary day (OVERLAP1). August is
      * finalized; September's two exports start on 31/08 and split 14/09. The chain of
      * overlapping imports reaches 31/08 in the finalized month, but the September import

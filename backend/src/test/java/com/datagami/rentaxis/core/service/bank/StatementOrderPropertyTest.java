@@ -334,7 +334,8 @@ class StatementOrderPropertyTest {
                         fileDays.lastKey(), spec.openingProves(), spec.closingProves());
                 BankStatementImportService.Settled s = BankStatementImportService.settle(
                         have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, pos,
-                        states.getOrDefault(day.getKey(), BankStatementImportService.DayState.UNKNOWN));
+                        states.getOrDefault(day.getKey(), BankStatementImportService.DayState.UNKNOWN),
+                        fileHashes.stream().anyMatch(m.twinned()::contains));
                 if (s == null) continue;
                 stored.put(day.getKey(), s.order().stream().map(byHash::get).toList());
                 states.put(day.getKey(), s.state());
@@ -910,17 +911,21 @@ class StatementOrderPropertyTest {
      * moved balance with no shift shown on a whole day still stores an identical line as a
      * separate one — the #97 P2-2 rule — and a later whole export cannot un-store it.)</p>
      */
+    /** Trials for the S25-01 properties; {@code R25_TRIALS} raises it for a long run. */
+    static int r25Trials() {
+        String n = System.getenv("R25_TRIALS");
+        return n == null || n.isBlank() ? 40_000 : Integer.parseInt(n.trim());
+    }
+
     @Test
     void backValuedLinesAreNeverLostOrStoredTwice() {
         Random rnd = new Random(2501);
-        int finalized = 0, refused = 0, moved = 0, whole = 0;
-        for (int trial = 0; trial < 40_000; trial++) {
+        int finalized = 0, refused = 0, moved = 0, whole = 0, trials = r25Trials();
+        for (int trial = 0; trial < trials; trial++) {
             List<Bank> old = statement(rnd);
             if (old.size() < 3) continue;
-            // One back-valued line: every later balance moves by its (non-zero) amount. (Two that
-            // net to nothing move no balance; a part re-import of a settled day then takes one
-            // for an identical stored line exactly as before this change — S20-03, see the PR.)
-            List<Bank> now = backValued(old, rnd, 1);
+            // One or two back-valued lines: every later balance moves by their amount.
+            List<Bank> now = backValued(old, rnd, 1 + rnd.nextInt(2));
             BigDecimal trueClosing = now.get(now.size() - 1).balance();
             List<FileSpec> files = new ArrayList<>();
             for (int f = 0, n = 1 + rnd.nextInt(3); f < n; f++) {
@@ -931,9 +936,11 @@ class StatementOrderPropertyTest {
             // Opening/Closing rows dated outside it (every day held whole); later ones are stretches.
             boolean wholeFirst = rnd.nextBoolean();
             if (wholeFirst) files.add(new FileSpec(now, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null));
-            // Exports after the back-value are date ranges (whole days, as a bank exports them;
-            // the service cannot tell): a time-window cut re-exporting part of a settled day
-            // after the bank added a line to it is outside S25-01 (see the PR).
+            // Later exports are date ranges (whole days, as a bank exports them; the service
+            // cannot tell). A time-window cut re-exporting part of a day already settled, after
+            // the bank added a line to it, can still lose a line through S20-03's "same lines
+            // again" rule on main (exact balances, nothing moved; see the PR) — outside this
+            // change; aMovedBalanceNeverTakesASeparateLine covers this change's rule on any cuts.
             for (int f = 0, n = rnd.nextInt(3); f < n; f++) {
                 int a = rnd.nextInt(DAYS.length), z = a + rnd.nextInt(DAYS.length - a);
                 List<Bank> range = now.stream().filter(l -> !l.date().isBefore(DAYS[a]) && !l.date().isAfter(DAYS[z])).toList();
@@ -994,10 +1001,10 @@ class StatementOrderPropertyTest {
                 refused++;
             }
         }
-        assertThat(whole).as("whole re-exports of the new history").isGreaterThan(10_000);
-        assertThat(moved).as("lines taken at a moved balance").isGreaterThan(1_000);
-        assertThat(finalized).as("finalized").isGreaterThan(1_000);
-        assertThat(refused).as("refused").isGreaterThan(1_000);
+        assertThat(whole).as("whole re-exports of the new history").isGreaterThan(trials / 4);
+        assertThat(moved).as("lines taken at a moved balance").isGreaterThan(trials / 40);
+        assertThat(finalized).as("finalized").isGreaterThan(trials / 40);
+        assertThat(refused).as("refused").isGreaterThan(trials / 40);
     }
 
     /**
@@ -1005,16 +1012,17 @@ class StatementOrderPropertyTest {
      * or two back-valued lines: a row taken for a stored line at a moved balance is that very
      * bank line, or the stored one's own line is in the same file (identical lines trading
      * places), or — as with the exact rule on a part day (S20-01) — its day is left unproven,
-     * so the paper's day totals expose a separate line taken. Never silently. (Judging a
-     * first-date row by the shift after it did lose one silently here: a line inserted right
-     * after an identical one, in a file starting at it, was taken for that one.)
+     * so the paper's day totals expose a separate line taken. Never silently. (Moved takes on
+     * a file's first or last date lost lines silently here — at 1,000,000 trials on the last
+     * date: a line inserted in front of an identical one, the export cut right after it — so
+     * moved balances are taken only on days the file holds whole.)
      */
     @Test
     void aMovedBalanceNeverTakesASeparateLine() {
         Random rnd = new Random(2502);
-        int moved = 0, guarded = 0;
+        int moved = 0, guarded = 0, trials = r25Trials();
         List<String> silent = new ArrayList<>();
-        for (int trial = 0; trial < 40_000; trial++) {
+        for (int trial = 0; trial < trials; trial++) {
             List<Bank> old = statement(rnd);
             if (old.size() < 3) continue;
             List<Bank> now = backValued(old, rnd, 1 + rnd.nextInt(2));
@@ -1034,7 +1042,7 @@ class StatementOrderPropertyTest {
             }
         }
         assertThat(silent).as("taken silently (%d moved takes, %d guarded by an unproven day)", moved, guarded).isEmpty();
-        assertThat(moved).as("lines taken at a moved balance").isGreaterThan(1_000);
+        assertThat(moved).as("lines taken at a moved balance").isGreaterThan(trials / 40);
     }
 
     /** S25-01 on named examples: what {@code match} takes at a moved balance, and what it never takes. */
@@ -1066,13 +1074,12 @@ class StatementOrderPropertyTest {
                 new StatementMapper.Row(2, d2, d1, "SMS", null, null, new BigDecimal("-10.50"), new BigDecimal("969.50")), rows.get(3));
         assertThat(BankStatementImportService.match(BANK, other, Map.of(d2, List.of(new BankStatementImportService.StoredLine(
                 "S1", new BigDecimal("-10.50"), "SMS", new BigDecimal("989.50"), d2, null)))).duplicates()).isEmpty();
-        // The file's last day (part of it): a moved balance is taken only at the shift the file shows before it.
+        // The file's last day (part of it): a moved balance is never taken there — it may be a line
+        // the bank inserted in front of an identical one; the row is kept and flagged (its day unproven).
         stored.put(d3, List.of(new BankStatementImportService.StoredLine("Y1", new BigDecimal("5.00"), "Y", new BigDecimal("984.00"))));
         m = BankStatementImportService.match(BANK, rows, stored);
-        assertThat(m.duplicates()).as("Y moved by the same -20.00 as d2's charges").contains("Y1");
-        stored.put(d3, List.of(new BankStatementImportService.StoredLine("Y1", new BigDecimal("5.00"), "Y", new BigDecimal("990.00"))));
-        m = BankStatementImportService.match(BANK, rows, stored);
-        assertThat(m.duplicates()).as("Y at another shift: a separate line").doesNotContain("Y1");
+        assertThat(m.duplicates()).doesNotContain("Y1");
+        assertThat(m.twinned()).containsExactly(m.hashes().get(3));
         // #97 P2-2 kept: a part day with nothing shown moved — an identical line at another balance is new.
         Map<LocalDate, List<BankStatementImportService.StoredLine>> part = Map.of(d2, List.of(
                 new BankStatementImportService.StoredLine("F2", new BigDecimal("-5.00"), "FEE", new BigDecimal("985.00"))));
