@@ -52,7 +52,7 @@ export interface AdCardPreviewProps {
     subtitle?: string | null;
     businessName?: string | null;
     backgroundImageUrl?: string | null;
-    /** The business's logo; the app draws it at the card's bottom-end. */
+    /** The business's logo; the app draws it in the card's top-end corner. */
     logoUrl?: string | null;
     accentColor?: string | null;
     ctaType: PromoCtaType;
@@ -136,72 +136,70 @@ export function AdCardPreview({
                 </>
             )}
 
-            <div className="relative">
-                {(subtitle || businessName) && (
+            {/* The logo takes the top-end corner beside the copy, as on the phone. */}
+            <div className="relative flex items-start gap-[10px]">
+                <div className="min-w-0 flex-1">
+                    {(subtitle || businessName) && (
+                        <p
+                            style={{
+                                ...clampEyebrow,
+                                color: hasImage ? "#E7C883" : darkBackdrop ? "rgba(255,255,255,0.7)" : WARNING,
+                                fontSize: 11,
+                                fontWeight: 800,
+                                letterSpacing: "0.08em",
+                                textTransform: "uppercase",
+                                margin: 0,
+                            }}
+                        >
+                            {subtitle || businessName}
+                        </p>
+                    )}
                     <p
                         style={{
-                            ...clampEyebrow,
-                            color: hasImage ? "#E7C883" : darkBackdrop ? "rgba(255,255,255,0.7)" : WARNING,
-                            fontSize: 11,
+                            ...clampTitle,
+                            color: fg,
+                            fontSize: 18,
                             fontWeight: 800,
-                            letterSpacing: "0.08em",
-                            textTransform: "uppercase",
-                            margin: 0,
+                            lineHeight: 1.1,
+                            margin: "3px 0 0",
                         }}
                     >
-                        {subtitle || businessName}
+                        {title || (rtl ? "عنوان الإعلان" : "Ad title")}
                     </p>
-                )}
-                <p
-                    style={{
-                        ...clampTitle,
-                        color: fg,
-                        fontSize: 18,
-                        fontWeight: 800,
-                        lineHeight: 1.1,
-                        margin: "3px 0 0",
-                    }}
-                >
-                    {title || (rtl ? "عنوان الإعلان" : "Ad title")}
-                </p>
-                {!hasImage && businessName && subtitle && (
-                    <p style={{ color: darkBackdrop ? "rgba(255,255,255,0.7)" : TEXT_SECONDARY, fontSize: 12, margin: "3px 0 0" }}>
-                        {businessName}
-                    </p>
+                    {!hasImage && businessName && subtitle && (
+                        <p style={{ color: darkBackdrop ? "rgba(255,255,255,0.7)" : TEXT_SECONDARY, fontSize: 12, margin: "3px 0 0" }}>
+                            {businessName}
+                        </p>
+                    )}
+                </div>
+                {logoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                        data-testid="ad-card-logo"
+                        src={promoImageSrc(logoUrl)}
+                        alt=""
+                        className="h-11 w-11 shrink-0 object-contain"
+                        style={{ background: SURFACE, borderRadius: 10, padding: 5 }}
+                    />
                 )}
             </div>
 
-            {(ctaType !== "NONE" || logoUrl) && (
-                // The pill takes the start and the logo the end, as on the phone.
-                <div className="relative flex items-center gap-2">
-                    <div className="min-w-0 flex-1">
-                        {ctaType !== "NONE" && (
-                            <span
-                                data-testid="ad-card-cta"
-                                style={{
-                                    display: "inline-block",
-                                    background: darkBackdrop ? SURFACE : INK,
-                                    color: darkBackdrop ? INK : SURFACE,
-                                    borderRadius: 9999,
-                                    padding: "7px 14px",
-                                    fontSize: 11,
-                                    fontWeight: 800,
-                                }}
-                            >
-                                {rtl ? `← ${label}` : `${label} →`}
-                            </span>
-                        )}
-                    </div>
-                    {logoUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                            data-testid="ad-card-logo"
-                            src={promoImageSrc(logoUrl)}
-                            alt=""
-                            className="h-7 w-7 shrink-0 object-contain"
-                            style={{ background: SURFACE, borderRadius: 6, padding: 3 }}
-                        />
-                    )}
+            {ctaType !== "NONE" && (
+                <div className="relative">
+                    <span
+                        data-testid="ad-card-cta"
+                        style={{
+                            display: "inline-block",
+                            background: darkBackdrop ? SURFACE : INK,
+                            color: darkBackdrop ? INK : SURFACE,
+                            borderRadius: 9999,
+                            padding: "7px 14px",
+                            fontSize: 11,
+                            fontWeight: 800,
+                        }}
+                    >
+                        {rtl ? `← ${label}` : `${label} →`}
+                    </span>
                 </div>
             )}
 

@@ -511,7 +511,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final tile = find.byKey(const Key('ad-card-logo'));
-      expect(tester.getSize(tile), const Size(28, 28));
+      expect(tester.getSize(tile), const Size(44, 44));
       expect(
         (tester.widget<Container>(tile).decoration! as BoxDecoration).color,
         MiftahColors.surface,
@@ -529,13 +529,18 @@ void main() {
       final load = _logoLoad(ad.business.logoUrl!);
       await tester.pumpWidget(host(AdCard(ad: ad, onTap: () {})));
       final slot = find.byKey(const Key('ad-card-logo-slot'));
-      expect(tester.getSize(slot), const Size(28, 28));
+      // The tile and its 10pt gap to the copy.
+      expect(tester.getSize(slot), const Size(54, 44));
 
       load.completeError(Exception('blob deleted'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('ad-card-logo')), findsNothing);
       expect(tester.getSize(slot), Size.zero);
+      // The copy gets the whole width back, gap included.
+      final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
+      expect(_copyBlock(tester).clip.width,
+          closeTo(card.width - 2 * _cardInset, 0.5));
     });
 
     testWidgets('names the business for screen readers on a photo card',
@@ -562,15 +567,15 @@ void main() {
       // The logo's label joins the card's own node, which is the tap target —
       // so it must not bring an image flag along with it.
       final card = tester.getSemantics(find.byKey(const Key('ad-card-logo')));
-      expect(card.label, endsWith('Spice Bazaar'));
+      expect(card.label, contains('Spice Bazaar'));
       expect(card, containsSemantics(isImage: false));
       semantics.dispose();
     });
 
     for (final scale in [2.0, 3.0]) {
       testWidgets(
-          'stays in the bottom-end corner when a long CTA wraps at ${scale}x '
-          'on 360pt', (tester) async {
+          'stays in the top-end corner, clear of a long CTA that wraps at '
+          '${scale}x on 360pt', (tester) async {
         await tester.pumpWidget(host(
           AdCard(
             ad: testAd(
@@ -588,12 +593,15 @@ void main() {
         ));
 
         expect(tester.takeException(), isNull);
+        final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
         final cta = tester.getRect(find.byKey(const Key('ad-card-cta')));
         final slot =
             tester.getRect(find.byKey(const Key('ad-card-logo-slot')));
-        expect(cta.height, greaterThan(2 * slot.height),
+        // A one-line pill is under 56pt tall even at 3x.
+        expect(cta.height, greaterThan(56),
             reason: 'the label must wrap for this test to mean anything');
-        expect(slot.bottom, closeTo(cta.bottom, 0.5));
+        expect(slot.top, closeTo(card.top + _cardInset, 0.5));
+        expect(slot.bottom, lessThanOrEqualTo(cta.top));
         // 3x is past the card's 1.5x height clamp, where the copy's clip is
         // the documented last resort and the one-line headline is cut.
         if (scale <= 2.0) _expectNoSlicedLine(tester);
@@ -602,8 +610,8 @@ void main() {
 
     for (final arabic in [false, true]) {
       testWidgets(
-          'sits at the bottom-end, opposite the CTA (${arabic ? 'RTL' : 'LTR'})',
-          (tester) async {
+          'sits in the top-end corner, beside the copy '
+          '(${arabic ? 'RTL' : 'LTR'})', (tester) async {
         await tester.pumpWidget(host(
           AdCard(
             ad: arabic
@@ -617,21 +625,22 @@ void main() {
 
         final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
         final slot = tester.getRect(find.byKey(const Key('ad-card-logo-slot')));
-        final cta = tester.getRect(find.byKey(const Key('ad-card-cta')));
-        expect(slot.size, const Size(28, 28));
-        expect(slot.bottom, lessThanOrEqualTo(card.bottom - _cardInset));
-        expect(slot.bottom, closeTo(cta.bottom, 0.5));
+        final copy = _copyBlock(tester).clip;
+        // The 44pt tile plus its 10pt gap to the copy.
+        expect(slot.size, const Size(54, 44));
+        expect(slot.top, closeTo(card.top + _cardInset, 0.5));
+        expect(slot.top, closeTo(copy.top, 0.5));
         if (arabic) {
           expect(slot.left, closeTo(card.left + _cardInset, 0.5));
-          expect(slot.right, lessThan(cta.left));
+          expect(copy.left, closeTo(slot.right, 0.5));
         } else {
           expect(slot.right, closeTo(card.right - _cardInset, 0.5));
-          expect(slot.left, greaterThan(cta.right));
+          expect(copy.right, closeTo(slot.left, 0.5));
         }
       });
     }
 
-    testWidgets('takes no room from the copy on a card with a CTA',
+    testWidgets('takes width, never height, from the copy',
         (tester) async {
       Future<Rect> clipWith(String? logoUrl) async {
         await tester.pumpWidget(host(AdCard(
@@ -650,6 +659,7 @@ void main() {
       final without = await clipWith(null);
       final withLogo = await clipWith(logo);
       expect(withLogo.height, without.height);
+      expect(withLogo.width, closeTo(without.width - 44 - 10, 0.5));
     });
 
     for (final entry in _cardWidths.entries) {
