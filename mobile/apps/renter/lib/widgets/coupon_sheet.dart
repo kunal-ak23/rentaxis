@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 // `hide TextDirection`: intl ships a bidi class of that name whose constants
@@ -13,11 +15,16 @@ import 'coupon_redirect_sheet.dart';
 /// The coupon reveal, shown when a `COUPON` ad is tapped. Ticket-styled: a
 /// dark value panel, a perforation, then the code and its terms.
 ///
-/// Nothing leaves the app unless the ad has a `redirectUrl`: **Copy code**
-/// then also opens that link in the business's own app or browser (see
-/// [_copyAndRedirect]).
+/// Nothing leaves the app unless the ad has a redirect link (`redirectUrl`, or
+/// one for this phone's platform): **Copy code** then also opens that link in
+/// the business's own app or browser (see [_copyAndRedirect]).
 class CouponSheet extends StatelessWidget {
-  const CouponSheet({super.key, required this.ad, this.launcher});
+  const CouponSheet({
+    super.key,
+    required this.ad,
+    this.launcher,
+    this.platform,
+  });
 
   final PromoAd ad;
 
@@ -25,16 +32,23 @@ class CouponSheet extends StatelessWidget {
   /// and how `PromoActions` routes this through its own launcher.
   final PromoUrlLauncher? launcher;
 
+  /// Which platform's redirect link to open; defaults to the phone's own
+  /// (`defaultTargetPlatform`), read when Copy is tapped. A seam for tests,
+  /// and how `PromoActions` passes its own through.
+  final TargetPlatform? platform;
+
   static Future<void> show(
     BuildContext context,
     PromoAd ad, {
     PromoUrlLauncher? launcher,
+    TargetPlatform? platform,
   }) {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => CouponSheet(ad: ad, launcher: launcher),
+      builder: (_) =>
+          CouponSheet(ad: ad, launcher: launcher, platform: platform),
     );
   }
 
@@ -56,10 +70,14 @@ class CouponSheet extends StatelessWidget {
       context,
     ).showSnackBar(SnackBar(content: Text(l.copied)));
 
-    // Checked before asking for consent, so the renter is never asked to
-    // approve a hop that would then be refused. An absent or unsafe link
-    // (http, no host, userinfo) ends here: plain copy, exactly as before.
-    final target = parseSafePromoUri(ad.redirectUrl);
+    // The link for this phone, then checked before asking for consent, so the
+    // renter is never asked to approve a hop that would then be refused. An
+    // absent or unsafe link (http, no host, userinfo) ends here: plain copy,
+    // exactly as before. Unsafe is final — a refused platform link does not
+    // fall back to the general one (see `chooseRedirectUrl`).
+    final target = parseSafePromoUri(
+      chooseRedirectUrl(ad, platform ?? defaultTargetPlatform),
+    );
     if (target == null) return;
 
     if (ad.sharedFields.isNotEmpty) {
