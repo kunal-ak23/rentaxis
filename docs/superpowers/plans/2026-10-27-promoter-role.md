@@ -264,3 +264,50 @@ shared before the link opens (only when renter data is in it).
   this link (optional)" URL input + parameter rows (name input, source select, value
   input shown only for STATIC; add/remove; max 10) + a live example URL using sample
   values. Admin ad list/approval view shows the redirect URL and parameter names.
+
+## Addendum B — delete that always works (archive when history exists) (Kunal, 2026-10-27)
+
+Problem: delete is refused today — a business with ads, and an ad with view/click
+events (`fk_pae_ad` RESTRICT), cannot be deleted. Ruling (Claude's call between the two
+options Kunal offered): **Delete always succeeds for the user.** Nothing referenced →
+hard delete. Otherwise → **archive** (soft delete), so impression/click history and
+stats survive. Archived items are hidden from every list and the renter app; an
+"Archived" filter shows them, with Restore (admin only).
+
+### Data (changeset 183 — still unmerged)
+- `promo_business.archived_at timestamptz NULL`, `promo_ad.archived_at timestamptz NULL`.
+- Make the business-name unique index ignore archived rows: drop `uq_promo_business_name`
+  and recreate it with `WHERE archived_at IS NULL` (same columns/expression as today —
+  read the original changeset), so a new business can reuse an archived one's name.
+  Keep the constant `UQ_PROMO_BUSINESS_NAME` translation working.
+
+### Behaviour
+- `DELETE /promotions/ads/{id}` and `DELETE /promoter/ads/{id}` (access-checked): no
+  events → hard delete; else `archived_at = now`, `active = false`. Response **200**
+  `{ "outcome": "DELETED" | "ARCHIVED" }`.
+- `DELETE /promotions/businesses/{id}` and new `DELETE /promoter/businesses/{id}`
+  (promoter needs canCreateBusinesses + access): no ads at all → hard delete; else archive
+  the business (`archived_at`, `active = false`) and archive every non-archived ad of it
+  (ads with no events may be hard-deleted instead — your call, say which). Same response.
+- Lists (`GET /promotions/ads`, `/promotions/businesses`, `/promoter/ads`,
+  `/promoter/businesses`, `pending-count`, promoters' business lists): archived rows
+  excluded by default. Admin lists accept `?archived=true` → archived only.
+- `POST /promotions/ads/{id}/restore`, `POST /promotions/businesses/{id}/restore` (admin
+  only): `archived_at = null`; stays `active = false` (admin re-activates by editing).
+  Restoring an ad whose business is archived → 400 "Restore the business first".
+  Restoring a business whose name is now taken by a live business → 400 (the unique
+  index message).
+- Approve/reject/edit of an archived ad → 400 ("This ad is archived — restore it first").
+  Promoter edit/read of an archived ad → 404.
+- Feed/offers/events: `archived_at IS NULL` on ad and business (belt and braces on top of
+  `active`).
+- Stats for archived ads remain queryable (admin `?archived=true` list shows them).
+
+### Web
+- Ads and Businesses tabs (admin) and the promoter portal: Delete with confirm text
+  "Delete this ad? If renters have already seen it, it is archived instead so its view
+  history is kept." (business: "…its ads are archived too."); toast "Deleted" /
+  "Archived" from `outcome`.
+- Admin tabs: "Show archived" toggle → archived list with Restore; archived rows show an
+  Archived pill and no Edit/Approve.
+- EN + AR strings, Vitest tests.
