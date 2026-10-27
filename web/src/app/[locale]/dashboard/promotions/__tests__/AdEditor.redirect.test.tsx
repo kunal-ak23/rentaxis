@@ -37,6 +37,10 @@ const L = en.Promotions
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } })
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 const linkField = () => screen.getByLabelText(L.redirectUrl)
+const androidField = () => screen.getByLabelText(L.redirectUrlAndroid)
+const iosField = () => screen.getByLabelText(L.redirectUrlIos)
+const ANDROID = 'https://app.quickwash.example.test/android?src=miftah'
+const IOS = 'https://quickwash.example.test/ios'
 
 /** A COUPON ad with a title, a code and (for a promoter) the one property they must pick. */
 function startCoupon(mode: 'admin' | 'promoter', ad: PromoAdDTO | null = null) {
@@ -304,6 +308,346 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
         save()
         expect(onSave.mock.calls[0][0].redirectParams).toEqual(ad.redirectParams)
         expect(onSave.mock.calls[0][0].redirectUrl).toBe(LINK)
+    })
+
+    /** Addendum C: an Android and an iPhone link may replace the default link on that phone. */
+    describe('platform links', () => {
+        const adWithPlatformLinks = () => ({
+            id: 'ad-2', businessId: 'b-1', businessNameEn: 'QuickWash', titleEn: 'Free dry-clean', titleAr: null,
+            subtitleEn: null, subtitleAr: null, backgroundImageUrl: null, accentColor: null, ctaType: 'COUPON',
+            ctaLabelEn: null, ctaLabelAr: null, ctaUrl: null, couponCode: 'SPRING20', couponTermsEn: null, couponTermsAr: null,
+            redirectUrl: LINK, redirectUrlAndroid: ANDROID, redirectUrlIos: IOS,
+            redirectParams: [{ name: 'phone', source: 'RENTER_PHONE' }],
+            startsAt: null, endsAt: null, priority: 3, placement: 'OFFERS_ONLY', active: true, propertyIds: ['p-1'],
+            impressions: 0, clicks: 0, approvalStatus: 'APPROVED', rejectionReason: null, submittedAt: null,
+            reviewedAt: null, submittedByName: null, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z',
+        }) as PromoAdDTO
+
+        it('adds an Android and an iPhone field under the main link, in the coupon section only', () => {
+            renderEditor(mode)
+            expect(screen.queryByLabelText(L.redirectUrlAndroid)).not.toBeInTheDocument()
+            expect(screen.queryByLabelText(L.redirectUrlIos)).not.toBeInTheDocument()
+            type('What happens on tap', 'WEBSITE')
+            expect(screen.queryByLabelText(L.redirectUrlAndroid)).not.toBeInTheDocument()
+            type('What happens on tap', 'COUPON')
+
+            expect(L.redirectUrlAndroid).toBe('Android link')
+            expect(L.redirectUrlIos).toBe('iPhone link')
+            // Under the main field, in this order.
+            const order = [linkField(), androidField(), iosField()]
+            for (let i = 1; i < order.length; i++) {
+                expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+            }
+            expect(androidField()).toHaveValue('')
+            expect(iosField()).toHaveValue('')
+            // The hint says what an empty field does, and describes both fields.
+            const hint = screen.getByText(L.redirectPlatformHint)
+            expect(hint).toHaveTextContent('Leave empty to use the link above on that phone. The same parameters are added.')
+            expect(androidField().getAttribute('aria-describedby')).toContain(hint.id)
+            expect(iosField().getAttribute('aria-describedby')).toContain(hint.id)
+        })
+
+        it('sends both platform links as null when they are left empty or blank', () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(linkField(), { target: { value: LINK } })
+            fireEvent.change(androidField(), { target: { value: '   ' } })
+            save()
+            expect(onSave).toHaveBeenCalledTimes(1)
+            const body = onSave.mock.calls[0][0]
+            expect(body.redirectUrl).toBe(LINK)
+            expect(body.redirectUrlAndroid).toBeNull()
+            expect(body.redirectUrlIos).toBeNull()
+        })
+
+        it('sends the Android link, trimmed, as redirectUrlAndroid', () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(androidField(), { target: { value: `  ${ANDROID}  ` } })
+            save()
+            expect(onSave).toHaveBeenCalledTimes(1)
+            expect(onSave.mock.calls[0][0]).toMatchObject({
+                ctaType: 'COUPON', redirectUrl: null, redirectUrlAndroid: ANDROID, redirectUrlIos: null,
+            })
+        })
+
+        it('sends the iPhone link, trimmed, as redirectUrlIos', () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(iosField(), { target: { value: `  ${IOS}  ` } })
+            save()
+            expect(onSave).toHaveBeenCalledTimes(1)
+            expect(onSave.mock.calls[0][0]).toMatchObject({
+                ctaType: 'COUPON', redirectUrl: null, redirectUrlAndroid: null, redirectUrlIos: IOS,
+            })
+        })
+
+        it('sends all three links, each in its own field, with the shared parameters', () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(linkField(), { target: { value: LINK } })
+            fireEvent.change(androidField(), { target: { value: ANDROID } })
+            fireEvent.change(iosField(), { target: { value: IOS } })
+            addRow('code', 'COUPON_CODE')
+            save()
+            expect(onSave.mock.calls[0][0]).toMatchObject({
+                redirectUrl: LINK, redirectUrlAndroid: ANDROID, redirectUrlIos: IOS,
+                redirectParams: [{ name: 'code', source: 'COUPON_CODE' }],
+            })
+        })
+
+        it('clears all three links and the parameters when the tap action is not a coupon', async () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(linkField(), { target: { value: LINK } })
+            fireEvent.change(androidField(), { target: { value: ANDROID } })
+            fireEvent.change(iosField(), { target: { value: IOS } })
+            addRow('code', 'COUPON_CODE')
+            type('What happens on tap', 'NONE')
+            save()
+            expect(onSave).toHaveBeenCalledTimes(1)
+            expect(onSave.mock.calls[0][0]).toMatchObject({
+                ctaType: 'NONE', redirectUrl: null, redirectUrlAndroid: null, redirectUrlIos: null, redirectParams: [],
+            })
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+
+            // A platform link that would be refused for a coupon does not block an ad that is not one.
+            type('What happens on tap', 'COUPON')
+            fireEvent.change(androidField(), { target: { value: 'http://nope.example.test' } })
+            fireEvent.change(iosField(), { target: { value: 'https://evil.example.test/x' } })
+            type('What happens on tap', 'NONE')
+            save()
+            expect(onSave).toHaveBeenCalledTimes(2)
+            expect(onSave.mock.calls[1][0]).toMatchObject({
+                ctaType: 'NONE', redirectUrl: null, redirectUrlAndroid: null, redirectUrlIos: null, redirectParams: [],
+            })
+        })
+
+        it('keeps what was typed in the platform fields if the admin switches back to a coupon', () => {
+            startCoupon(mode)
+            fireEvent.change(androidField(), { target: { value: ANDROID } })
+            fireEvent.change(iosField(), { target: { value: IOS } })
+            type('What happens on tap', 'WEBSITE')
+            type('What happens on tap', 'COUPON')
+            expect(androidField()).toHaveValue(ANDROID)
+            expect(iosField()).toHaveValue(IOS)
+        })
+
+        describe.each([
+            ['Android', 'redirectUrlAndroid', androidField, iosField],
+            ['iPhone', 'redirectUrlIos', iosField, androidField],
+        ] as const)('validation of the %s link', (_name, errorKey, field, otherField) => {
+            const errorOf = () => document.getElementById(`err-${errorKey}`)
+
+            it.each([
+                ['that is not https', 'http://app.quickwash.example.test/x', () => L.httpsRequired],
+                ['that is off the allowlist', 'https://evil.example.test/x', () => L.domainNotAllowed],
+                ['with userinfo', 'https://bank.example.test@app.quickwash.example.test/x', () => L.domainNotAllowed],
+                ['over 2048 characters', `https://app.quickwash.example.test/${'a'.repeat(2048)}`,
+                    () => L.redirectUrlTooLong.replace('{max}', '2048')],
+            ])('refuses a link %s, on that field and not the other', (_label, value, message) => {
+                const onSave = startCoupon(mode)
+                fireEvent.change(field(), { target: { value } })
+                save()
+                expect(onSave).not.toHaveBeenCalled()
+                expect(errorOf()).toHaveTextContent(message())
+                expect(field()).toHaveAttribute('aria-invalid', 'true')
+                expect(field().getAttribute('aria-describedby')).toContain(`err-${errorKey}`)
+                expect(otherField()).not.toHaveAttribute('aria-invalid')
+                expect(linkField()).not.toHaveAttribute('aria-invalid')
+            })
+
+            it('accepts a subdomain of an allowed domain, and clears the error once fixed', () => {
+                const onSave = startCoupon(mode)
+                fireEvent.change(field(), { target: { value: 'http://app.quickwash.example.test/x' } })
+                save()
+                expect(onSave).not.toHaveBeenCalled()
+                expect(errorOf()).not.toBeNull()
+
+                fireEvent.change(field(), { target: { value: 'https://deep.app.quickwash.example.test/x' } })
+                save()
+                expect(onSave).toHaveBeenCalledTimes(1)
+                expect(errorOf()).toBeNull()
+            })
+
+            it('is checked even when the other links are fine', () => {
+                const onSave = startCoupon(mode)
+                fireEvent.change(linkField(), { target: { value: LINK } })
+                fireEvent.change(otherField(), { target: { value: IOS } })
+                fireEvent.change(field(), { target: { value: 'https://evil.example.test/x' } })
+                save()
+                expect(onSave).not.toHaveBeenCalled()
+                expect(errorOf()).toHaveTextContent(L.domainNotAllowed)
+            })
+        })
+
+        describe('parameters', () => {
+            it.each([
+                ['Android', androidField, ANDROID],
+                ['iPhone', iosField, IOS],
+            ] as const)('are allowed with only the %s link set', (_name, field, link) => {
+                const onSave = startCoupon(mode)
+                // No link at all: nothing to add parameters to yet.
+                expect(screen.queryByText(L.redirectParams)).not.toBeInTheDocument()
+                fireEvent.change(field(), { target: { value: link } })
+                expect(screen.getByText(L.redirectParams)).toBeInTheDocument()
+                expect(screen.getByRole('button', { name: L.redirectParamAdd })).toBeEnabled()
+                addRow('code', 'COUPON_CODE')
+                addRow('promo', 'STATIC', 'SPRING')
+                save()
+
+                expect(onSave).toHaveBeenCalledTimes(1)
+                const body = onSave.mock.calls[0][0]
+                expect(body.redirectUrl).toBeNull()
+                expect(body.redirectParams).toEqual([
+                    { name: 'code', source: 'COUPON_CODE' },
+                    { name: 'promo', source: 'STATIC', value: 'SPRING' },
+                ])
+            })
+
+            it('are blocked, with the list-level error, when every link is empty', () => {
+                const onSave = startCoupon(mode)
+                fireEvent.change(androidField(), { target: { value: ANDROID } })
+                addRow('code', 'COUPON_CODE')
+                fireEvent.change(androidField(), { target: { value: '' } })
+                // The rows stay on screen, but the button to add more is off.
+                expect(screen.getByRole('button', { name: L.redirectParamAdd })).toBeDisabled()
+                save()
+                expect(screen.getByText(L.redirectParamsNeedUrl)).toBeInTheDocument()
+                expect(L.redirectParamsNeedUrl).toBe('Enter at least one link before adding parameters.')
+                expect(onSave).not.toHaveBeenCalled()
+            })
+
+            it('survive the default link being cleared while a platform link is still set', () => {
+                const onSave = startCoupon(mode)
+                fireEvent.change(linkField(), { target: { value: LINK } })
+                fireEvent.change(iosField(), { target: { value: IOS } })
+                addRow('code', 'COUPON_CODE')
+                fireEvent.change(linkField(), { target: { value: '' } })
+                save()
+                expect(screen.queryByText(L.redirectParamsNeedUrl)).not.toBeInTheDocument()
+                expect(onSave).toHaveBeenCalledTimes(1)
+                expect(onSave.mock.calls[0][0]).toMatchObject({
+                    redirectUrl: null, redirectUrlIos: IOS, redirectParams: [{ name: 'code', source: 'COUPON_CODE' }],
+                })
+            })
+
+            it('are blocked by a whitespace-only link, which counts as empty', () => {
+                const onSave = startCoupon(mode)
+                fireEvent.change(linkField(), { target: { value: LINK } })
+                addRow('code', 'COUPON_CODE')
+                fireEvent.change(linkField(), { target: { value: '' } })
+                fireEvent.change(iosField(), { target: { value: '   ' } })
+                save()
+                expect(screen.getByText(L.redirectParamsNeedUrl)).toBeInTheDocument()
+                expect(onSave).not.toHaveBeenCalled()
+            })
+        })
+
+        describe('live example', () => {
+            const tail = (el: HTMLElement) => el.textContent!.replace(/^[^?]*\?(?:[^&]*&)?/, '')
+
+            it('shows one labelled example per link that is set, none for a link that is not', () => {
+                startCoupon(mode)
+                expect(screen.queryByTestId('redirect-example')).not.toBeInTheDocument()
+                expect(screen.queryByTestId('redirect-example-android')).not.toBeInTheDocument()
+                expect(screen.queryByTestId('redirect-example-ios')).not.toBeInTheDocument()
+
+                fireEvent.change(androidField(), { target: { value: ANDROID } })
+                expect(screen.queryByTestId('redirect-example')).not.toBeInTheDocument()
+                expect(screen.getByTestId('redirect-example-android')).toHaveTextContent(ANDROID)
+                expect(screen.queryByTestId('redirect-example-ios')).not.toBeInTheDocument()
+
+                fireEvent.change(iosField(), { target: { value: IOS } })
+                fireEvent.change(linkField(), { target: { value: LINK } })
+                expect(screen.getByTestId('redirect-example')).toHaveTextContent(LINK)
+                expect(screen.getByTestId('redirect-example-android')).toHaveTextContent(ANDROID)
+                expect(screen.getByTestId('redirect-example-ios')).toHaveTextContent(IOS)
+
+                // Each is labelled with the link it stands for.
+                for (const [testId, label] of [
+                    ['redirect-example', L.redirectLinkDefault],
+                    ['redirect-example-android', L.redirectLinkAndroid],
+                    ['redirect-example-ios', L.redirectLinkIos],
+                ]) {
+                    expect(screen.getByTestId(testId).previousElementSibling).toHaveTextContent(label)
+                }
+                expect([L.redirectLinkDefault, L.redirectLinkAndroid, L.redirectLinkIos]).toEqual(['Default', 'Android', 'iPhone'])
+            })
+
+            it('appends the same parameters to each link, built by the same encoder', () => {
+                startCoupon(mode)
+                fireEvent.change(linkField(), { target: { value: LINK } })
+                fireEvent.change(androidField(), { target: { value: ANDROID } })
+                fireEvent.change(iosField(), { target: { value: IOS } })
+                addRow('code', 'COUPON_CODE')
+                addRow('phone', 'RENTER_PHONE')
+                addRow('promo', 'STATIC', "it's (50%) off! ~now* é")
+                addRow('prop', 'PROPERTY_NAME')
+
+                const encoded = 'code=SPRING20&phone=%2B971501234567&promo=it%27s+%2850%25%29+off%21+%7Enow*+%C3%A9&prop=Palm+Tower'
+                // A link that already has a query gets '&', one without gets '?'.
+                expect(screen.getByTestId('redirect-example').textContent).toBe(`${LINK}&${encoded}`)
+                expect(screen.getByTestId('redirect-example-android').textContent).toBe(`${ANDROID}&${encoded}`)
+                expect(screen.getByTestId('redirect-example-ios').textContent).toBe(`${IOS}?${encoded}`)
+                expect(tail(screen.getByTestId('redirect-example-android'))).toBe(encoded)
+            })
+
+            it('still shows the shares-details note once, whichever link is set', () => {
+                startCoupon(mode)
+                fireEvent.change(iosField(), { target: { value: IOS } })
+                addRow('email', 'RENTER_EMAIL')
+                expect(screen.getAllByTestId('redirect-shares-note')).toHaveLength(1)
+            })
+        })
+
+        it('loads an ad\'s saved platform links for editing, and saves them back unchanged', () => {
+            const ad = adWithPlatformLinks()
+            const onSave = startCoupon(mode, ad)
+
+            expect(linkField()).toHaveValue(LINK)
+            expect(androidField()).toHaveValue(ANDROID)
+            expect(iosField()).toHaveValue(IOS)
+            expect(screen.getByTestId('redirect-example-android')).toHaveTextContent(`${ANDROID}&phone=%2B971501234567`)
+            save()
+            expect(onSave.mock.calls[0][0]).toMatchObject({
+                redirectUrl: LINK, redirectUrlAndroid: ANDROID, redirectUrlIos: IOS, redirectParams: ad.redirectParams,
+            })
+        })
+
+        it('loads an ad that has only a platform link, with its parameters', () => {
+            const ad = { ...adWithPlatformLinks(), redirectUrl: null, redirectUrlIos: null } as PromoAdDTO
+            const onSave = startCoupon(mode, ad)
+
+            expect(linkField()).toHaveValue('')
+            expect(androidField()).toHaveValue(ANDROID)
+            expect(iosField()).toHaveValue('')
+            expect(screen.getByLabelText(`${L.redirectParamName} 1`)).toHaveValue('phone')
+            save()
+            expect(onSave.mock.calls[0][0]).toMatchObject({
+                redirectUrl: null, redirectUrlAndroid: ANDROID, redirectUrlIos: null,
+                redirectParams: [{ name: 'phone', source: 'RENTER_PHONE' }],
+            })
+        })
+
+        it('opens blank platform fields on an ad from an older backend that has not got them', () => {
+            const older = adWithPlatformLinks()
+            delete older.redirectUrlAndroid
+            delete older.redirectUrlIos
+            const onSave = startCoupon(mode, older)
+            expect(linkField()).toHaveValue(LINK)
+            expect(androidField()).toHaveValue('')
+            expect(iosField()).toHaveValue('')
+            save()
+            expect(onSave.mock.calls[0][0]).toMatchObject({ redirectUrl: LINK, redirectUrlAndroid: null, redirectUrlIos: null })
+        })
+
+        it('has the labels, hint and example labels in Arabic', () => {
+            renderEditor(mode, null, 'ar')
+            fireEvent.change(screen.getByLabelText(ar.Promotions.ctaType), { target: { value: 'COUPON' } })
+            fireEvent.change(screen.getByLabelText(ar.Promotions.redirectUrlAndroid), { target: { value: ANDROID } })
+            fireEvent.change(screen.getByLabelText(ar.Promotions.redirectUrlIos), { target: { value: IOS } })
+            expect(ar.Promotions.redirectUrlAndroid).toBe('رابط أندرويد')
+            expect(ar.Promotions.redirectUrlIos).toBe('رابط آيفون')
+            expect(screen.getByText(ar.Promotions.redirectPlatformHint)).toBeInTheDocument()
+            expect(screen.getByTestId('redirect-example-android').previousElementSibling).toHaveTextContent(ar.Promotions.redirectLinkAndroid)
+            expect(screen.getByTestId('redirect-example-ios').previousElementSibling).toHaveTextContent(ar.Promotions.redirectLinkIos)
+        })
     })
 
     it('shows the sources in Arabic', () => {

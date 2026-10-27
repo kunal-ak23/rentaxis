@@ -48,6 +48,9 @@ describe("promoter copy", () => {
         if (ns === "Promotions") {
             expect(tags(en.Promotions.redirectSummary)).toBe("url");
             expect(tags(en.Promotions.redirectSummaryParams)).toBe("list");
+            // ...and the summary line names which link it is, as a plain placeholder in both languages.
+            expect(placeholders(en.Promotions.redirectSummary)).toEqual(["label"]);
+            expect(placeholders(ar.Promotions.redirectSummary)).toEqual(["label"]);
         }
     });
 
@@ -56,6 +59,9 @@ describe("promoter copy", () => {
             ...["COUPON_CODE", "RENTER_NAME", "RENTER_PHONE", "RENTER_EMAIL", "PROPERTY_NAME", "UNIT_NUMBER", "STATIC"].map(s => `redirectSource${s}`),
             "redirectUrlTooLong", "redirectParamsNeedUrl", "redirectParamNameInvalid", "redirectParamNameDuplicate",
             "redirectParamValueRequired", "httpsRequired", "domainNotAllowed",
+            // Addendum C: the Android / iPhone links, their hint and the labels that tell the three apart.
+            "redirectUrlAndroid", "redirectUrlIos", "redirectPlatformHint",
+            "redirectLinkDefault", "redirectLinkAndroid", "redirectLinkIos",
         ];
         for (const cat of [en.Promotions, ar.Promotions] as Record<string, string>[]) {
             expect(keys.filter(k => !cat[k])).toEqual([]);
