@@ -157,12 +157,25 @@ public class PromotionAdminController {
 
     // -------------------------------------------------------------------- ads
 
+    /** Who last wrote each promoter ad (changeset 183); optional so unit tests building the controller keep working. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.UserRepository users;
+
+    /** Every approval state; the shape callers used before changeset 183. */
+    public ResponseEntity<Page<PromoAdDTO>> listAds(UUID businessId, Pageable pageable) {
+        return listAds(businessId, null, pageable);
+    }
+
+    /** {@code approvalStatus} (PENDING / APPROVED / REJECTED) narrows the list; omitted, every ad. */
     @GetMapping("/ads")
     public ResponseEntity<Page<PromoAdDTO>> listAds(
             @RequestParam(required = false) UUID businessId,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus approvalStatus,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         UUID tenantId = requireTenant();
-        Page<PromoAd> page = promotionService.listAds(tenantId, businessId, pageable);
+        Page<PromoAd> page = approvalStatus == null
+                ? promotionService.listAds(tenantId, businessId, pageable)
+                : promotionService.listAds(tenantId, businessId, approvalStatus, pageable);
 
         List<UUID> adIds = page.getContent().stream().map(PromoAd::getId).toList();
         // Three batched queries for the whole page, never one per row.
@@ -170,11 +183,13 @@ public class PromotionAdminController {
         Map<UUID, PromotionStatsService.Totals> totals =
                 adIds.isEmpty() ? Map.of() : statsService.totals(tenantId, adIds);
         Map<UUID, String> businessNames = batchBusinessNames(tenantId, page.getContent());
+        Map<UUID, String> writers = writerNames(tenantId, page.getContent());
 
         return ResponseEntity.ok(page.map(a -> toDTO(a,
                 businessNames.getOrDefault(a.getBusinessId(), ""),
                 targeting.getOrDefault(a.getId(), List.of()),
-                totals.getOrDefault(a.getId(), PromotionStatsService.Totals.EMPTY))));
+                totals.getOrDefault(a.getId(), PromotionStatsService.Totals.EMPTY),
+                a.getPromoterUserId() == null ? null : writers.get(a.getPromoterUserId()))));
     }
 
     @PostMapping("/ads")
@@ -196,7 +211,9 @@ public class PromotionAdminController {
                 promotionService.getBusiness(tenantId, updated.getBusinessId()).getNameEn(),
                 promotionService.targetedPropertyIds(id),
                 statsService.totals(tenantId, List.of(id))
-                        .getOrDefault(id, PromotionStatsService.Totals.EMPTY)));
+                        .getOrDefault(id, PromotionStatsService.Totals.EMPTY),
+                updated.getPromoterUserId() == null ? null
+                        : writerNames(tenantId, List.of(updated)).get(updated.getPromoterUserId())));
     }
 
     @DeleteMapping("/ads/{id}")
@@ -219,6 +236,18 @@ public class PromotionAdminController {
         List<UUID> businessIds = ads.stream().map(PromoAd::getBusinessId).distinct().toList();
         return businessRepository.findByTenantIdAndIdIn(tenantId, businessIds).stream()
                 .collect(Collectors.toMap(PromoBusiness::getId, PromoBusiness::getNameEn));
+    }
+
+    /** Names of the promoters who last wrote these ads, in one query; empty when none did. */
+    private Map<UUID, String> writerNames(UUID tenantId, List<PromoAd> ads) {
+        List<UUID> ids = ads.stream().map(PromoAd::getPromoterUserId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty() || users == null) {
+            return Map.of();
+        }
+        return users.findByTenantIdAndIdIn(tenantId, ids).stream()
+                .collect(Collectors.toMap(com.datagami.rentaxis.domain.entity.User::getId,
+                        com.datagami.rentaxis.domain.entity.User::getName));
     }
 
     private Map<UUID, Long> batchAdCounts(UUID tenantId, List<PromoBusiness> businesses) {

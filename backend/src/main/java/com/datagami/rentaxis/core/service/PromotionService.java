@@ -254,6 +254,19 @@ public class PromotionService {
 
     @Transactional(readOnly = true)
     public Page<PromoAd> listAds(UUID tenantId, UUID businessId, Pageable pageable) {
+        return listAds(tenantId, businessId, null, pageable);
+    }
+
+    /** {@code approvalStatus} null = every state (changeset 183). */
+    @Transactional(readOnly = true)
+    public Page<PromoAd> listAds(UUID tenantId, UUID businessId,
+                                 com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus approvalStatus,
+                                 Pageable pageable) {
+        if (approvalStatus != null) {
+            return businessId != null
+                    ? adRepository.findByTenantIdAndBusinessIdAndApprovalStatus(tenantId, businessId, approvalStatus, pageable)
+                    : adRepository.findByTenantIdAndApprovalStatus(tenantId, approvalStatus, pageable);
+        }
         if (businessId != null) {
             return adRepository.findByTenantIdAndBusinessId(tenantId, businessId, pageable);
         }
@@ -281,6 +294,13 @@ public class PromotionService {
 
     public PromoAd updateAd(UUID tenantId, UUID id, PromoAdRequest req) {
         PromoAd a = getAd(tenantId, id);
+        // A promoter-written ad shows only where it is targeted AND the promoter is
+        // allowed (PromoAdRepository.findEligible), so "every property" would quietly
+        // show it nowhere. Said here rather than discovered on the renter's phone.
+        if (a.getPromoterUserId() != null && (req.propertyIds() == null || req.propertyIds().isEmpty())) {
+            throw new BusinessRuleViolationException(
+                    "This ad was written by a promoter: choose at least one of the promoter's properties.");
+        }
         // businessId is assigned inside applyAd, after validation — mutating a
         // managed entity before a check that can throw leaves it dirty in the
         // persistence context, which only rollback saves.
