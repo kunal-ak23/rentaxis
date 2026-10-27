@@ -103,6 +103,32 @@ class PromoterImageRulesIT extends AbstractPromoterIT {
                 body("nameEn", "Admin " + UUID.randomUUID(), "logoUrl", EXTERNAL)).status()).isEqualTo(201);
     }
 
+    /** M6: a promoter's logo is public only once one of the business's ads is approved and live. */
+    @Test
+    void m6_aPromotersLogoIsPublicOnlyOnceAnAdIsApproved() {
+        byte[] png = {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+        when(blob.download(eq(org), anyString())).thenReturn(new BlobStorageService.DownloadResult(png, null));
+        String own = "/api/v1/public/promo-images/" + UUID.randomUUID() + ".png";
+        String bizId = post(promoter, "/api/v1/promoter/businesses",
+                body("nameEn", "Sparkle " + UUID.randomUUID(), "logoUrl", own)).text("id");
+
+        assertThat(anonStatus(own)).isEqualTo(404);
+        PromoAd ad = ad(org, UUID.fromString(bizId), APPROVED, promoter.getId(), p1.getId());
+        assertThat(anonStatus(own)).isEqualTo(200);
+        jdbc.update("UPDATE promo_ads SET archived_at = now() WHERE id = ?", ad.getId());
+        assertThat(anonStatus(own)).isEqualTo(404);
+
+        // An admin's business (no promoter grants) keeps its logo public as before.
+        String adminLogo = "/api/v1/public/promo-images/" + UUID.randomUUID() + ".png";
+        assertThat(post(admin, "/api/v1/promotions/businesses",
+                body("nameEn", "Admin " + UUID.randomUUID(), "logoUrl", adminLogo)).status()).isEqualTo(201);
+        assertThat(anonStatus(adminLogo)).isEqualTo(200);
+    }
+
+    private int anonStatus(String path) {
+        return client().get().uri(path).exchange((req, res) -> res.getStatusCode().value());
+    }
+
     private Map<String, Object> ad(String field, Object value) {
         Map<String, Object> m = body("businessId", wash.getId().toString(), "titleEn", "Wash day", "ctaType", "NONE",
                 "propertyIds", List.of(p1.getId().toString()), "redirectUrl", null, "redirectParams", List.of());

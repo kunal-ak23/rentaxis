@@ -20,6 +20,9 @@ public interface PromoterBusinessRepository extends JpaRepository<PromoterBusine
 
     boolean existsByTenantIdAndUserIdAndBusinessId(UUID tenantId, UUID userId, UUID businessId);
 
+    /** Whether any promoter was granted this business (review M6: its logo then waits for an approved ad). */
+    boolean existsByTenantIdAndBusinessId(UUID tenantId, UUID businessId);
+
     List<PromoterBusiness> findByTenantIdAndUserIdIn(UUID tenantId, Collection<UUID> userIds);
 
     /**

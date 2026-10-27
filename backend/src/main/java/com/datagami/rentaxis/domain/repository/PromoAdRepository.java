@@ -61,6 +61,10 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
     Page<PromoAd> findByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNotNull(
             UUID tenantId, UUID businessId, PromoApprovalStatus status, Pageable pageable);
 
+    /** Review M6: whether the business has an approved, live (not archived) ad. */
+    boolean existsByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNull(UUID tenantId, UUID businessId,
+                                                                             PromoApprovalStatus status);
+
     /** A business's ads not yet archived — what archiving the business archives with it. */
     List<PromoAd> findByTenantIdAndBusinessIdAndArchivedAtIsNull(UUID tenantId, UUID businessId);
 

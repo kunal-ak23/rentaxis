@@ -142,6 +142,28 @@ public class PromotionImageService {
         return BlobStorageService.PROMOTIONS_FOLDER + "/" + file;
     }
 
+    /** Promoter grants (review M6); optional so unit tests constructing the service keep working. */
+    private com.datagami.rentaxis.domain.repository.PromoterBusinessRepository promoterGrants;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setPromoterGrants(com.datagami.rentaxis.domain.repository.PromoterBusinessRepository promoterGrants) {
+        this.promoterGrants = promoterGrants;
+    }
+
+    /**
+     * Review M6: a business a promoter was granted shows its logo to the public only
+     * once an admin has approved one of its ads (that is not archived) — the promoter
+     * may have uploaded it, and nothing a promoter writes is public before approval.
+     * An admin's business (no promoter grants) shows its logo as before.
+     */
+    private boolean logoMayShow(PromoBusiness b) {
+        if (promoterGrants == null || !promoterGrants.existsByTenantIdAndBusinessId(b.getTenantId(), b.getId())) {
+            return true;
+        }
+        return ads.existsByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNull(b.getTenantId(), b.getId(),
+                com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus.APPROVED);
+    }
+
     /**
      * The organisations whose live ad or business shows {@code file}, in no
      * particular order — the only case the anonymous route serves it. The route
@@ -155,7 +177,9 @@ public class PromotionImageService {
         Instant now = Instant.now();
         java.util.LinkedHashSet<UUID> owners = new java.util.LinkedHashSet<>();
         for (PromoBusiness b : businesses.findByLogoUrl(route)) {
-            if (b.isActive() && b.getArchivedAt() == null && b.getTenantId() != null) owners.add(b.getTenantId());
+            if (b.isActive() && b.getArchivedAt() == null && b.getTenantId() != null && logoMayShow(b)) {
+                owners.add(b.getTenantId());
+            }
         }
         for (PromoAd ad : ads.findByBackgroundImageUrl(route)) {
             if (!ad.isActive() || (ad.getEndsAt() != null && !ad.getEndsAt().isAfter(now))) continue;
