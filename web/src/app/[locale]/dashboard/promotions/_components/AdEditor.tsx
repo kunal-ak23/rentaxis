@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { AdCardPreview } from "./AdCardPreview";
 import { PromoImageField } from "./PromoImageField";
 import {
@@ -16,6 +16,12 @@ import {
 export interface PropertyOption {
     id: string;
     nameEn: string;
+    nameAr?: string | null;
+}
+
+/** A property's name in the page's language, falling back to English. */
+export function propertyLabel(p: PropertyOption, locale: string): string {
+    return locale === "ar" && p.nameAr ? p.nameAr : p.nameEn;
 }
 
 interface AdEditorProps {
@@ -24,6 +30,14 @@ interface AdEditorProps {
     ad: PromoAdDTO | null;
     onSave: (body: PromoAdRequest) => void;
     onCancel: () => void;
+    /**
+     * "promoter" is the outside advertiser's editor (the promoter portal):
+     * priority and placement are the organisation's to set, so they are neither
+     * shown nor sent; `properties` is only what the promoter was given and at
+     * least one must be chosen (the server refuses a promoter ad that targets
+     * everyone); and the form says that saving sends the ad for approval.
+     */
+    mode?: "admin" | "promoter";
 }
 
 /**
@@ -89,8 +103,11 @@ const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
-export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEditorProps) {
+export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = "admin" }: AdEditorProps) {
     const t = useTranslations("Promotions");
+    const tp = useTranslations("Promoter");
+    const locale = useLocale();
+    const isPromoter = mode === "promoter";
 
     const [businessId, setBusinessId] = useState(ad?.businessId ?? businesses[0]?.id ?? "");
     const [titleEn, setTitleEn] = useState(ad?.titleEn ?? "");
@@ -162,6 +179,11 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
         if (accentColor.trim() !== "" && !HEX_COLOUR.test(accentColor.trim())) {
             next.accentColor = t("accentColorInvalid");
         }
+        // A promoter's ad always targets named properties; with none granted
+        // there is nowhere to send it, which is the admin's to fix, not theirs.
+        if (isPromoter && propertyIds.length === 0) {
+            next.properties = properties.length === 0 ? tp("noPropertiesGranted") : tp("propertyRequired");
+        }
         return next;
     }
 
@@ -173,7 +195,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
 
         // Fields belonging to other CTA types are dropped, never carried over —
         // the backend clears them too, and the preview must agree with both.
-        onSave({
+        const body: PromoAdRequest = {
             businessId,
             titleEn: trimOrNull(titleEn),
             titleAr: trimOrNull(titleAr),
@@ -197,11 +219,17 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
             // offset is correct and needs no tz library.
             startsAt: startsAt ? new Date(`${startsAt}T00:00:00${DUBAI_OFFSET}`).toISOString() : null,
             endsAt: endsAt ? new Date(`${endsAt}T23:59:59${DUBAI_OFFSET}`).toISOString() : null,
-            priority,
-            placement,
             propertyIds,
             active,
-        });
+        };
+        // Priority and placement are the organisation's call. A promoter's body
+        // leaves them out: the server keeps an edited ad's values and gives a
+        // new one the defaults, and would ignore them if sent.
+        if (!isPromoter) {
+            body.priority = priority;
+            body.placement = placement;
+        }
+        onSave(body);
     }
 
     // role="alert" so a screen reader announces a failed save instead of the
@@ -216,6 +244,14 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
     return (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="space-y-4">
+                {isPromoter && ad?.approvalStatus === "REJECTED" && (
+                    <p role="status" data-testid="ad-rejected-banner"
+                        className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                        {ad.rejectionReason
+                            ? tp("rejectedWithReason", { reason: ad.rejectionReason })
+                            : tp("rejected")}
+                    </p>
+                )}
                 <label className="block">
                     <span className="mb-1 block text-sm font-medium">{t("business")}</span>
                     <select
@@ -257,7 +293,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                 <div className="grid gap-4 sm:grid-cols-2">
                     <PromoImageField label={t("artwork")} value={backgroundImageUrl}
                         onChange={setBackgroundImageUrl} onBusyChange={setUploading}
-                        sizeHint={t("artworkSizeHint")} />
+                        sizeHint={t("artworkSizeHint")} scope={mode} />
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("accentColor")}</span>
                         <input aria-label={t("accentColor")} placeholder="#FBF3E2" maxLength={9}
@@ -342,30 +378,36 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                     </label>
                 </div>
 
-                <label className="block">
-                    <span className="mb-1 block text-sm font-medium">
-                        {t("priority")} — {priority}
-                    </span>
-                    <input type="range" min={1} max={10} step={1} aria-label={t("priority")}
-                        className="w-full" value={priority}
-                        onChange={e => setPriority(Number(e.target.value))} />
-                    <span className="text-xs text-gray-500">{t("priorityHint")}</span>
-                </label>
+                {!isPromoter && (
+                    <>
+                        <label className="block">
+                            <span className="mb-1 block text-sm font-medium">
+                                {t("priority")} — {priority}
+                            </span>
+                            <input type="range" min={1} max={10} step={1} aria-label={t("priority")}
+                                className="w-full" value={priority}
+                                onChange={e => setPriority(Number(e.target.value))} />
+                            <span className="text-xs text-gray-500">{t("priorityHint")}</span>
+                        </label>
 
-                <label className="block">
-                    <span className="mb-1 block text-sm font-medium">{t("placement")}</span>
-                    <select aria-label={t("placement")} className="w-full rounded-lg border px-3 py-2"
-                        value={placement}
-                        onChange={e => setPlacement(e.target.value as PromoPlacement)}>
-                        <option value="HOME_AND_OFFERS">{t("placementHOME_AND_OFFERS")}</option>
-                        <option value="OFFERS_ONLY">{t("placementOFFERS_ONLY")}</option>
-                    </select>
-                </label>
+                        <label className="block">
+                            <span className="mb-1 block text-sm font-medium">{t("placement")}</span>
+                            <select aria-label={t("placement")} className="w-full rounded-lg border px-3 py-2"
+                                value={placement}
+                                onChange={e => setPlacement(e.target.value as PromoPlacement)}>
+                                <option value="HOME_AND_OFFERS">{t("placementHOME_AND_OFFERS")}</option>
+                                <option value="OFFERS_ONLY">{t("placementOFFERS_ONLY")}</option>
+                            </select>
+                        </label>
+                    </>
+                )}
 
-                <fieldset>
+                <fieldset aria-describedby={errors.properties ? "err-properties" : undefined}>
                     <legend className="mb-1 text-sm font-medium">{t("targeting")}</legend>
                     <p className="mb-2 text-xs text-gray-500">
-                        {propertyIds.length === 0 ? t("targetingAll") : t("targetingSome")}
+                        {isPromoter
+                            ? tp("propertiesHint")
+                            : propertyIds.length === 0 ? t("targetingAll") : t("targetingSome")}
                     </p>
                     <div className="max-h-40 space-y-1 overflow-auto">
                         {properties.map(p => (
@@ -378,10 +420,11 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                                             ? [...prev, p.id]
                                             : prev.filter(id => id !== p.id))}
                                 />
-                                {p.nameEn}
+                                {propertyLabel(p, locale)}
                             </label>
                         ))}
                     </div>
+                    {err("properties")}
                 </fieldset>
 
                 <label className="flex items-center gap-2 text-sm">
@@ -389,6 +432,13 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                         onChange={e => setActive(e.target.checked)} />
                     {t("active")}
                 </label>
+
+                {isPromoter && (
+                    <p role="note" data-testid="ad-approval-notice"
+                        className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        {tp("savingSendsForApproval")}
+                    </p>
+                )}
 
                 <div className="flex gap-2 pt-2">
                     <button type="button" onClick={submit} disabled={!hasBusinesses || uploading}
@@ -425,6 +475,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                         ctaType={ctaType}
                         ctaLabel={previewAr ? (ctaLabelAr || ctaLabelEn) : (ctaLabelEn || ctaLabelAr)}
                         rtl={previewAr}
+                        imageScope={mode}
                     />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">

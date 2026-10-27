@@ -4,7 +4,8 @@ import { useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ImageIcon, Loader2, Trash2, Upload } from "lucide-react";
 import { PROMO_IMAGE_MAX_BYTES, uploadPromoImage } from "@/lib/api/promotions";
-import { promoImageSrc } from "@/lib/assetUrl";
+import { uploadPromoterImage } from "@/lib/api/promoter";
+import { promoImageSrc, type PromoImageScope } from "@/lib/assetUrl";
 
 interface PromoImageFieldProps {
     label: string;
@@ -14,6 +15,11 @@ interface PromoImageFieldProps {
     onBusyChange?: (busy: boolean) => void;
     /** The recommended dimensions for this image, shown under the format hint. */
     sizeHint?: string;
+    /**
+     * Whose routes carry the upload and the preview. A promoter is refused the
+     * admin /promotions routes, so their editor passes "promoter".
+     */
+    scope?: PromoImageScope;
 }
 
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
@@ -24,7 +30,7 @@ const ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
  * A value saved earlier as an https link to artwork hosted elsewhere is shown
  * and kept until it is replaced or removed.
  */
-export function PromoImageField({ label, value, onChange, onBusyChange, sizeHint }: PromoImageFieldProps) {
+export function PromoImageField({ label, value, onChange, onBusyChange, sizeHint, scope = "admin" }: PromoImageFieldProps) {
     const t = useTranslations("Promotions");
     const inputRef = useRef<HTMLInputElement>(null);
     const hintId = useId();
@@ -47,7 +53,7 @@ export function PromoImageField({ label, value, onChange, onBusyChange, sizeHint
         }
         setUploading(true);
         try {
-            const url = await uploadPromoImage(file);
+            const url = scope === "promoter" ? await uploadPromoterImage(file) : await uploadPromoImage(file);
             setBroken(false);
             onChange(url);
         } catch {
@@ -65,7 +71,7 @@ export function PromoImageField({ label, value, onChange, onBusyChange, sizeHint
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-gray-50">
                     {value && !broken ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={promoImageSrc(value)} alt={label} className="h-full w-full object-cover"
+                        <img src={promoImageSrc(value, scope)} alt={label} className="h-full w-full object-cover"
                             onError={() => setBroken(true)} />
                     ) : (
                         <ImageIcon size={20} className="text-gray-400" aria-hidden="true" />

@@ -14,6 +14,12 @@ interface BusinessEditorProps {
     business: PromoBusinessDTO | null;
     onSave: (body: PromoBusinessRequest) => void;
     onCancel: () => void;
+    /**
+     * "promoter" is the portal's editor: images go through the promoter's
+     * routes, and editing an existing business says that its live ads go back
+     * for approval (the server does this on every promoter edit).
+     */
+    mode?: "admin" | "promoter";
 }
 
 /**
@@ -40,8 +46,9 @@ const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?
 
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
-export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorProps) {
+export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: BusinessEditorProps) {
     const t = useTranslations("Promotions");
+    const tp = useTranslations("Promoter");
 
     const [nameEn, setNameEn] = useState(business?.nameEn ?? "");
     const [nameAr, setNameAr] = useState(business?.nameAr ?? "");
@@ -117,7 +124,7 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
                     </select>
                 </label>
                 <PromoImageField label={t("logo")} value={logoUrl} onChange={setLogoUrl}
-                    onBusyChange={setUploading} sizeHint={t("logoSizeHint")} />
+                    onBusyChange={setUploading} sizeHint={t("logoSizeHint")} scope={mode} />
                 <label className="block">
                     <span className="mb-1 block text-sm font-medium">{t("phone")}</span>
                     <input aria-label={t("phone")} placeholder="+971501234567"
@@ -162,6 +169,13 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
             </label>
 
             {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+
+            {mode === "promoter" && business && (
+                <p role="note" data-testid="business-approval-notice"
+                    className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {tp("businessEditSendsForApproval")}
+                </p>
+            )}
 
             <div className="flex gap-2">
                 <button type="button" onClick={submit} disabled={uploading}
