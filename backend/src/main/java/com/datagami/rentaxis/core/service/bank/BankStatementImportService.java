@@ -403,6 +403,20 @@ public class BankStatementImportService {
                                 .addValue("h", copyDays.keySet()).addValue("imp", imp.getId()));
             }
         }
+        // #441 review r3: every stored line of a day this file holds whole that it does not hold.
+        Set<String> leftOut = leftOut(r.rows(), hashes, stored, r.openingRow(), r.closingRow());
+        if (!leftOut.isEmpty()) {
+            Map<String, LocalDate> outDays = new HashMap<>();
+            stored.forEach((d, ls) -> ls.forEach(l -> { if (leftOut.contains(l.hash())) outDays.put(l.hash(), d); }));
+            outDays.values().removeIf(d -> locked != null && !d.isAfter(locked));
+            if (!outDays.isEmpty()) {
+                jdbc.update("""
+                        update bank_statement_lines set left_out_by = :imp
+                        where tenant_id = :t and bank_account_id = :b and line_hash in (:h)""",
+                        new MapSqlParameterSource("t", t).addValue("b", bankAccountId)
+                                .addValue("h", outDays.keySet()).addValue("imp", imp.getId()));
+            }
+        }
         // Review P2-4: StatementMapper trusts boundary rows only when their own dates prove
         // the file's edges (an Opening row dated before the first line's day, a Closing row
         // dated after the last line's day).
@@ -663,6 +677,27 @@ public class BankStatementImportService {
         return out;
     }
 
+    /** #441 review r3: the stored lines of the days a file holds whole that are none of its rows. */
+    static Set<String> leftOut(List<StatementMapper.Row> rows, List<String> hashes, Map<LocalDate, List<StoredLine>> stored,
+                               boolean openingRow, boolean closingRow) {
+        Set<String> out = new HashSet<>();
+        if (rows.isEmpty()) return out;
+        LocalDate first = rows.get(0).txnDate(), last = rows.get(0).txnDate();
+        Map<LocalDate, Set<String>> fileDays = new HashMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            LocalDate d = rows.get(i).txnDate();
+            if (d.isBefore(first)) first = d;
+            if (d.isAfter(last)) last = d;
+            fileDays.computeIfAbsent(d, k -> new HashSet<>()).add(hashes.get(i));
+        }
+        for (Map.Entry<LocalDate, Set<String>> day : fileDays.entrySet()) {
+            if (Pos.of(day.getKey(), first, last, openingRow, closingRow) != Pos.INTERIOR) continue;
+            stored.getOrDefault(day.getKey(), List.of()).stream().filter(l -> !day.getValue().contains(l.hash()))
+                    .forEach(l -> out.add(l.hash()));
+        }
+        return out;
+    }
+
     /**
      * #441 review r2: removes proven copies ({@code copy_proven_by} set), each with its audit
      * record in {@code bank_statement_removed_lines}: the line as it was, the matches it had been
@@ -675,7 +710,8 @@ public class BankStatementImportService {
                 .addValue("reason", reason).addValue("u", currentUserId());
         List<UUID> ids = jdbc.queryForList("""
                 select id from bank_statement_lines
-                where tenant_id = :t and bank_account_id = :b and line_hash in (:h) and copy_proven_by is not null""",
+                where tenant_id = :t and bank_account_id = :b and line_hash in (:h)
+                  and (copy_proven_by is not null or left_out_by is not null)""",
                 p, UUID.class);
         if (ids.isEmpty()) return;
         p.addValue("ids", ids);
@@ -687,10 +723,11 @@ public class BankStatementImportService {
                        l.value_date, l.description, l.reference, l.amount, l.running_balance, l.line_hash,
                        (select string_agg(ml.match_id::text, ',' order by ml.match_id) from bank_match_statement_lines ml
                          where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id),
-                       l.copy_proven_by, pi.file_name, :reason, :u
+                       coalesce(l.copy_proven_by, l.left_out_by), pi.file_name, :reason, :u
                 from bank_statement_lines l
                 left join bank_statement_imports i on i.id = l.import_id and i.tenant_id = l.tenant_id
-                left join bank_statement_imports pi on pi.id = l.copy_proven_by and pi.tenant_id = l.tenant_id
+                left join bank_statement_imports pi on pi.id = coalesce(l.copy_proven_by, l.left_out_by)
+                                                   and pi.tenant_id = l.tenant_id
                 where l.tenant_id = :t and l.id in (:ids)""", p);
         List<UUID> suggested = jdbc.queryForList("""
                 select distinct ml.match_id from bank_match_statement_lines ml
@@ -1271,7 +1308,8 @@ public class BankStatementImportService {
         // audit record keeps it); none is in a confirmed match (refused above).
         List<String> copies = jdbc.queryForList("""
                 select l.line_hash from bank_statement_lines l
-                where l.tenant_id = :t and l.import_id = :i and l.copy_proven_by is not null and """ + ONLY_THIS_IMPORT
+                where l.tenant_id = :t and l.import_id = :i
+                  and (l.copy_proven_by is not null or l.left_out_by is not null) and """ + ONLY_THIS_IMPORT
                 + """
                   and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)""",
                 p, String.class);
@@ -1280,8 +1318,9 @@ public class BankStatementImportService {
                 where tenant_id = :t and bank_account_id = :b and line_hash in (:h)""",
                 new MapSqlParameterSource(p.getValues()).addValue("h", copies), LocalDate.class);
         if (!copies.isEmpty()) {
-            removeCopies(t, imp.getBankAccountId(), copies, "a copy of a line already imported, removed with its import "
-                    + imp.getFileName());
+            removeCopies(t, imp.getBankAccountId(), copies, "removed with its import " + imp.getFileName()
+                    + ": a statement holding its day whole showed the day without it (a copy, or a line the bank has since"
+                    + " moved or dropped)");
         }
         Integer history = jdbc.queryForObject("""
                 select count(*) from bank_statement_lines l

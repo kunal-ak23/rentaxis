@@ -12,6 +12,10 @@
 #     cannot show when it was exported (an older download looks the same, #441 review r3), so
 #     nothing is removed at import: the check says so, and deleting the import that brought the
 #     line (after undoing any match on it) removes it, undone history or not.
+#   - bank_statement_lines.left_out_by: the last import that held the line's day whole without
+#     it (any line, look-alike or not). Deleting the import that brought such a line removes it
+#     with an audit record even when it has undone match history — the check's "make the day
+#     that statement's alone" step (#441 review r3).
 #   - bank_statement_removed_lines: the audit record of each copy removed — the line as it
 #     was, the matches it had been in (undone; their journal entries stay), who removed it,
 #     when, why, and the import that proved it a copy. Tenant-scoped like the lines.
@@ -29,6 +33,7 @@ databaseChangeLog:
                   defaultValueBoolean: false
                   constraints: { nullable: false }
               - column: { name: copy_proven_by, type: uuid }
+              - column: { name: left_out_by, type: uuid }
         - createTable:
             tableName: bank_statement_removed_lines
             columns:
@@ -60,5 +65,6 @@ databaseChangeLog:
               - column: { name: txn_date }
       rollback:
         - dropTable: { tableName: bank_statement_removed_lines }
+        - dropColumn: { tableName: bank_statement_lines, columnName: left_out_by }
         - dropColumn: { tableName: bank_statement_lines, columnName: copy_proven_by }
         - dropColumn: { tableName: bank_statement_lines, columnName: lookalike_kept }

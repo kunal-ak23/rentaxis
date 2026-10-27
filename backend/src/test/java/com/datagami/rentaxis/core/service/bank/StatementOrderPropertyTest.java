@@ -1126,6 +1126,8 @@ class StatementOrderPropertyTest {
         // 400,000 by default: the first loss with one back-valued line is trial 175,752 before S25-P1,
         // and 373,159 with #441 v1's day-start rule (sameLinesAgainExamples pins that one too).
         int finalized = 0, refused = 0, unprovenDays = 0, sameBytes = 0, staleProofs = 0, genuineCount = 0, removals = 0, staleMarks = 0, staleLost = 0, secondStep = 0,
+                staleSilentConfirmed = 0, staleSilentTyped = 0, staleSilentTotals = 0, staleSilentLinesAlone = 0, staleVisibleTotals = 0,
+                staleVisibleBalance = 0,
                 trials = r25Trials(400_000);
         List<String> genuine = new ArrayList<>();
         List<String> lost = new ArrayList<>(), stuck = new ArrayList<>();
@@ -1220,12 +1222,15 @@ class StatementOrderPropertyTest {
                 sl.add(new BankReconciliationService.SL(UUID.randomUUID(), books.dates().get(i), i + 1, l.description(), null, null,
                         l.amount(), l.balance()));
             }
+            // #441 coordinator: after an older whole export, each loss is silent (it finalizes) or visible.
+            boolean staleShort = stale && brought.entrySet().stream().anyMatch(e -> have.getOrDefault(e.getKey(), 0) < e.getValue());
             if (!books.unproven().isEmpty()) {
                 List<BankReconciliationService.SL> bank = now.stream().map(l -> new BankReconciliationService.SL(
                         UUID.randomUUID(), l.date(), l.index(), l.description(), null, null, l.amount(), l.balance())).toList();
                 boolean allAgree = books.totalsSettle(bank, sl);
                 if (!allAgree) {
                     refused++;
+                    if (staleShort) staleVisibleTotals++;
                     continue;
                 }
             }
@@ -1235,6 +1240,7 @@ class StatementOrderPropertyTest {
             Set<LocalDate> skipped = confirmed ? Set.of() : books.unconfirmed();
             if (!BankReconciliationService.continuity(OPENING, trueClosing, movement, sl, DAYS[0], skipped, books.unconfirmed()).ok()) {
                 refused++;
+                if (staleShort) staleVisibleBalance++;
                 continue;
             }
             finalized++;
@@ -1251,6 +1257,15 @@ class StatementOrderPropertyTest {
                 // class (a whole-day file confirms its day and takes lines at moved balances whoever
                 // exported it last); counted and capped here, see the report.
                 staleLost++;
+                boolean onProven = missing.stream().anyMatch(k -> books.unproven().contains(LocalDate.parse(k.substring(0, 10))));
+                boolean onConfirmed = missing.stream().anyMatch(k -> !books.unconfirmed().contains(LocalDate.parse(k.substring(0, 10))));
+                if (onConfirmed) staleSilentConfirmed++; else if (onProven) staleSilentTotals++; else staleSilentTyped++;
+                // On the lines alone: every day confirmed and the lines' own opening and closing chain.
+                if (confirmed) {
+                    BankStatementImportService.StoredLine f0 = books.lines().get(0), fz = books.lines().get(books.lines().size() - 1);
+                    if (BankReconciliationService.continuity(f0.balance().subtract(f0.amount()), fz.balance(), movement, sl, DAYS[0],
+                            Set.of(), Set.of()).ok()) staleSilentLinesAlone++;
+                }
             } else if (identical && extra == 2) {
                 sameBytes++;
             } else if (lost.size() < 5) {
@@ -1265,6 +1280,10 @@ class StatementOrderPropertyTest {
                 + "genuine lines removed %d, lost after an older whole export %d, remedies needing the delete-the-others step %d%n",
                 trials, finalized, refused, unprovenDays, sameBytes, staleProofs, staleMarks, removals, genuineCount, staleLost, secondStep);
         assertThat(genuine).as("a genuine line removed as a copy (%d; %d stale whole exports)", genuineCount, staleProofs).isEmpty();
+        System.out.printf("S25-P1 STALE: lost and finalized %d (on a confirmed day %d, of which on the lines alone %d; on an unconfirmed "
+                + "day with the typed closing %d; on an unproven day its totals passed %d); lost but refused %d (day totals) + %d (balance)%n",
+                staleLost, staleSilentConfirmed, staleSilentLinesAlone, staleSilentTyped, staleSilentTotals, staleVisibleTotals,
+                staleVisibleBalance);
         assertThat(lost).as("finalized with a line a file brought lost").isEmpty();
         assertThat(stuck).as("a day the whole statement does not settle").isEmpty();
         // The residue, on its own: two back-valued lines, a file byte-identical to a re-export.

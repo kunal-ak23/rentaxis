@@ -1107,9 +1107,9 @@ public class BankReconciliationService {
      * {@code booked}: those of them in a confirmed match.
      */
     record KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked, String whole,
-                      List<String> others) {
+                      List<String> others, List<String> othersBooked) {
         KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked) {
-            this(holders, proof, proven, booked, null, List.of());
+            this(holders, proof, proven, booked, null, List.of(), List.of());
         }
     }
 
@@ -1164,20 +1164,50 @@ public class BankReconciliationService {
                     order by w.imported_at desc, w.id limit 1""", q);
             if (whole.isEmpty()) continue;
             UUID w = (UUID) whole.get(0).get("id");
+            LocalDate wf = day(whole.get(0).get("first_date")), wl = day(whole.get(0).get("last_date"));
+            q.addValue("w", w);
+            List<UUID> otherIds = new ArrayList<>();
             List<String> others = new ArrayList<>();
-            jdbc.query("""
-                    select distinct i.file_name, i.first_date, i.last_date, i.imported_at, i.id from bank_statement_lines l
+            boolean inside = true;
+            for (Map<String, Object> o : jdbc.queryForList("""
+                    select distinct i.id, i.file_name, i.first_date, i.last_date, i.imported_at from bank_statement_lines l
                     join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
                     join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
                     where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d and i.id <> :w
-                    order by i.imported_at, i.id""", q.addValue("w", w),
-                    rs -> { others.add(rs.getString("file_name") + " (" + rs.getObject("first_date", LocalDate.class).format(DMY)
-                            + "–" + rs.getObject("last_date", LocalDate.class).format(DMY) + ")"); });
+                    order by i.imported_at, i.id""", q)) {
+                LocalDate f = day(o.get("first_date")), z = day(o.get("last_date"));
+                // Deleting it may only drop lines of days the whole statement holds whole.
+                if (!f.isAfter(wf) || !z.isBefore(wl)) inside = false;
+                otherIds.add((UUID) o.get("id"));
+                others.add(o.get("file_name") + " (" + f.format(DMY) + "–" + z.format(DMY) + ")");
+            }
+            if (!inside || otherIds.isEmpty()) continue;
+            // Booked lines only those imports hold: their matches are undone first.
+            List<String> othersBooked = new ArrayList<>();
+            jdbc.query("""
+                    select l.description, l.amount, l.running_balance, l.txn_date from bank_statement_lines l
+                    where l.tenant_id = :t and l.bank_account_id = :b
+                      and exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                    and s.import_id in (:o))
+                      and not exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                        and s.import_id not in (:o))
+                      and exists (select 1 from bank_match_statement_lines ml
+                                    join bank_matches m on m.id = ml.match_id and m.tenant_id = ml.tenant_id
+                                   where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id and not ml.released
+                                     and m.status = 'CONFIRMED')
+                    order by l.txn_date, l.seq""", q.addValue("o", otherIds),
+                    rs -> { othersBooked.add(rs.getString("description") + " " + StatementValues.money(rs.getBigDecimal("amount").abs())
+                            + " at " + StatementValues.money(rs.getBigDecimal("running_balance")) + " on "
+                            + rs.getObject("txn_date", LocalDate.class).format(DMY)); });
             KeptCopies k = e.getValue();
             out.put(e.getKey(), new KeptCopies(k.holders(), null, k.proven(), k.booked(), (String) whole.get(0).get("file_name"),
-                    others));
+                    others, othersBooked));
         }
         return out;
+    }
+
+    private static LocalDate day(Object v) {
+        return v instanceof java.sql.Date d ? d.toLocalDate() : (LocalDate) v;
     }
 
     /**
@@ -1212,10 +1242,15 @@ public class BankReconciliationService {
             return "On " + d.format(DMY) + " an import kept a line beside one already imported with the same amount and "
                     + "narration at another running balance, and the statement " + k.whole() + ", which holds the day "
                     + "whole, does not settle it. If " + k.whole() + " was exported from the bank after those imports, "
-                    + "make the day its alone: delete " + String.join(", ", k.others()) + " (" + k.whole() + " keeps every "
-                    + "line it holds, with its matches; booked lines only those imports hold must have their matches undone "
-                    + "first, reversing the entries the booking created). If it is an older download, import a statement "
-                    + "that holds " + d.format(DMY) + " whole, " + fresh + ", and do the same with that one.";
+                    + "make the day its alone: "
+                    + (k.othersBooked().isEmpty() ? "" : "undo the match" + (k.othersBooked().size() == 1 ? "" : "es") + " of "
+                            + String.join(", ", k.othersBooked()) + " first, reversing the entr"
+                            + (k.othersBooked().size() == 1 ? "y" : "ies") + " the booking created (only those imports hold "
+                            + (k.othersBooked().size() == 1 ? "it" : "them") + "); then ")
+                    + "delete " + String.join(", ", k.others()) + " (" + k.whole() + " keeps every line it holds, with its "
+                    + "matches; the lines it left out go, each with an audit record), then the day is settled. If it is an "
+                    + "older download, import a statement that holds " + d.format(DMY) + " whole, " + fresh
+                    + ", and do the same with that one.";
         }
         return "On " + d.format(DMY) + " an import kept a line beside one already imported with the same amount and "
                 + "narration at another running balance: the bank may have moved balances since (a line added earlier), "
