@@ -7,9 +7,41 @@ import {
     REDIRECT_PARAM_NAME,
     REDIRECT_PARAM_VALUE_MAX,
     REDIRECT_URL_MAX,
+    type PromoAdDTO,
     type PromoRedirectParam,
     type PromoRedirectParamSource,
 } from "@/types/promotion";
+
+/**
+ * A coupon ad's three links, each keyed by the request field that carries it (so a
+ * field error, a message key and a payload field share one name): `redirectUrl` is
+ * the link every phone opens unless the platform's own is set, which then replaces it.
+ */
+export type RedirectLinkKey = "redirectUrl" | "redirectUrlAndroid" | "redirectUrlIos";
+export const REDIRECT_LINK_KEYS: RedirectLinkKey[] = ["redirectUrl", "redirectUrlAndroid", "redirectUrlIos"];
+export type RedirectLinks = Record<RedirectLinkKey, string>;
+
+/** The link's own https / allowlist verdict, which AdEditor shares with a WEBSITE ctaUrl. */
+export type RedirectLinkProblem = "https" | "domain" | null;
+
+/** The label each link carries wherever the three appear together (the example, the ad list). */
+export const REDIRECT_LINK_LABEL: Record<RedirectLinkKey, string> = {
+    redirectUrl: "redirectLinkDefault",
+    redirectUrlAndroid: "redirectLinkAndroid",
+    redirectUrlIos: "redirectLinkIos",
+};
+
+export const linksFromAd = (
+    ad: Pick<PromoAdDTO, "redirectUrl" | "redirectUrlAndroid" | "redirectUrlIos"> | null | undefined,
+): RedirectLinks => ({
+    redirectUrl: ad?.redirectUrl ?? "",
+    redirectUrlAndroid: ad?.redirectUrlAndroid ?? "",
+    redirectUrlIos: ad?.redirectUrlIos ?? "",
+});
+
+/** Parameters need at least one of the three links (they are shared by all of them). */
+export const hasRedirectLink = (links: RedirectLinks): boolean =>
+    REDIRECT_LINK_KEYS.some(k => links[k].trim() !== "");
 
 /** One editable parameter row; `id` keeps the row's inputs steady while others are added or removed. */
 export interface RedirectParamRow {
@@ -44,24 +76,26 @@ export function rowsToParams(rows: RedirectParamRow[]): PromoRedirectParam[] {
 }
 
 /**
- * Field errors for the redirect link, as message keys: `redirectUrl` and
- * `redirectParams` for the link and the list, `row-{id}` for one row. Mirrors
- * the server's checks (PromotionService) so a typo is a field error, not a
- * round trip; the server stays the authority. `urlProblem` is the link's own
- * https / allowlist verdict, which AdEditor shares with a WEBSITE ctaUrl.
+ * Field errors for the redirect links, as message keys: `redirectUrl`,
+ * `redirectUrlAndroid` and `redirectUrlIos` for each link (each held to the same
+ * rules), `redirectParams` for the list, `row-{id}` for one row. Mirrors the
+ * server's checks (PromotionService) so a typo is a field error, not a round
+ * trip; the server stays the authority. `problems` is each link's own https /
+ * allowlist verdict.
  */
 export function redirectErrors(
-    url: string, rows: RedirectParamRow[], urlProblem: "https" | "domain" | null,
+    links: RedirectLinks, rows: RedirectParamRow[], problems: Record<RedirectLinkKey, RedirectLinkProblem>,
 ): Record<string, string> {
     const errors: Record<string, string> = {};
-    const trimmed = url.trim();
-    if (trimmed !== "") {
-        if (trimmed.length > REDIRECT_URL_MAX) errors.redirectUrl = "redirectUrlTooLong";
-        else if (urlProblem === "https") errors.redirectUrl = "httpsRequired";
-        else if (urlProblem === "domain") errors.redirectUrl = "domainNotAllowed";
-    } else if (rows.length > 0) {
-        errors.redirectParams = "redirectParamsNeedUrl";
+    for (const key of REDIRECT_LINK_KEYS) {
+        const trimmed = links[key].trim();
+        if (trimmed === "") continue;
+        if (trimmed.length > REDIRECT_URL_MAX) errors[key] = "redirectUrlTooLong";
+        else if (problems[key] === "https") errors[key] = "httpsRequired";
+        else if (problems[key] === "domain") errors[key] = "domainNotAllowed";
     }
+    // Parameters are shared by all three links, so any one of them is enough.
+    if (!hasRedirectLink(links) && rows.length > 0) errors.redirectParams = "redirectParamsNeedUrl";
     const seen = new Set<string>();
     for (const r of rows) {
         const name = r.name.trim();
@@ -76,14 +110,14 @@ export function redirectErrors(
 }
 
 /**
- * Percent-encodes as Java's `URLEncoder.encode(value, UTF_8)` does, which the
- * server uses to build the link, so the preview matches what a tenant is sent:
- * a space is `+`, and only `A-Z a-z 0-9 . - * _` are left as they are.
- * `encodeURIComponent` alone differs on the space and on `! ' ( ) ~`.
+ * Percent-encodes as the server does when it builds the link
+ * (PromotionRedirectService.encode: `URLEncoder.encode(value, UTF_8)` with `+`
+ * turned into `%20`), so the preview matches what a tenant is sent: a space is
+ * `%20`, and only `A-Z a-z 0-9 . - * _` are left as they are.
+ * `encodeURIComponent` alone differs only on `! ' ( ) ~`.
  */
-export function urlEncodeLikeJava(value: string): string {
+export function urlEncodeLikeServer(value: string): string {
     return encodeURIComponent(value)
-        .replace(/%20/g, "+")
         .replace(/[!'()~]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
@@ -95,7 +129,7 @@ export function exampleRedirectUrl(base: string, pairs: [string, string][]): str
     const head = hash >= 0 ? url.slice(0, hash) : url;
     const fragment = hash >= 0 ? url.slice(hash) : "";
     const sep = !head.includes("?") ? "?" : head.endsWith("?") || head.endsWith("&") ? "" : "&";
-    return head + sep + pairs.map(([k, v]) => `${urlEncodeLikeJava(k)}=${urlEncodeLikeJava(v)}`).join("&") + fragment;
+    return head + sep + pairs.map(([k, v]) => `${urlEncodeLikeServer(k)}=${urlEncodeLikeServer(v)}`).join("&") + fragment;
 }
 
 /** Sample renter data for the preview; real values come from the tenant's account in the app. */
@@ -124,21 +158,32 @@ export function exampleFor(
 }
 
 interface RedirectLinkFieldsProps {
-    url: string;
-    onUrl: (v: string) => void;
+    links: RedirectLinks;
+    onLink: (key: RedirectLinkKey, value: string) => void;
     rows: RedirectParamRow[];
     onRows: (rows: RedirectParamRow[]) => void;
     allowedDomains: string[];
     errors: Record<string, string>;
-    example: string;
+    /** The example URL of each link, empty for a link that is not set. */
+    examples: Record<RedirectLinkKey, string>;
 }
+
+const PLATFORM_LINKS = ["redirectUrlAndroid", "redirectUrlIos"] as const;
+const EXAMPLE_TEST_ID: Record<RedirectLinkKey, string> = {
+    redirectUrl: "redirect-example",
+    redirectUrlAndroid: "redirect-example-android",
+    redirectUrlIos: "redirect-example-ios",
+};
+const PLATFORM_HINT_ID = "redirect-platform-hint";
 
 /**
  * The coupon section's optional redirect: after the tenant copies the code the
- * app opens this link, with parameters whose names are chosen here and whose
- * values come from the app. Shared by the admin and promoter editors.
+ * app opens a link, with parameters whose names are chosen here and whose
+ * values come from the app. The main link is the default; an Android and an
+ * iPhone link may replace it on that phone, and take the same parameters.
+ * Shared by the admin and promoter editors.
  */
-export function RedirectLinkFields({ url, onUrl, rows, onRows, allowedDomains, errors, example }: RedirectLinkFieldsProps) {
+export function RedirectLinkFields({ links, onLink, rows, onRows, allowedDomains, errors, examples }: RedirectLinkFieldsProps) {
     const t = useTranslations("Promotions");
     // `errors` arrives translated, like the rest of the editor's field errors.
     const err = (key: string) => errors[key]
@@ -146,9 +191,16 @@ export function RedirectLinkFields({ url, onUrl, rows, onRows, allowedDomains, e
         : null;
     const invalid = (key: string) =>
         errors[key] ? { "aria-invalid": true, "aria-describedby": `err-${key}` } as const : {};
+    // A platform link is described by the shared hint, and by its error when it has one.
+    const platformInvalid = (key: string) =>
+        errors[key]
+            ? { "aria-invalid": true, "aria-describedby": `${PLATFORM_HINT_ID} err-${key}` } as const
+            : { "aria-describedby": PLATFORM_HINT_ID } as const;
     const update = (id: number, patch: Partial<RedirectParamRow>) =>
         onRows(rows.map(r => (r.id === id ? { ...r, ...patch } : r)));
-    const showParams = url.trim() !== "" || rows.length > 0;
+    const anyLink = hasRedirectLink(links);
+    const showParams = anyLink || rows.length > 0;
+    const shownExamples = REDIRECT_LINK_KEYS.filter(k => examples[k]);
 
     return (
         <div className="space-y-3 rounded-lg border p-3">
@@ -157,13 +209,29 @@ export function RedirectLinkFields({ url, onUrl, rows, onRows, allowedDomains, e
                 <input aria-label={t("redirectUrl")} dir="ltr"
                     placeholder="https://" {...invalid("redirectUrl")}
                     className="w-full rounded-lg border px-3 py-2"
-                    value={url} onChange={e => onUrl(e.target.value)} />
+                    value={links.redirectUrl} onChange={e => onLink("redirectUrl", e.target.value)} />
                 <span className="mt-1 block text-xs text-gray-500">{t("redirectUrlHint")}</span>
                 {allowedDomains.length > 0 && (
                     <span className="block text-xs text-gray-500" dir="ltr">{allowedDomains.join(", ")}</span>
                 )}
                 {err("redirectUrl")}
             </label>
+
+            <div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                    {PLATFORM_LINKS.map(key => (
+                        <label key={key} className="block">
+                            <span className="mb-1 block text-sm font-medium">{t(key)}</span>
+                            <input aria-label={t(key)} dir="ltr"
+                                placeholder="https://" {...platformInvalid(key)}
+                                className="w-full rounded-lg border px-3 py-2"
+                                value={links[key]} onChange={e => onLink(key, e.target.value)} />
+                            {err(key)}
+                        </label>
+                    ))}
+                </div>
+                <p id={PLATFORM_HINT_ID} className="mt-1 text-xs text-gray-500">{t("redirectPlatformHint")}</p>
+            </div>
 
             {showParams && (
                 <fieldset className="space-y-2">
@@ -198,7 +266,7 @@ export function RedirectLinkFields({ url, onUrl, rows, onRows, allowedDomains, e
                             {err(`row-${r.id}`)}
                         </div>
                     ))}
-                    <button type="button" disabled={rows.length >= REDIRECT_PARAMS_MAX || url.trim() === ""}
+                    <button type="button" disabled={rows.length >= REDIRECT_PARAMS_MAX || !anyLink}
                         className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-40"
                         onClick={() => onRows([...rows, newRedirectRow()])}>
                         {t("redirectParamAdd")}
@@ -213,11 +281,16 @@ export function RedirectLinkFields({ url, onUrl, rows, onRows, allowedDomains, e
                 </p>
             )}
 
-            {example && (
-                <div>
+            {shownExamples.length > 0 && (
+                <div className="space-y-1">
                     <span className="block text-xs font-medium text-gray-600">{t("redirectExample")}</span>
-                    <code dir="ltr" data-testid="redirect-example"
-                        className="block break-all rounded bg-gray-50 px-2 py-1 text-xs">{example}</code>
+                    {shownExamples.map(k => (
+                        <div key={k}>
+                            <span className="block text-xs text-gray-500">{t(REDIRECT_LINK_LABEL[k])}</span>
+                            <code dir="ltr" data-testid={EXAMPLE_TEST_ID[k]}
+                                className="block break-all rounded bg-gray-50 px-2 py-1 text-xs">{examples[k]}</code>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

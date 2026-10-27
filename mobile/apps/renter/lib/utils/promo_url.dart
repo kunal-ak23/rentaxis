@@ -1,8 +1,36 @@
+import 'package:flutter/foundation.dart';
+import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// `launchUrl`, as a type, so tests can hand in a recorder instead of a
 /// platform channel.
 typedef PromoUrlLauncher = Future<bool> Function(Uri uri, {LaunchMode mode});
+
+/// Which of a coupon's redirect links to open on [platform] — the raw string,
+/// not yet checked: pass it through [parseSafePromoUri] before launching.
+///
+/// Android prefers `redirectUrlAndroid`, iOS prefers `redirectUrlIos`, and
+/// every other platform has no link of its own. Whatever is preferred but
+/// absent falls back to the general `redirectUrl`.
+///
+/// "Absent" means null or blank, and nothing else. A platform link that is
+/// present but later refused by [parseSafePromoUri] is **not** absent: the
+/// choice is made here, before the check, so a refused Android link ends in
+/// "no launch" rather than quietly sending an Android renter to the general
+/// link the admin meant for other phones. The platform link is the admin's
+/// stated intent for that phone, and a broken one is a mistake to surface
+/// (nothing opens), not one to paper over.
+String? chooseRedirectUrl(PromoAd ad, TargetPlatform platform) {
+  final own = switch (platform) {
+    TargetPlatform.android => ad.redirectUrlAndroid,
+    TargetPlatform.iOS => ad.redirectUrlIos,
+    _ => null,
+  };
+  // The model already trims blanks to null; this keeps the rule true for an
+  // ad built by hand, where `'  '` would otherwise beat the fallback.
+  if (own != null && own.trim().isNotEmpty) return own;
+  return ad.redirectUrl;
+}
 
 /// The client-side check every link out of a promotion passes before it is
 /// launched — the WEBSITE `ctaUrl` and a coupon's redirect alike. Returns the

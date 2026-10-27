@@ -266,6 +266,112 @@ void main() {
     });
   });
 
+  group('per-platform redirect links', () {
+    const general = 'https://quickwash.example/app?code=MIFTAH25';
+    const android = 'https://play.google.com/store/apps/details?id=ae.quickwash';
+    const ios = 'https://apps.apple.com/ae/app/quickwash/id123456789';
+
+    test('an older backend that sends neither key reads both as absent', () {
+      // `json()` carries no platform keys — the shape of every backend that
+      // predates them, which must read exactly as it always did.
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrl': general},
+      ));
+      expect(ad.redirectUrlAndroid, isNull);
+      expect(ad.redirectUrlIos, isNull);
+      expect(ad.redirectUrl, general);
+    });
+
+    test('reads both links, independently of the general one', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {
+          'redirectUrl': general,
+          'redirectUrlAndroid': android,
+          'redirectUrlIos': ios,
+        },
+      ));
+      expect(ad.redirectUrlAndroid, android);
+      expect(ad.redirectUrlIos, ios);
+      expect(ad.redirectUrl, general);
+    });
+
+    test('either platform link can stand without the other or the general one', () {
+      final androidOnly = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrlAndroid': android},
+      ));
+      expect(androidOnly.redirectUrlAndroid, android);
+      expect(androidOnly.redirectUrlIos, isNull);
+      expect(androidOnly.redirectUrl, isNull);
+
+      final iosOnly = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrlIos': ios},
+      ));
+      expect(iosOnly.redirectUrlIos, ios);
+      expect(iosOnly.redirectUrlAndroid, isNull);
+      expect(iosOnly.redirectUrl, isNull);
+    });
+
+    test('explicit nulls read as absent', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrlAndroid': null, 'redirectUrlIos': null},
+      ));
+      expect(ad.redirectUrlAndroid, isNull);
+      expect(ad.redirectUrlIos, isNull);
+    });
+
+    test('a blank link reads as absent, so it falls back rather than launches', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrlAndroid': '   ', 'redirectUrlIos': ''},
+      ));
+      expect(ad.redirectUrlAndroid, isNull);
+      expect(ad.redirectUrlIos, isNull);
+    });
+
+    test('a link of the wrong shape reads as absent', () {
+      for (final junk in <Object>[42, true, 1.5, ['https://x.example'], {'a': 1}]) {
+        final ad = PromoAd.fromJson(json(
+          ctaType: 'COUPON',
+          extra: {'redirectUrlAndroid': junk, 'redirectUrlIos': junk},
+        ));
+        expect(ad.redirectUrlAndroid, isNull, reason: '$junk');
+        expect(ad.redirectUrlIos, isNull, reason: '$junk');
+      }
+    });
+
+    test('the string is carried, trimmed, and not judged here', () {
+      // Safety is the launcher's check, not the model's: an http link is
+      // kept so that check can refuse it (and refuse the fallback with it).
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {
+          'redirectUrlAndroid': '  http://quickwash.example/app  ',
+          'redirectUrlIos': ' $ios ',
+        },
+      ));
+      expect(ad.redirectUrlAndroid, 'http://quickwash.example/app');
+      expect(ad.redirectUrlIos, ios);
+    });
+
+    test('a bad platform link does not disturb the general link or the shared fields', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {
+          'redirectUrl': general,
+          'redirectUrlAndroid': 42,
+          'sharedFields': ['RENTER_NAME'],
+        },
+      ));
+      expect(ad.redirectUrl, general);
+      expect(ad.sharedFields, ['RENTER_NAME']);
+    });
+  });
+
   group('accent colour', () {
     test('parses #RRGGBB as fully opaque', () {
       expect(PromoAd.fromJson(json(accentColor: '#FBF3E2')).accentColor,

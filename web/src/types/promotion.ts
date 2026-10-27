@@ -103,8 +103,12 @@ export interface PromoAdDTO {
   /**
    * COUPON ads only: the link opened after the code is copied, and the
    * parameters added to it. Absent from an older backend, null/empty when unused.
+   * `redirectUrlAndroid` / `redirectUrlIos` replace `redirectUrl` on that phone
+   * (it stays the fallback); the same parameters are added to whichever opens.
    */
   redirectUrl?: string | null
+  redirectUrlAndroid?: string | null
+  redirectUrlIos?: string | null
   redirectParams?: PromoRedirectParam[] | null
   /** PENDING / APPROVED / REJECTED. Only APPROVED ads can reach renters. */
   approvalStatus: PromoApprovalStatus
@@ -140,8 +144,10 @@ export interface PromoAdRequest {
   couponCode?: string | null
   couponTermsEn?: string | null
   couponTermsAr?: string | null
-  /** COUPON ads only; the server clears both for any other ctaType. */
+  /** COUPON ads only; the server clears all of these for any other ctaType. */
   redirectUrl?: string | null
+  redirectUrlAndroid?: string | null
+  redirectUrlIos?: string | null
   redirectParams?: PromoRedirectParam[]
   startsAt?: string | null
   endsAt?: string | null
@@ -263,6 +269,8 @@ export function adToRequest(ad: PromoAdDTO): PromoAdRequest {
     couponTermsEn: ad.couponTermsEn,
     couponTermsAr: ad.couponTermsAr,
     redirectUrl: ad.redirectUrl ?? null,
+    redirectUrlAndroid: ad.redirectUrlAndroid ?? null,
+    redirectUrlIos: ad.redirectUrlIos ?? null,
     redirectParams: ad.redirectParams ?? [],
     startsAt: ad.startsAt,
     endsAt: ad.endsAt,

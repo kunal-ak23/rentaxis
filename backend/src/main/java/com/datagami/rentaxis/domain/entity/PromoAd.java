@@ -134,7 +134,21 @@ public class PromoAd extends BaseTenantEntity {
     @Column(name = "redirect_url", length = 2048)
     private String redirectUrl;
 
-    /** COUPON only (addendum A): query parameters appended per renter; null = none. */
+    /**
+     * COUPON only (addendum C): the link opened on Android instead of {@code redirectUrl};
+     * null = use {@code redirectUrl}. Validated, and resolved per renter, exactly like it.
+     */
+    @Column(name = "redirect_url_android", length = 2048)
+    private String redirectUrlAndroid;
+
+    /** COUPON only (addendum C): the link opened on iPhone instead of {@code redirectUrl}; null = use it. */
+    @Column(name = "redirect_url_ios", length = 2048)
+    private String redirectUrlIos;
+
+    /**
+     * COUPON only (addendum A): query parameters appended per renter; null = none.
+     * Shared by all three links (addendum C).
+     */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "redirect_params", columnDefinition = "jsonb")
     private List<PromoRedirectParam> redirectParams;

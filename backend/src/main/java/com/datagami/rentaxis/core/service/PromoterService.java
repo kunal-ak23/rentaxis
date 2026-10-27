@@ -419,7 +419,7 @@ public class PromoterService {
                 req.ctaLabelEn(), req.ctaLabelAr(), req.ctaUrl(), req.couponCode(),
                 req.couponTermsEn(), req.couponTermsAr(), req.startsAt(), req.endsAt(),
                 priority, placement, req.propertyIds(), req.active(),
-                req.redirectUrl(), req.redirectParams());
+                req.redirectUrl(), req.redirectParams(), req.redirectUrlAndroid(), req.redirectUrlIos());
     }
 
     /**

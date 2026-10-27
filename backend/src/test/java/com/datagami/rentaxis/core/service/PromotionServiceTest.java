@@ -193,6 +193,84 @@ class PromotionServiceTest {
                 .hasMessageContaining("couponCode");
     }
 
+    // ------------------------------------- addendum C: per-platform coupon links
+
+    @Test
+    void createAd_aPlatformLinkOverTheLengthLimitIsRefusedByTheServiceItself() {
+        // The DTO's @Size is the controller's backstop; the service must refuse on its own.
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+        String tooLong = "https://spice-bazaar.ae/" + "a".repeat(2049 - "https://spice-bazaar.ae/".length());
+
+        assertThatThrownBy(() -> service.createAd(tenantId,
+                redirectRequest(PromoCtaType.COUPON, null, tooLong, null, List.of())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("redirectUrlAndroid must be at most 2048");
+        assertThatThrownBy(() -> service.createAd(tenantId,
+                redirectRequest(PromoCtaType.COUPON, null, null, tooLong, List.of())))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("redirectUrlIos must be at most 2048");
+        verify(adRepository, never()).save(any());
+    }
+
+    @Test
+    void createAd_parametersWithOnlyAPlatformLinkAreKept() {
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+        when(adRepository.save(any(PromoAd.class))).thenAnswer(i -> i.getArgument(0));
+        List<PromoAdRequest.RedirectParam> params = List.of(new PromoAdRequest.RedirectParam(
+                "code", com.datagami.rentaxis.domain.entity.enums.PromoRedirectSource.COUPON_CODE, null));
+
+        PromoAd android = service.createAd(tenantId, redirectRequest(PromoCtaType.COUPON,
+                null, " https://app.spice-bazaar.ae/a ", null, params));
+        PromoAd ios = service.createAd(tenantId, redirectRequest(PromoCtaType.COUPON,
+                null, null, "https://app.spice-bazaar.ae/i", params));
+
+        assertThat(android.getRedirectUrl()).isNull();
+        assertThat(android.getRedirectUrlAndroid()).isEqualTo("https://app.spice-bazaar.ae/a");
+        assertThat(android.getRedirectParams()).hasSize(1);
+        assertThat(ios.getRedirectUrlIos()).isEqualTo("https://app.spice-bazaar.ae/i");
+        assertThat(ios.getRedirectParams()).hasSize(1);
+    }
+
+    @Test
+    void createAd_parametersWithNoLinkAtAllAreRefused() {
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+        List<PromoAdRequest.RedirectParam> params = List.of(new PromoAdRequest.RedirectParam(
+                "code", com.datagami.rentaxis.domain.entity.enums.PromoRedirectSource.COUPON_CODE, null));
+
+        assertThatThrownBy(() -> service.createAd(tenantId,
+                redirectRequest(PromoCtaType.COUPON, "  ", "", null, params)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Redirect parameters need a link");
+    }
+
+    @Test
+    void updateAd_anotherCtaTypeClearsStoredPlatformLinks() {
+        PromoAd existing = new PromoAd();
+        existing.setId(UUID.randomUUID());
+        existing.setTenantId(tenantId);
+        existing.setBusinessId(businessId);
+        existing.setCtaType(PromoCtaType.COUPON);
+        existing.setRedirectUrlAndroid("https://app.spice-bazaar.ae/a");
+        existing.setRedirectUrlIos("https://app.spice-bazaar.ae/i");
+        when(adRepository.findBusinessId(tenantId, existing.getId())).thenReturn(Optional.of(businessId));
+        when(adRepository.findForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+        when(adRepository.save(any(PromoAd.class))).thenAnswer(i -> i.getArgument(0));
+
+        PromoAd saved = service.updateAd(tenantId, existing.getId(), redirectRequest(PromoCtaType.NONE,
+                null, "https://app.spice-bazaar.ae/a", "https://app.spice-bazaar.ae/i", List.of()));
+
+        assertThat(saved.getRedirectUrlAndroid()).isNull();
+        assertThat(saved.getRedirectUrlIos()).isNull();
+    }
+
+    private PromoAdRequest redirectRequest(PromoCtaType type, String redirectUrl, String android, String ios,
+                                           List<PromoAdRequest.RedirectParam> params) {
+        return new PromoAdRequest(businessId, "Friday brunch", null, null, null,
+                null, null, type, null, null, null, type == PromoCtaType.COUPON ? "SAVE10" : null, null, null,
+                null, null, 1, null, List.of(), null, redirectUrl, params, android, ios);
+    }
+
     @Test
     void createAd_rejectsCallWhenBusinessHasNoPhone() {
         PromoBusiness b = business();

@@ -108,8 +108,22 @@ describe('promoter portal', () => {
         renderPortal()
         await screen.findByText('Ad coupon')
         const summary = within(rowOf('Ad coupon')).getByTestId('redirect-summary')
-        expect(summary).toHaveTextContent('After copy: https://app.sparkle.example.test/open')
+        expect(summary).toHaveTextContent('After copy (Default): https://app.sparkle.example.test/open')
         expect(summary).toHaveTextContent("Parameters: email (Tenant's email)")
+    })
+
+    it('shows a coupon ad\'s Android and iPhone links, labelled, in the promoter list', async () => {
+        plan({ ads: [ad('coupon', {
+            ctaType: 'COUPON', couponCode: 'SPRING20', redirectUrl: 'https://app.sparkle.example.test/open',
+            redirectUrlAndroid: 'https://play.sparkle.example.test/open', redirectUrlIos: 'https://apps.sparkle.example.test/open',
+            redirectParams: [{ name: 'email', source: 'RENTER_EMAIL' }],
+        })] })
+        renderPortal()
+        await screen.findByText('Ad coupon')
+        const summary = within(rowOf('Ad coupon')).getByTestId('redirect-summary')
+        expect(summary).toHaveTextContent('After copy (Default): https://app.sparkle.example.test/open')
+        expect(summary).toHaveTextContent('After copy (Android): https://play.sparkle.example.test/open')
+        expect(summary).toHaveTextContent('After copy (iPhone): https://apps.sparkle.example.test/open')
     })
 
     it('only ever calls the promoter API, never an admin route', async () => {

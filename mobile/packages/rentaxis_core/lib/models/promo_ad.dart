@@ -62,6 +62,8 @@ class PromoAd {
     this.couponTermsEn,
     this.couponTermsAr,
     this.redirectUrl,
+    this.redirectUrlAndroid,
+    this.redirectUrlIos,
     this.sharedFields = const [],
     this.endsAt,
   });
@@ -91,14 +93,27 @@ class PromoAd {
   ///
   /// The string is not validated here. The model only carries it; whoever
   /// launches it re-checks the scheme and authority first.
+  ///
+  /// With per-platform links this is the fallback: the link for a phone that
+  /// has none of its own, and for any platform other than Android and iOS.
   final String? redirectUrl;
 
-  /// Which kinds of the renter's own data are inside [redirectUrl], as the
+  /// The link for an Android phone, resolved by the server exactly like
+  /// [redirectUrl] (same parameters, same encoding). Null when the ad has none
+  /// — Android then uses [redirectUrl] — and absent from an older backend,
+  /// which reads the same. Not validated here, same as [redirectUrl].
+  final String? redirectUrlAndroid;
+
+  /// The link for an iPhone; the iOS counterpart of [redirectUrlAndroid].
+  final String? redirectUrlIos;
+
+  /// Which kinds of the renter's own data are inside the redirect links, as the
   /// server's source names (`RENTER_NAME`, `RENTER_PHONE`, `RENTER_EMAIL`,
-  /// `PROPERTY_NAME`, `UNIT_NUMBER`). It exists for the consent sheet, so it
-  /// never under-reports: a name this app version has never heard of is kept,
-  /// and so is a value that is present but cannot be read at all (see
-  /// [unreadableSharedField]).
+  /// `PROPERTY_NAME`, `UNIT_NUMBER`). The three links share their parameters,
+  /// so this one list covers whichever of them opens. It exists for the
+  /// consent sheet, so it never under-reports: a name this app version has
+  /// never heard of is kept, and so is a value that is present but cannot be
+  /// read at all (see [unreadableSharedField]).
   ///
   /// Empty only when the key is absent or null (an older backend) or the
   /// server sent an empty list — the only three ways of saying "nothing
@@ -168,6 +183,8 @@ class PromoAd {
         couponTermsEn: json['couponTermsEn'] as String?,
         couponTermsAr: json['couponTermsAr'] as String?,
         redirectUrl: _blankToNull(json['redirectUrl']),
+        redirectUrlAndroid: _blankToNull(json['redirectUrlAndroid']),
+        redirectUrlIos: _blankToNull(json['redirectUrlIos']),
         sharedFields: _parseSharedFields(json['sharedFields']),
         endsAt: DateTime.tryParse(json['endsAt'] as String? ?? ''),
       );

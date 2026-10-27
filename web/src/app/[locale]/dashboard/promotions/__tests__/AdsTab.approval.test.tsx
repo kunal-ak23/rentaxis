@@ -41,6 +41,13 @@ const REDIRECTING = ad('redirecting', {
         { name: 'promo', source: 'STATIC', value: 'SPRING' },
     ],
 })
+const PLATFORM_LINKS = ad('platform-links', {
+    ctaType: 'COUPON', couponCode: 'SPRING20',
+    redirectUrl: null,
+    redirectUrlAndroid: 'https://play.quickwash.example.test/open',
+    redirectUrlIos: 'https://apps.quickwash.example.test/open',
+    redirectParams: [{ name: 'email', source: 'RENTER_EMAIL' }],
+})
 const COUPON_ONLY = ad('coupon-only', { ctaType: 'COUPON', couponCode: 'SPRING20', redirectUrl: 'https://app.quickwash.example.test/open', redirectParams: [{ name: 'code', source: 'COUPON_CODE' }] })
 
 let api: ReturnType<typeof fetchRouter>
@@ -184,7 +191,7 @@ describe('admin Ads tab — approval', () => {
         await screen.findByText('Ad redirecting')
 
         const summary = within(rowOf('Ad redirecting')).getByTestId('redirect-summary')
-        expect(summary).toHaveTextContent('After copy: https://app.quickwash.example.test/open')
+        expect(summary).toHaveTextContent('After copy (Default): https://app.quickwash.example.test/open')
         expect(summary).toHaveTextContent("Parameters: phone (Tenant's phone), code (Coupon code), promo (Fixed value)")
         expect(summary).toHaveTextContent('Shares tenant details')
         // The values of a fixed parameter are the ad's own text, not renter data: nothing is hidden by the summary.
@@ -196,6 +203,21 @@ describe('admin Ads tab — approval', () => {
         expect(within(rowOf('Ad live')).queryByTestId('redirect-summary')).not.toBeInTheDocument()
         // ...and the Approve button is still beside it.
         expect(within(rowOf('Ad redirecting')).getByRole('button', { name: /^Approve/ })).toBeInTheDocument()
+    })
+
+    it('shows an approver every platform link, labelled, even with no default link', async () => {
+        api.on('GET', '/v1/promotions/ads', { body: page(PLATFORM_LINKS, REDIRECTING) })
+        renderTab()
+        await screen.findByText('Ad platform-links')
+
+        const summary = within(rowOf('Ad platform-links')).getByTestId('redirect-summary')
+        expect(summary).toHaveTextContent('After copy (Android): https://play.quickwash.example.test/open')
+        expect(summary).toHaveTextContent('After copy (iPhone): https://apps.quickwash.example.test/open')
+        expect(summary).not.toHaveTextContent('(Default)')
+        expect(summary).toHaveTextContent("Parameters: email (Tenant's email)")
+        expect(summary).toHaveTextContent('Shares tenant details')
+        // An ad with only a default link shows no platform line.
+        expect(within(rowOf('Ad redirecting')).getByTestId('redirect-summary')).not.toHaveTextContent('Android')
     })
 })
 

@@ -107,6 +107,90 @@ class PromotionRedirectServiceTest {
         assertThat(out).isEmpty();
     }
 
+    // ------------------------------------------------- addendum C: per-platform links
+
+    @Test
+    void eachPlatformLinkGetsTheSameParametersEncodedTheSameWay() {
+        PromoAd ad = ad("https://quickwash.example/r",
+                new PromoRedirectParam("code", PromoRedirectSource.COUPON_CODE, null),
+                new PromoRedirectParam("q", PromoRedirectSource.STATIC, "a&b c"));
+        ad.setRedirectUrlAndroid("https://android.quickwash.example/open?src=miftah");
+        ad.setRedirectUrlIos("https://ios.quickwash.example/open#top");
+
+        PromotionRedirectService.Resolved res = resolve(ad);
+
+        assertThat(res.url()).isEqualTo("https://quickwash.example/r?code=SAVE10&q=a%26b%20c");
+        // Its own query kept; the fragment stays last.
+        assertThat(res.urlAndroid())
+                .isEqualTo("https://android.quickwash.example/open?src=miftah&code=SAVE10&q=a%26b%20c");
+        assertThat(res.urlIos()).isEqualTo("https://ios.quickwash.example/open?code=SAVE10&q=a%26b%20c#top");
+        assertThat(res.sharedFields()).isEmpty();
+    }
+
+    @Test
+    void aPlatformLinkAloneResolvesAndNamesTheRenterDataInIt() {
+        Renter r = new Renter();
+        r.setTenantId(tenantId);
+        r.setNameEn("Aisha");
+        when(renters.findByUserId(renterUserId)).thenReturn(Optional.of(r));
+        when(users.findById(renterUserId)).thenReturn(Optional.empty());
+        PromoAd android = ad(null,
+                new PromoRedirectParam("n", PromoRedirectSource.RENTER_NAME, null),
+                new PromoRedirectParam("e", PromoRedirectSource.RENTER_EMAIL, null));
+        android.setRedirectUrlAndroid("https://android.quickwash.example/open");
+        PromoAd ios = ad(null, new PromoRedirectParam("n", PromoRedirectSource.RENTER_NAME, null));
+        ios.setRedirectUrlIos("https://ios.quickwash.example/open");
+
+        Map<UUID, PromotionRedirectService.Resolved> out = service.resolve(tenantId, renterUserId,
+                List.of(android, ios), Map.of(business.getId(), business));
+
+        PromotionRedirectService.Resolved a = out.get(android.getId());
+        assertThat(a.url()).isNull();
+        assertThat(a.urlAndroid()).isEqualTo("https://android.quickwash.example/open?n=Aisha");
+        assertThat(a.urlIos()).isNull();
+        assertThat(a.sharedFields()).containsExactly("RENTER_NAME");
+        PromotionRedirectService.Resolved i = out.get(ios.getId());
+        assertThat(i.url()).isNull();
+        assertThat(i.urlAndroid()).isNull();
+        assertThat(i.urlIos()).isEqualTo("https://ios.quickwash.example/open?n=Aisha");
+        assertThat(i.sharedFields()).containsExactly("RENTER_NAME");
+    }
+
+    @Test
+    void aPlatformLinkOffTheAllowlistNowIsDroppedAndTheOthersKept() {
+        business.setAllowedDomains("quickwash.example");
+        PromoAd ad = ad("https://quickwash.example/r", new PromoRedirectParam("c", PromoRedirectSource.COUPON_CODE, null));
+        ad.setRedirectUrlAndroid("https://play.google.com/store/apps/details?id=com.quickwash");
+        ad.setRedirectUrlIos("https://ios.quickwash.example/open");
+
+        PromotionRedirectService.Resolved res = resolve(ad);
+
+        assertThat(res.url()).isEqualTo("https://quickwash.example/r?c=SAVE10");
+        assertThat(res.urlAndroid()).isNull();
+        assertThat(res.urlIos()).isEqualTo("https://ios.quickwash.example/open?c=SAVE10");
+    }
+
+    @Test
+    void anAdWhoseEveryLinkIsOffTheAllowlistHasNoRedirect() {
+        PromoAd ad = ad(null, new PromoRedirectParam("c", PromoRedirectSource.COUPON_CODE, null));
+        ad.setRedirectUrlAndroid("https://play.google.com/store/apps/details?id=com.quickwash");
+        ad.setRedirectUrlIos("https://apps.apple.com/app/id1");
+
+        assertThat(service.resolve(tenantId, renterUserId, List.of(ad), Map.of(business.getId(), business)))
+                .isEmpty();
+    }
+
+    @Test
+    void aNonCouponAdIgnoresItsPlatformLinks() {
+        PromoAd website = ad(null, new PromoRedirectParam("q", PromoRedirectSource.STATIC, "x"));
+        website.setCtaType(PromoCtaType.WEBSITE);
+        website.setRedirectUrlAndroid("https://android.quickwash.example/open");
+        website.setRedirectUrlIos("https://ios.quickwash.example/open");
+
+        assertThat(service.resolve(tenantId, renterUserId, List.of(website), Map.of(business.getId(), business)))
+                .isEmpty();
+    }
+
     private PromotionRedirectService.Resolved resolve(PromoAd ad) {
         return service.resolve(tenantId, renterUserId, List.of(ad), Map.of(business.getId(), business))
                 .get(ad.getId());

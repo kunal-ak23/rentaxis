@@ -54,7 +54,23 @@ public record PromoAdRequest(
         // parameters. Every rule (https + allowlist, ≤10 params, names, STATIC
         // values) is checked in PromotionService; @Size here only bounds the body.
         @Size(max = 2048) String redirectUrl,
-        @Size(max = 50) List<RedirectParam> redirectParams) {
+        @Size(max = 50) List<RedirectParam> redirectParams,
+        // Addendum C, COUPON only: the link opened on Android / iPhone instead of
+        // redirectUrl (null = use redirectUrl). Same rules as redirectUrl, same params.
+        @Size(max = 2048) String redirectUrlAndroid,
+        @Size(max = 2048) String redirectUrlIos) {
+
+    /** The request shape before the per-platform links (addendum C): none. */
+    public PromoAdRequest(UUID businessId, String titleEn, String titleAr, String subtitleEn, String subtitleAr,
+                          String backgroundImageUrl, String accentColor, PromoCtaType ctaType,
+                          String ctaLabelEn, String ctaLabelAr, String ctaUrl, String couponCode,
+                          String couponTermsEn, String couponTermsAr, Instant startsAt, Instant endsAt,
+                          Integer priority, PromoPlacement placement, List<UUID> propertyIds, Boolean active,
+                          String redirectUrl, List<RedirectParam> redirectParams) {
+        this(businessId, titleEn, titleAr, subtitleEn, subtitleAr, backgroundImageUrl, accentColor, ctaType,
+                ctaLabelEn, ctaLabelAr, ctaUrl, couponCode, couponTermsEn, couponTermsAr, startsAt, endsAt,
+                priority, placement, propertyIds, active, redirectUrl, redirectParams, null, null);
+    }
 
     /** The request shape before the coupon redirect (addendum A): no redirect. */
     public PromoAdRequest(UUID businessId, String titleEn, String titleAr, String subtitleEn, String subtitleAr,
@@ -64,7 +80,7 @@ public record PromoAdRequest(
                           Integer priority, PromoPlacement placement, List<UUID> propertyIds, Boolean active) {
         this(businessId, titleEn, titleAr, subtitleEn, subtitleAr, backgroundImageUrl, accentColor, ctaType,
                 ctaLabelEn, ctaLabelAr, ctaUrl, couponCode, couponTermsEn, couponTermsAr, startsAt, endsAt,
-                priority, placement, propertyIds, active, null, null);
+                priority, placement, propertyIds, active, null, null, null, null);
     }
 
     /** {@code value} is read only for {@code source = STATIC}. */

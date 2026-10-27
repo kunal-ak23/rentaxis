@@ -420,6 +420,6 @@ public class PromotionFeedService {
                 phone,
                 a.getCouponCode(), a.getCouponTermsEn(), a.getCouponTermsAr(),
                 a.getEndsAt(),
-                redirect.url(), redirect.sharedFields());
+                redirect.url(), redirect.urlAndroid(), redirect.urlIos(), redirect.sharedFields());
     }
 }

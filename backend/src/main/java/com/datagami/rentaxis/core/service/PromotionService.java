@@ -549,6 +549,8 @@ public class PromotionService {
         String ctaUrl = null;
         String couponCode = null;
         String redirectUrl = null;
+        String redirectUrlAndroid = null;
+        String redirectUrlIos = null;
         List<com.datagami.rentaxis.domain.entity.PromoRedirectParam> redirectParams = null;
         switch (ctaType) {
             case WEBSITE -> {
@@ -567,20 +569,12 @@ public class PromotionService {
                 if (couponCode == null) {
                     throw new BusinessRuleViolationException("couponCode is required for a coupon ad");
                 }
-                redirectUrl = trimToNull(req.redirectUrl());
-                if (redirectUrl != null) {
-                    if (redirectUrl.length() > MAX_REDIRECT_URL) {
-                        throw new BusinessRuleViolationException(
-                                "redirectUrl must be at most " + MAX_REDIRECT_URL + " characters");
-                    }
-                    // The same rule as a WEBSITE ctaUrl: the renter app opens it, with
-                    // the renter's own data appended, so https and allowlisted only.
-                    if (!urlValidator.isAllowed(redirectUrl, business.getAllowedDomains())) {
-                        throw new BusinessRuleViolationException(
-                                "redirectUrl must be https and on one of this business's allowed domains");
-                    }
-                }
-                redirectParams = redirectParams(req.redirectParams(), redirectUrl != null);
+                redirectUrl = redirectLink(req.redirectUrl(), "redirectUrl", business);
+                // Addendum C: the Android and iPhone links, checked exactly like redirectUrl.
+                redirectUrlAndroid = redirectLink(req.redirectUrlAndroid(), "redirectUrlAndroid", business);
+                redirectUrlIos = redirectLink(req.redirectUrlIos(), "redirectUrlIos", business);
+                redirectParams = redirectParams(req.redirectParams(),
+                        redirectUrl != null || redirectUrlAndroid != null || redirectUrlIos != null);
             }
             case CALL -> {
                 if (trimToNull(business.getPhoneE164()) == null) {
@@ -613,8 +607,11 @@ public class PromotionService {
         // from a previous edit — a coupon ad must not keep a stale URL.
         a.setCtaUrl(ctaUrl);
         a.setCouponCode(couponCode);
-        // Addendum A: like the URL and code above, cleared for every other CTA type.
+        // Addendum A: like the URL and code above, cleared for every other CTA type
+        // (and addendum C's platform links with them).
         a.setRedirectUrl(redirectUrl);
+        a.setRedirectUrlAndroid(redirectUrlAndroid);
+        a.setRedirectUrlIos(redirectUrlIos);
         a.setRedirectParams(redirectParams);
         a.setCouponTermsEn(ctaType == PromoCtaType.COUPON ? trimToNull(req.couponTermsEn()) : null);
         a.setCouponTermsAr(ctaType == PromoCtaType.COUPON ? trimToNull(req.couponTermsAr()) : null);
@@ -633,11 +630,35 @@ public class PromotionService {
     private static final Pattern REDIRECT_PARAM_NAME = Pattern.compile("^[A-Za-z0-9_.\\-]{1,40}$");
 
     /**
+     * One coupon redirect link, trimmed (blank = none): {@code redirectUrl} (plan
+     * addendum A) or a platform link (addendum C), all under the same rule. At most
+     * 2048 characters, and the rule of a WEBSITE ctaUrl: the renter app opens it with
+     * the renter's own data appended, so https, a host, no userinfo, and on the
+     * business's allowed domains only.
+     */
+    private String redirectLink(String requested, String field, PromoBusiness business) {
+        String url = trimToNull(requested);
+        if (url == null) {
+            return null;
+        }
+        if (url.length() > MAX_REDIRECT_URL) {
+            throw new BusinessRuleViolationException(
+                    field + " must be at most " + MAX_REDIRECT_URL + " characters");
+        }
+        if (!urlValidator.isAllowed(url, business.getAllowedDomains())) {
+            throw new BusinessRuleViolationException(
+                    field + " must be https and on one of this business's allowed domains");
+        }
+        return url;
+    }
+
+    /**
      * A coupon redirect's parameters (plan addendum A), checked and normalised:
      * at most ten; each name {@code [A-Za-z0-9_.-]{1,40}} and unique within the ad;
      * a value (trimmed, at most 200) only for STATIC and dropped for every other
      * source, whose value the feed fills per renter. Parameters with no redirect
-     * link are refused rather than kept dormant. Null or empty means none (null).
+     * link at all (main, Android or iPhone — addendum C) are refused rather than kept
+     * dormant. Null or empty means none (null).
      */
     private static List<com.datagami.rentaxis.domain.entity.PromoRedirectParam> redirectParams(
             List<PromoAdRequest.RedirectParam> requested, boolean hasUrl) {
@@ -645,7 +666,8 @@ public class PromotionService {
             return null;
         }
         if (!hasUrl) {
-            throw new BusinessRuleViolationException("Redirect parameters need a redirectUrl");
+            throw new BusinessRuleViolationException(
+                    "Redirect parameters need a link: redirectUrl, redirectUrlAndroid or redirectUrlIos");
         }
         if (requested.size() > MAX_REDIRECT_PARAMS) {
             throw new BusinessRuleViolationException(

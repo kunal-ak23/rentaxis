@@ -311,3 +311,49 @@ stats survive. Archived items are hidden from every list and the renter app; an
 - Admin tabs: "Show archived" toggle → archived list with Restore; archived rows show an
   Archived pill and no Edit/Approve.
 - EN + AR strings, Vitest tests.
+
+## Addendum C — per-platform coupon links (Kunal, 2026-10-27)
+
+Ruling: a coupon ad's redirect can differ by phone — on Android open one link (e.g. the
+business's app link), on iPhone another. Both are configurable per ad in the editor and
+filled in later; the existing `redirectUrl` stays as the fallback. The same custom
+parameters, populated per tenant, go on whichever link opens.
+
+### Ad fields (admin + promoter requests and `PromoAdDTO`)
+- `redirectUrlAndroid: string | null`, `redirectUrlIos: string | null` — COUPON ads only
+  (cleared for every other ctaType, like `redirectUrl`). Same validation as `redirectUrl`:
+  https, a host, no userinfo, ≤ 2048, on the business's allowed domains
+  (`PromotionUrlValidator`). A store page (play.google.com / apps.apple.com) needs that
+  domain on the business's allowlist like any other host.
+- `redirectParams` now need at least ONE of `redirectUrl`, `redirectUrlAndroid`,
+  `redirectUrlIos` (400 otherwise). Params are shared by all three links.
+- Storage: `promo_ads.redirect_url_android varchar(2048)`, `promo_ads.redirect_url_ios
+  varchar(2048)`, nullable — new changeset **`184-promo-ad-platform-redirects.yaml`**
+  appended to the master (main already has two `183-*`; never touch those).
+- Part of the ad: a promoter edit → PENDING as for any field (no new code path needed,
+  but cover it with a test).
+
+### Renter feed (`PromoAdCardDTO`, `/feed` and `/offers`)
+- `redirectUrlAndroid: string | null`, `redirectUrlIos: string | null` — each resolved
+  server-side for the calling renter exactly like `redirectUrl` (same params, same
+  encoding, same omission of unavailable values, same read-time allowlist re-check);
+  null when not set or when the re-check drops it.
+- `sharedFields`: the renter-data sources present in ANY of the resolved links (the
+  params are shared, so in practice identical).
+
+### Renter app (`mobile/`)
+- `PromoAd` gains `redirectUrlAndroid`, `redirectUrlIos` (tolerant of absence).
+- On Copy code the app chooses: Android → `redirectUrlAndroid ?? redirectUrl`;
+  iOS → `redirectUrlIos ?? redirectUrl`; anything else → `redirectUrl`. An absent, blank or
+  wrong-typed platform link falls back to `redirectUrl`; a present platform link that fails
+  the safety check opens nothing (no silent fallback to another link). Then the existing flow: safety check (https,
+  host, no userinfo) → consent sheet when `sharedFields` non-empty → launch with
+  `externalApplication`. Platform choice behind a seam so tests can force Android/iOS.
+
+### Web editor
+- In the coupon section under "After copying, open this link": two optional fields
+  "Android link" and "iPhone link", hint "Leave empty to use the link above on that phone.
+  The same parameters are added." Same client-side validation as the main link.
+- Live example: show the example URL for each link that is set.
+- Admin ad list / approval summary (`RedirectSummary`): show every set link, labelled.
+- EN + AR strings.

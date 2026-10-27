@@ -20,9 +20,15 @@ export '../utils/promo_url.dart' show PromoUrlLauncher;
 /// The client-side checks live in `parseSafePromoUri` (`utils/promo_url.dart`),
 /// shared with the coupon's redirect link.
 class PromoActions {
-  PromoActions({PromoUrlLauncher? launcher}) : _launch = launcher ?? launchUrl;
+  PromoActions({PromoUrlLauncher? launcher, TargetPlatform? platform})
+    : _launch = launcher ?? launchUrl,
+      _platform = platform;
 
   final PromoUrlLauncher _launch;
+
+  /// Forced platform for a coupon's per-platform redirect link; null (the
+  /// real app) means the phone's own. A test seam, like the launcher.
+  final TargetPlatform? _platform;
 
   Future<void> handleTap(BuildContext context, PromoAd ad) async {
     switch (ad.ctaType) {
@@ -31,7 +37,12 @@ class PromoActions {
       case PromoCtaType.coupon:
         // The sheet gets this class's launcher, so a coupon redirect opens
         // through the same seam as every other link out of a promotion.
-        await CouponSheet.show(context, ad, launcher: _launch);
+        await CouponSheet.show(
+          context,
+          ad,
+          launcher: _launch,
+          platform: _platform,
+        );
       case PromoCtaType.call:
         await _openPhone(ad.ctaPhone, whatsapp: false);
       case PromoCtaType.whatsapp:
