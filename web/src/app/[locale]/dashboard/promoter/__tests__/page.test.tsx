@@ -100,6 +100,18 @@ describe('promoter portal', () => {
         expect(within(rowOf('Ad pending')).queryByTestId('rejection-reason')).not.toBeInTheDocument()
     })
 
+    it('shows a coupon ad\'s redirect link and parameters in the list', async () => {
+        plan({ ads: [ad('coupon', {
+            ctaType: 'COUPON', couponCode: 'SPRING20', redirectUrl: 'https://app.sparkle.example.test/open',
+            redirectParams: [{ name: 'email', source: 'RENTER_EMAIL' }],
+        })] })
+        renderPortal()
+        await screen.findByText('Ad coupon')
+        const summary = within(rowOf('Ad coupon')).getByTestId('redirect-summary')
+        expect(summary).toHaveTextContent('After copy: https://app.sparkle.example.test/open')
+        expect(summary).toHaveTextContent("Parameters: email (Tenant's email)")
+    })
+
     it('only ever calls the promoter API, never an admin route', async () => {
         plan({ canCreate: true })
         api.on('POST', `${PROMOTER_API}ads`, { status: 201, body: ad('new', { approvalStatus: 'PENDING' }) })

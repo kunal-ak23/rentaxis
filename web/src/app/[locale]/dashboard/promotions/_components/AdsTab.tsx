@@ -17,6 +17,7 @@ import {
 } from "@/types/promotion";
 import { AdEditor, type PropertyOption } from "./AdEditor";
 import { AdStatusPill } from "./AdStatusPill";
+import { RedirectSummary } from "./RedirectSummary";
 
 const PAGE_SIZE = 10;
 
@@ -219,6 +220,7 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
                                 <tr key={row.id} className="border-b">
                                     <td className="py-2">
                                         {row.titleEn ?? row.titleAr}
+                                        <RedirectSummary ad={row} />
                                         {row.submittedByName && (
                                             <span className="block text-xs text-gray-500">
                                                 {t("submittedBy", { name: row.submittedByName })}

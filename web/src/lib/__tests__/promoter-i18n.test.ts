@@ -39,6 +39,17 @@ describe("promoter copy", () => {
         expect(mismatched).toEqual([]);
     });
 
+    it("labels every redirect source and every redirect error in both languages", () => {
+        const keys = [
+            ...["COUPON_CODE", "RENTER_NAME", "RENTER_PHONE", "RENTER_EMAIL", "PROPERTY_NAME", "UNIT_NUMBER", "STATIC"].map(s => `redirectSource${s}`),
+            "redirectUrlTooLong", "redirectParamsNeedUrl", "redirectParamNameInvalid", "redirectParamNameDuplicate",
+            "redirectParamValueRequired", "httpsRequired", "domainNotAllowed",
+        ];
+        for (const cat of [en.Promotions, ar.Promotions] as Record<string, string>[]) {
+            expect(keys.filter(k => !cat[k])).toEqual([]);
+        }
+    });
+
     it("labels the role and its nav link in both languages", () => {
         expect(en.Roles.PROMOTER).toBe("Promoter");
         expect(ar.Roles.PROMOTER).toBe("مروّج");

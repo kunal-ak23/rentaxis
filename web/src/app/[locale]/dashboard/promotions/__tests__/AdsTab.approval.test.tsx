@@ -32,6 +32,16 @@ const PENDING = ad('pending', {
 })
 const REJECTED = ad('rejected', { approvalStatus: 'REJECTED', rejectionReason: 'Artwork is blurry', submittedByName: 'Pat Promoter' })
 const LIVE = ad('live')
+const REDIRECTING = ad('redirecting', {
+    approvalStatus: 'PENDING', ctaType: 'COUPON', couponCode: 'SPRING20', submittedByName: 'Pat Promoter',
+    redirectUrl: 'https://app.quickwash.example.test/open',
+    redirectParams: [
+        { name: 'phone', source: 'RENTER_PHONE' },
+        { name: 'code', source: 'COUPON_CODE' },
+        { name: 'promo', source: 'STATIC', value: 'SPRING' },
+    ],
+})
+const COUPON_ONLY = ad('coupon-only', { ctaType: 'COUPON', couponCode: 'SPRING20', redirectUrl: 'https://app.quickwash.example.test/open', redirectParams: [{ name: 'code', source: 'COUPON_CODE' }] })
 
 let api: ReturnType<typeof fetchRouter>
 
@@ -166,5 +176,25 @@ describe('admin Ads tab — approval', () => {
         fireEvent.change(filter, { target: { value: 'REJECTED' } })
         await screen.findByText('Ad rejected')
         expect(api.calls.at(-1)!.url).toContain('approvalStatus=REJECTED')
+    })
+
+    it('shows an approver the redirect link, each parameter and its source, and whether tenant details are shared', async () => {
+        api.on('GET', '/v1/promotions/ads', { body: page(REDIRECTING, COUPON_ONLY, LIVE) })
+        renderTab()
+        await screen.findByText('Ad redirecting')
+
+        const summary = within(rowOf('Ad redirecting')).getByTestId('redirect-summary')
+        expect(summary).toHaveTextContent('After copy: https://app.quickwash.example.test/open')
+        expect(summary).toHaveTextContent("Parameters: phone (Tenant's phone), code (Coupon code), promo (Fixed value)")
+        expect(summary).toHaveTextContent('Shares tenant details')
+        // The values of a fixed parameter are the ad's own text, not renter data: nothing is hidden by the summary.
+        // A link whose parameters carry no tenant details says nothing about sharing.
+        const plain = within(rowOf('Ad coupon-only')).getByTestId('redirect-summary')
+        expect(plain).toHaveTextContent('Parameters: code (Coupon code)')
+        expect(plain).not.toHaveTextContent('Shares tenant details')
+        // An ad without a redirect has no such line.
+        expect(within(rowOf('Ad live')).queryByTestId('redirect-summary')).not.toBeInTheDocument()
+        // ...and the Approve button is still beside it.
+        expect(within(rowOf('Ad redirecting')).getByRole('button', { name: /^Approve/ })).toBeInTheDocument()
     })
 })

@@ -10,6 +10,7 @@ import {
 import { adDisplayStatus, type PromoAdDTO, type PromoAdRequest, type PromoBusinessDTO } from "@/types/promotion";
 import { AdEditor, type PropertyOption } from "../../promotions/_components/AdEditor";
 import { AdStatusPill } from "../../promotions/_components/AdStatusPill";
+import { RedirectSummary } from "../../promotions/_components/RedirectSummary";
 
 const PAGE_SIZE = 10;
 
@@ -154,7 +155,10 @@ export function PromoterAdsTab({ businesses, properties }: PromoterAdsTabProps) 
                                 : adDisplayStatus(row, new Date(), business?.active ?? true);
                             return (
                                 <tr key={row.id} className="border-b">
-                                    <td className="py-2">{row.titleEn ?? row.titleAr}</td>
+                                    <td className="py-2">
+                                        {row.titleEn ?? row.titleAr}
+                                        <RedirectSummary ad={row} />
+                                    </td>
                                     <td>{row.businessNameEn}</td>
                                     <td>{t(`ctaType${row.ctaType}`)}</td>
                                     <td>
