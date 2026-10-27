@@ -161,7 +161,7 @@ public class PromoterService {
         Access access = access(caller);
         requireCanCreate(access);
         requireOwnUploadOrNone(caller, req.logoUrl(), "logoUrl");
-        PromoBusiness b = promotionService.createBusiness(caller.tenantId(), req);
+        PromoBusiness b = withoutNameOracle(() -> promotionService.createBusiness(caller.tenantId(), req));
         grantRepository.save(PromoterBusiness.of(caller.tenantId(), caller.userId(), b.getId()));
         return PromoAdDtos.business(b, 0L, images::forDto);
     }
@@ -182,7 +182,7 @@ public class PromoterService {
         // of them in flight (which share-locks this row) is waited for, never slipped past.
         businessRepository.findForUpdate(caller.tenantId(), businessId)
                 .orElseThrow(() -> new NotFoundException("Business not found"));
-        PromoBusiness b = promotionService.updateBusiness(caller.tenantId(), businessId, req);
+        PromoBusiness b = withoutNameOracle(() -> promotionService.updateBusiness(caller.tenantId(), businessId, req));
         Instant now = now();
         for (PromoAd ad : adRepository.findForUpdateByBusinessAndStatusIn(caller.tenantId(), businessId,
                 List.of(PromoApprovalStatus.APPROVED, PromoApprovalStatus.PENDING))) {
@@ -349,6 +349,22 @@ public class PromoterService {
         if (PromotionImageService.fileOf(route).isEmpty() || !images.ownedBy(caller.tenantId(), route)) {
             throw new BusinessRuleViolationException(
                     field + " must be an image uploaded here: upload the picture instead of linking to it.");
+        }
+    }
+
+    /**
+     * Review M2: the admin's "A business named X already exists." would tell a promoter
+     * that a business it was never granted exists. On the promoter path the refusal
+     * does not echo the name.
+     */
+    private static PromoBusiness withoutNameOracle(java.util.function.Supplier<PromoBusiness> write) {
+        try {
+            return write.get();
+        } catch (BusinessRuleViolationException e) {
+            if (PromotionService.BUSINESS_NAME_TAKEN_CODE.equals(e.getCode())) {
+                throw new BusinessRuleViolationException("That business name can't be used — choose another.");
+            }
+            throw e;
         }
     }
 

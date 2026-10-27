@@ -56,6 +56,9 @@ public class PromotionService {
     /** Migration 71's unique index name — kept in sync with the translation below. */
     static final String UQ_PROMO_BUSINESS_NAME = "uq_promo_business_name";
 
+    /** The code on the name-collision refusal, so the promoter path can word it without the name (review M2). */
+    public static final String BUSINESS_NAME_TAKEN_CODE = "promo.businessNameTaken";
+
     /** Mirrors PromoAdRequest's @Pattern; the column is varchar(9). */
     private static final Pattern ACCENT_COLOR =
             Pattern.compile("^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$");
@@ -144,7 +147,8 @@ public class PromotionService {
             String message = cause != null ? cause.getMessage() : null;
             if (message != null && message.contains(UQ_PROMO_BUSINESS_NAME)) {
                 throw new BusinessRuleViolationException(
-                        "A business named \"" + b.getNameEn() + "\" already exists.");
+                        "A business named \"" + b.getNameEn() + "\" already exists.",
+                        BUSINESS_NAME_TAKEN_CODE, java.util.Map.of());
             }
             throw e;
         }

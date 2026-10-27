@@ -183,6 +183,25 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
         assertThat(reload(ad.getId()).getApprovalStatus()).isEqualTo(PENDING);
     }
 
+    // ------------------------------------------------------------------- M2
+
+    @Test
+    void m2_aPromoterLearnsNothingFromATakenBusinessName() {
+        String secret = "Secret Spa " + UUID.randomUUID().toString().substring(0, 6);
+        assertThat(post(admin, "/api/v1/promotions/businesses", body("nameEn", secret)).status()).isEqualTo(201);
+
+        Resp create = post(promoter, "/api/v1/promoter/businesses", body("nameEn", secret.toLowerCase()));
+        assertThat(create.status()).isEqualTo(400);
+        assertThat(create.text("message")).isEqualTo("That business name can't be used — choose another.");
+        Resp rename = put(promoter, "/api/v1/promoter/businesses/" + wash.getId(), body("nameEn", secret));
+        assertThat(rename.status()).isEqualTo(400);
+        assertThat(rename.text("message")).doesNotContainIgnoringCase(secret);
+
+        // An admin still gets the specific message.
+        assertThat(post(admin, "/api/v1/promotions/businesses", body("nameEn", secret)).text("message"))
+                .contains("already exists");
+    }
+
     // -------------------------------------------------------------- helpers
 
     private Map<String, Object> ad(String title) {
