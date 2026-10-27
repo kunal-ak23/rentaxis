@@ -177,23 +177,82 @@ void main() {
       expect(ad.sharedFields, ['RENTER_NAME', 'RENTER_PASSPORT']);
     });
 
-    test('drops repeats, blanks and non-strings from the list', () {
+    test('lists each field once', () {
       final ad = PromoAd.fromJson(json(
         ctaType: 'COUPON',
         extra: {
-          'sharedFields': ['RENTER_NAME', 'RENTER_NAME', '', '  ', 7, null, 'UNIT_NUMBER']
+          'sharedFields': ['RENTER_NAME', 'RENTER_NAME', 'UNIT_NUMBER', 'RENTER_NAME']
         },
       ));
       expect(ad.sharedFields, ['RENTER_NAME', 'UNIT_NUMBER']);
     });
 
-    test('values of the wrong shape degrade instead of throwing', () {
+    test('an entry that cannot be read is kept as the unreadable marker', () {
+      // A blank, a number, a null or an object inside the list may well be a
+      // field that carries renter data. Dropping it would let the consent
+      // sheet under-report — or, if it was the only entry, skip consent.
+      for (final bad in <Object?>['', '   ', 7, null, true, {'name': 'x'}, ['x']]) {
+        final ad = PromoAd.fromJson(json(
+          ctaType: 'COUPON',
+          extra: {
+            'sharedFields': ['RENTER_NAME', bad, 'UNIT_NUMBER']
+          },
+        ));
+        expect(ad.sharedFields,
+            ['RENTER_NAME', PromoAd.unreadableSharedField, 'UNIT_NUMBER'],
+            reason: 'entry: $bad');
+      }
+    });
+
+    test('several unreadable entries collapse to one marker', () {
       final ad = PromoAd.fromJson(json(
         ctaType: 'COUPON',
-        extra: {'redirectUrl': 42, 'sharedFields': 'RENTER_NAME'},
+        extra: {
+          'sharedFields': [7, null, {'a': 1}]
+        },
+      ));
+      expect(ad.sharedFields, [PromoAd.unreadableSharedField]);
+    });
+
+    test('a sharedFields value that is not a list is the unreadable marker', () {
+      // Present but unreadable is not the same as absent: the link may carry
+      // renter data, so this must reach the consent sheet and not read as
+      // "nothing shared".
+      for (final bad in <Object>['RENTER_NAME', '', 42, true, {'RENTER_NAME': 1}]) {
+        final ad = PromoAd.fromJson(json(
+          ctaType: 'COUPON',
+          extra: {
+            'redirectUrl': 'https://quickwash.example/app',
+            'sharedFields': bad,
+          },
+        ));
+        expect(ad.sharedFields, [PromoAd.unreadableSharedField],
+            reason: 'value: $bad');
+        expect(ad.redirectUrl, 'https://quickwash.example/app');
+      }
+    });
+
+    test('only an absent key, a null or an empty list mean nothing is shared', () {
+      expect(PromoAd.fromJson(json(ctaType: 'COUPON')).sharedFields, isEmpty);
+      expect(
+        PromoAd.fromJson(json(ctaType: 'COUPON', extra: {'sharedFields': null}))
+            .sharedFields,
+        isEmpty,
+      );
+      expect(
+        PromoAd.fromJson(json(ctaType: 'COUPON', extra: {'sharedFields': []}))
+            .sharedFields,
+        isEmpty,
+      );
+    });
+
+    test('a redirectUrl of the wrong shape is no redirect', () {
+      // There is nothing to launch, so nothing to consent to either.
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrl': 42},
       ));
       expect(ad.redirectUrl, isNull);
-      expect(ad.sharedFields, isEmpty);
     });
 
     test('the parsed list cannot be mutated behind the model', () {
