@@ -27,7 +27,12 @@ if [[ -z "${SKIP_BUILD:-}" ]]; then
   say "Building backend image (linux/amd64) at $GIT_SHA"
   docker buildx build --platform linux/amd64 -t rentaxis-backend:latest --load --build-arg GIT_SHA="$GIT_SHA" ./backend
   say "Building web image (linux/amd64)"
+  # BACKEND_URL is baked into next.config.ts's rewrites at build time (standalone
+  # output), so the compose file's runtime BACKEND_URL cannot fix it afterwards.
+  # Left out, it defaults to localhost:8080 and every /api/proxy call 500s
+  # (2026-10-27). Same value as deploy.yml.
   docker buildx build --platform linux/amd64 -t rentaxis-web:latest --load \
+    --build-arg BACKEND_URL=http://backend:8080 \
     --build-arg NEXT_PUBLIC_API_URL="https://$DOMAIN" \
     --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" \
     --build-arg APP_GIT_SHA="$GIT_SHA" \
