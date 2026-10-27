@@ -28,6 +28,8 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
     org.springframework.transaction.PlatformTransactionManager txManager;
     @org.springframework.beans.factory.annotation.Autowired
     com.datagami.rentaxis.core.service.PromoterAdminService promoterAdmin;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.PromoterService promoterService;
 
     private UUID org;
     private User admin;
@@ -141,6 +143,109 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
         PromoAd after = reload(ad.getId());
         assertThat(after.getApprovalStatus()).isEqualTo(PENDING);
         assertThat(after.getSubmittedAt()).isAfter(expected);
+    }
+
+    // ------------------------------------------------------------- N2 / N1
+
+    /**
+     * N2, the reviewer's probe: a promoter's business edit held open (it has flipped the
+     * business's ads to PENDING) while an admin edits one of those ads. The admin's
+     * write must wait and apply on top of the edit — not write back the APPROVED state
+     * it would otherwise have read before the edit committed.
+     */
+    @Test
+    void i3_anAdminAdEditDoesNotUndoABusinessEditsResubmission() throws Exception {
+        PromoAd ad = ad(org, wash.getId(), APPROVED, null, p1.getId());
+        Resp adminEdit = whileABusinessEditIsOpen(() -> put(admin, "/api/v1/promotions/ads/" + ad.getId(),
+                body("businessId", wash.getId().toString(), "titleEn", "Tidied by admin", "ctaType", "NONE",
+                        "propertyIds", List.of(p1.getId().toString()))));
+
+        assertThat(adminEdit.status()).isEqualTo(200);
+        PromoAd after = reload(ad.getId());
+        assertThat(after.getTitleEn()).isEqualTo("Tidied by admin");
+        assertThat(after.getApprovalStatus()).isEqualTo(PENDING);
+        assertThat(after.getPromoterUserId()).isEqualTo(promoter.getId());
+        assertThat(after.getSubmittedAt()).isNotNull();
+    }
+
+    /** N2: the same for an admin's delete that archives (the ad has view history). */
+    @Test
+    void i3_anAdminArchiveDoesNotUndoABusinessEditsResubmission() throws Exception {
+        PromoAd ad = ad(org, wash.getId(), APPROVED, null, p1.getId());
+        User renter = renterAt(org, p1);
+        jdbc.update("INSERT INTO promo_ad_events (id, tenant_id, ad_id, renter_user_id, event_type, occurred_at, day) "
+                + "VALUES (?, ?, ?, ?, 'IMPRESSION', now(), (now() AT TIME ZONE 'Asia/Dubai')::date)",
+                UUID.randomUUID(), org, ad.getId(), renter.getId());
+
+        Resp archived = whileABusinessEditIsOpen(() -> delete(admin, "/api/v1/promotions/ads/" + ad.getId()));
+
+        assertThat(archived.status()).isEqualTo(200);
+        assertThat(archived.text("outcome")).isEqualTo("ARCHIVED");
+        PromoAd after = reload(ad.getId());
+        assertThat(after.getArchivedAt()).isNotNull();
+        assertThat(after.getApprovalStatus()).isEqualTo(PENDING);
+        assertThat(after.getPromoterUserId()).isEqualTo(promoter.getId());
+    }
+
+    /**
+     * N1: deleting a business takes the business row before its ads, the order an
+     * approval takes — with an approval held open the delete queues on the business
+     * row (rather than locking the ads first and deadlocking with the approval).
+     */
+    @Test
+    void n1_aBusinessDeleteQueuesOnTheBusinessBehindAnApproval() throws Exception {
+        PromoAd ad = ad(org, wash.getId(), PENDING, promoter.getId(), p1.getId());
+        jdbc.update("UPDATE promo_ads SET submitted_at = now() - interval '1 minute' WHERE id = ?", ad.getId());
+        java.time.Instant expected = java.time.Instant.parse(submittedAt(ad.getId()));
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<Resp>> del =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean queuedOnBusiness = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(org);
+            new org.springframework.transaction.support.TransactionTemplate(txManager).executeWithoutResult(tx -> {
+                approvals.approve(org, ad.getId(), admin.getId(), expected);
+                del.set(pool.submit(() -> delete(admin, "/api/v1/promotions/businesses/" + wash.getId())));
+                queuedOnBusiness.set(waitForLockWaitOn("promo_businesses"));
+            });
+        } finally {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.clear();
+        }
+        Resp res = del.get().get(20, java.util.concurrent.TimeUnit.SECONDS);
+        pool.shutdownNow();
+
+        assertThat(queuedOnBusiness.get()).as("the delete queued on the business row").isTrue();
+        assertThat(res.status()).isEqualTo(200);
+        assertThat(res.text("outcome")).isEqualTo("ARCHIVED");
+    }
+
+    /**
+     * Runs {@code adminCall} on another thread while a promoter's business edit of
+     * {@code wash} is open (its ads already flipped, uncommitted); waits until the call
+     * is queued on a lock, commits the edit, and answers the call's response.
+     */
+    private Resp whileABusinessEditIsOpen(java.util.concurrent.Callable<Resp> adminCall) throws Exception {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<Resp>> call =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean queued = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(org);
+            new org.springframework.transaction.support.TransactionTemplate(txManager).executeWithoutResult(tx -> {
+                promoterService.updateBusiness(new com.datagami.rentaxis.core.service.PromoterService.Caller(
+                                promoter.getId(), org), wash.getId(),
+                        new com.datagami.rentaxis.api.dto.PromoBusinessRequest("QuickWash N2 " + UUID.randomUUID(),
+                                null, null, null, "+971501234567", null, null, null));
+                call.set(pool.submit(adminCall));
+                queued.set(waitForLockWaitOn("promo_"));
+            });
+        } finally {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.clear();
+        }
+        Resp res = call.get().get(20, java.util.concurrent.TimeUnit.SECONDS);
+        pool.shutdownNow();
+        assertThat(queued.get()).as("the admin's write waited for the business edit").isTrue();
+        return res;
     }
 
     /** Whether, within 5 s, some session is waiting for a lock in a statement on {@code table}. */

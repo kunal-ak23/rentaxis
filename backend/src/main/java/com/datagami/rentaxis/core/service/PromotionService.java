@@ -166,7 +166,11 @@ public class PromotionService {
      * Deleting an archived business again changes nothing.
      */
     public DeleteOutcome deleteBusiness(UUID tenantId, UUID id) {
-        PromoBusiness b = getBusiness(tenantId, id);
+        // Review N1: the business row first. With hibernate.order_updates the ads'
+        // UPDATEs flush before the business's, which would lock the ads first, the
+        // reverse of an approval (business FOR SHARE, then the ad) — a deadlock.
+        PromoBusiness b = businessRepository.findForUpdate(tenantId, id)
+                .orElseThrow(() -> new NotFoundException("Business not found"));
         if (adRepository.countByBusinessId(id) == 0) {
             businessRepository.delete(b);
             return DeleteOutcome.DELETED;
@@ -369,7 +373,7 @@ public class PromotionService {
     }
 
     public PromoAd updateAd(UUID tenantId, UUID id, PromoAdRequest req) {
-        PromoAd a = getAd(tenantId, id);
+        PromoAd a = lockForWrite(tenantId, id, req.businessId());
         requireNotArchived(a);
         // A promoter-written ad shows only where it is targeted AND the promoter is
         // allowed (PromoAdRepository.findEligible), so "every property" would quietly
@@ -394,7 +398,7 @@ public class PromotionService {
      * readable.
      */
     public DeleteOutcome deleteAd(UUID tenantId, UUID id) {
-        PromoAd ad = getAd(tenantId, id);
+        PromoAd ad = lockForWrite(tenantId, id, null);
         if (eventRepository.countByAdId(id) == 0) {
             adRepository.delete(ad);
             return DeleteOutcome.DELETED;
@@ -412,7 +416,7 @@ public class PromotionService {
      * re-activates it by editing). Its business must not be archived.
      */
     public PromoAd restoreAd(UUID tenantId, UUID id) {
-        PromoAd ad = getAd(tenantId, id);
+        PromoAd ad = lockForWrite(tenantId, id, null);
         if (ad.getArchivedAt() == null) {
             throw new BusinessRuleViolationException("This ad is not archived.");
         }
@@ -423,6 +427,33 @@ public class PromotionService {
         ad.setArchivedAt(null);
         ad.setActive(false);
         return adRepository.save(ad);
+    }
+
+    /**
+     * Review N2: the ad, ready to be written — its business row(s) share-locked first,
+     * then the ad row locked, the order an approval and a promoter's business edit
+     * take. {@code PromoAd} has no version column and Hibernate writes every column,
+     * so an ad read without the lock and saved after a business edit committed would
+     * put back the APPROVED status, submittedAt and promoter the edit had just
+     * replaced. Locked like this the write waits for the edit, reads what it
+     * committed, and applies on top of it. When the ad moves to {@code targetBusinessId}
+     * that business is share-locked too, the two in id order. The ad's business id is
+     * read as a value first, so the locked read loads the ad fresh. Re-entrant: calling
+     * it again in the same transaction takes no new lock and returns the same ad.
+     */
+    public PromoAd lockForWrite(UUID tenantId, UUID adId, UUID targetBusinessId) {
+        UUID businessId = adRepository.findBusinessId(tenantId, adId)
+                .orElseThrow(() -> new NotFoundException("Ad not found"));
+        java.util.TreeSet<UUID> businesses = new java.util.TreeSet<>();
+        businesses.add(businessId);
+        if (targetBusinessId != null) {
+            businesses.add(targetBusinessId);
+        }
+        for (UUID b : businesses) {
+            businessRepository.findForShare(tenantId, b);
+        }
+        return adRepository.findForUpdate(tenantId, adId)
+                .orElseThrow(() -> new NotFoundException("Ad not found"));
     }
 
     /** Addendum B: an archived ad is read-only until restored (edit, approve, reject). */

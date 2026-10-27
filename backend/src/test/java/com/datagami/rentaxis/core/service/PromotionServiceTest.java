@@ -112,7 +112,7 @@ class PromotionServiceTest {
     @Test
     void deleteBusiness_archivesWhenAdsExist() {
         PromoBusiness b = business();
-        when(businessRepository.findById(businessId)).thenReturn(Optional.of(b));
+        when(businessRepository.findForUpdate(tenantId, businessId)).thenReturn(Optional.of(b));
         when(adRepository.countByBusinessId(businessId)).thenReturn(3L);
         PromoAd live = new PromoAd();
         live.setId(UUID.randomUUID());
@@ -133,7 +133,7 @@ class PromotionServiceTest {
     @Test
     void deleteBusiness_deletesOneThatNeverHadAnAd() {
         PromoBusiness b = business();
-        when(businessRepository.findById(businessId)).thenReturn(Optional.of(b));
+        when(businessRepository.findForUpdate(tenantId, businessId)).thenReturn(Optional.of(b));
         when(adRepository.countByBusinessId(businessId)).thenReturn(0L);
 
         assertThat(service.deleteBusiness(tenantId, businessId)).isEqualTo(PromotionService.DeleteOutcome.DELETED);
@@ -262,7 +262,8 @@ class PromotionServiceTest {
         PromoAd existing = new PromoAd();
         existing.setId(UUID.randomUUID());
         existing.setTenantId(tenantId);
-        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(adRepository.findBusinessId(tenantId, existing.getId())).thenReturn(Optional.of(businessId));
+        when(adRepository.findForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(eventRepository.countByAdId(existing.getId())).thenReturn(42L);
 
         assertThat(service.deleteAd(tenantId, existing.getId())).isEqualTo(PromotionService.DeleteOutcome.ARCHIVED);
@@ -277,7 +278,8 @@ class PromotionServiceTest {
         PromoAd existing = new PromoAd();
         existing.setId(UUID.randomUUID());
         existing.setTenantId(tenantId);
-        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(adRepository.findBusinessId(tenantId, existing.getId())).thenReturn(Optional.of(businessId));
+        when(adRepository.findForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(eventRepository.countByAdId(existing.getId())).thenReturn(0L);
 
         assertThat(service.deleteAd(tenantId, existing.getId())).isEqualTo(PromotionService.DeleteOutcome.DELETED);
@@ -293,7 +295,8 @@ class PromotionServiceTest {
         existing.setBusinessId(businessId);
         UUID propertyId = UUID.randomUUID();
 
-        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(adRepository.findBusinessId(tenantId, existing.getId())).thenReturn(Optional.of(businessId));
+        when(adRepository.findForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
         when(adRepository.save(any(PromoAd.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -331,7 +334,8 @@ class PromotionServiceTest {
         existing.setBusinessId(businessId);
         UUID foreignProperty = UUID.randomUUID();
 
-        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(adRepository.findBusinessId(tenantId, existing.getId())).thenReturn(Optional.of(businessId));
+        when(adRepository.findForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
         when(adRepository.save(any(PromoAd.class))).thenAnswer(i -> i.getArgument(0));
         when(propertyRepository.existsByIdAndTenantId(foreignProperty, tenantId))
@@ -375,7 +379,8 @@ class PromotionServiceTest {
         PromoBusiness foreign = business();
         foreign.setTenantId(UUID.randomUUID());
 
-        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(adRepository.findBusinessId(tenantId, existing.getId())).thenReturn(Optional.of(businessId));
+        when(adRepository.findForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(businessRepository.findById(businessId)).thenReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> service.updateAd(tenantId, existing.getId(),
@@ -396,7 +401,8 @@ class PromotionServiceTest {
         PromoBusiness other = business();
         other.setAllowedDomains("gym.example.com");
 
-        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(adRepository.findBusinessId(tenantId, existing.getId())).thenReturn(Optional.of(businessId));
+        when(adRepository.findForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(businessRepository.findById(businessId)).thenReturn(Optional.of(other));
 
         assertThatThrownBy(() -> service.updateAd(tenantId, existing.getId(),

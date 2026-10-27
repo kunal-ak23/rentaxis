@@ -246,11 +246,13 @@ public class PromoterService {
     /** Every edit but priority and placement (kept), and the ad goes back to PENDING. */
     public PromoAdDTO updateAd(Caller caller, UUID adId, PromoAdRequest req) {
         Access access = access(caller);
-        PromoAd ad = adRepository.findForUpdate(caller.tenantId(), adId)
-                .filter(a -> a.getArchivedAt() == null)
+        // Access first, from values only (no entity loaded), then the locks in the order
+        // every ad write takes (review N2): the business row(s) FOR SHARE, then the ad.
+        UUID currentBusiness = adRepository.findBusinessIdOfLiveAd(caller.tenantId(), adId)
                 .orElseThrow(() -> new NotFoundException("Ad not found"));
-        requireGrantedBusiness(access, ad.getBusinessId(), "Ad not found");
+        requireGrantedBusiness(access, currentBusiness, "Ad not found");
         requireGrantedBusiness(access, req.businessId(), "Business not found");
+        PromoAd ad = promotionService.lockForWrite(caller.tenantId(), adId, req.businessId());
         requireOwnProperties(access, req.propertyIds());
         requireOwnUploadOrNone(caller, req.backgroundImageUrl(), "backgroundImageUrl");
         PromoAd saved = promotionService.updateAd(caller.tenantId(), adId,
@@ -261,7 +263,11 @@ public class PromoterService {
 
     /** The admin rule (addendum B): deleted if it never ran, archived if it has view history. */
     public PromotionService.DeleteOutcome deleteAd(Caller caller, UUID adId) {
-        requireAd(caller, access(caller), adId);
+        // Values only before the lock (review N2): loading the ad here would hand the
+        // locked read in deleteAd this unlocked, possibly stale, copy.
+        UUID businessId = adRepository.findBusinessIdOfLiveAd(caller.tenantId(), adId)
+                .orElseThrow(() -> new NotFoundException("Ad not found"));
+        requireGrantedBusiness(access(caller), businessId, "Ad not found");
         return promotionService.deleteAd(caller.tenantId(), adId);
     }
 
