@@ -258,7 +258,7 @@ class StatementOrderPropertyTest {
      * the bank's lines that arrived in some accepted file.
      */
     record Books(List<BankStatementImportService.StoredLine> lines, List<LocalDate> dates, Set<LocalDate> unconfirmed,
-                 Set<LocalDate> unproven, Set<Integer> arrived) { }
+                 Set<LocalDate> unproven, Set<Integer> arrived, int moved, List<String> wrongTakes) { }
 
     private static Books importStatement(List<List<Bank>> files) {
         return importFiles(files.stream().map(FileSpec::plain).toList());
@@ -288,12 +288,33 @@ class StatementOrderPropertyTest {
         Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
         Map<LocalDate, BankStatementImportService.DayState> states = new HashMap<>();
         Set<Integer> arrived = new HashSet<>();
+        int moved = 0;
+        // S25-01: which bank line (index) each stored hash is, to check what a moved balance took.
+        Map<String, Integer> identity = new HashMap<>();
+        List<String> wrongTakes = new ArrayList<>();
         for (FileSpec spec : specs) {
             List<Bank> f = spec.lines();
             if (f.isEmpty() || !acceptedRows(f)) continue;
             f.forEach(l -> arrived.add(l.index()));
             List<StatementMapper.Row> rows = f.stream().map(Bank::row).toList();
-            BankStatementImportService.Matched m = BankStatementImportService.match(BANK, rows, stored);
+            BankStatementImportService.Matched m = BankStatementImportService.match(BANK, rows, stored,
+                    spec.openingProves(), spec.closingProves());
+            // S25-01: lines taken at a moved balance carry the file's balance from now on.
+            moved += m.moved().size();
+            Set<Integer> inFile = new HashSet<>();
+            f.forEach(l -> inFile.add(l.index()));
+            for (int i = 0; i < rows.size(); i++) {
+                String h = m.hashes().get(i);
+                if (!m.duplicates().contains(h)) {
+                    identity.put(h, f.get(i).index());
+                } else if (m.moved().containsKey(h) && identity.get(h) != f.get(i).index() && !inFile.contains(identity.get(h))) {
+                    // Taken at a moved balance for a stored line that is another bank line, not in this file.
+                    wrongTakes.add(f.get(i).date() + " row " + f.get(i).index() + " taken for stored " + identity.get(h));
+                }
+            }
+            stored.replaceAll((d, ls) -> ls.stream().map(l -> m.moved().containsKey(l.hash())
+                    ? new BankStatementImportService.StoredLine(l.hash(), l.amount(), l.description(), m.moved().get(l.hash()))
+                    : l).toList());
             TreeMap<LocalDate, List<Integer>> fileDays = new TreeMap<>();
             for (int i = 0; i < rows.size(); i++) fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(i);
             for (Map.Entry<LocalDate, List<Integer>> day : fileDays.entrySet()) {
@@ -327,7 +348,7 @@ class StatementOrderPropertyTest {
             if (!st.confirmed()) unconfirmed.add(d);
             if (!st.confirmed() && st.unproven()) unproven.add(d);
         });
-        return new Books(lines, dates, unconfirmed, unproven, arrived);
+        return new Books(lines, dates, unconfirmed, unproven, arrived, moved, wrongTakes);
     }
 
     /**
@@ -846,5 +867,218 @@ class StatementOrderPropertyTest {
         // The file leaves out a stored line inside its stretch: it is not the authority; nothing moves.
         assertThat(BankStatementImportService.dayOrder(List.of("A", "B", "C"), List.of("X", "A", "C")))
                 .containsExactly("A", "B", "C", "X");
+    }
+
+    // ------------------------------------------------------------------ sim r25 S25-01
+
+    /** {@code history} with {@code extra} lines inserted (by position, each dated like the line before it), re-balanced. */
+    private static List<Bank> backValued(List<Bank> history, Random rnd, int extra) {
+        List<Bank> out = new ArrayList<>(history);
+        for (int k = 0; k < extra; k++) {
+            int at = rnd.nextInt(out.size() + 1);
+            LocalDate d = at == 0 ? DAYS[0] : out.get(at - 1).date();
+            BigDecimal a = BigDecimal.valueOf(AMOUNTS[rnd.nextInt(AMOUNTS.length)]).setScale(2);
+            out.add(at, new Bank(1000 + k, d, a, a.signum() < 0 ? "FEE" : "CREDIT", null));
+        }
+        List<Bank> rebalanced = new ArrayList<>();
+        BigDecimal b = OPENING;
+        for (Bank l : out) {
+            b = b.add(l.amount());
+            rebalanced.add(new Bank(l.index(), l.date(), l.amount(), l.description(), b));
+        }
+        return rebalanced;
+    }
+
+    private static String key(LocalDate d, BigDecimal amount, String description) {
+        return d + "|" + amount + "|" + description;
+    }
+
+    /**
+     * Sim r25 S25-01, as a property: between exports the bank back-values a line (adds it
+     * with an earlier date), so every later balance in its later exports moves.
+     * Lines repeat ("FEE"/"CREDIT", four amounts). Stretches of the old history are imported,
+     * then stretches of the new one — sometimes first the whole new history in one file whose
+     * boundary rows prove its first and last days — by the service's own {@code match} (moved
+     * balances taken over) and {@code settle}.
+     *
+     * <p>The bars: finalize as the service does with the paper's opening and closing typed
+     * (the CLOSING gate) and, for unproven days, the paper's day totals; whenever it passes,
+     * no line any file brought is missing from the books (counted by date, amount and
+     * narration; a line in both histories is one line). Lines no file brought that net to
+     * nothing stay invisible to anyone, as before. And the friction S25-01 was about: when the first export after the back-value
+     * holds every day whole, no line is stored twice, then or after. (A part-day export at a
+     * moved balance with no shift shown on a whole day still stores an identical line as a
+     * separate one — the #97 P2-2 rule — and a later whole export cannot un-store it.)</p>
+     */
+    @Test
+    void backValuedLinesAreNeverLostOrStoredTwice() {
+        Random rnd = new Random(2501);
+        int finalized = 0, refused = 0, moved = 0, whole = 0;
+        for (int trial = 0; trial < 40_000; trial++) {
+            List<Bank> old = statement(rnd);
+            if (old.size() < 3) continue;
+            // One back-valued line: every later balance moves by its (non-zero) amount. (Two that
+            // net to nothing move no balance; a part re-import of a settled day then takes one
+            // for an identical stored line exactly as before this change — S20-03, see the PR.)
+            List<Bank> now = backValued(old, rnd, 1);
+            BigDecimal trueClosing = now.get(now.size() - 1).balance();
+            List<FileSpec> files = new ArrayList<>();
+            for (int f = 0, n = 1 + rnd.nextInt(3); f < n; f++) {
+                int a = rnd.nextInt(old.size());
+                files.add(FileSpec.plain(old.subList(a, a + 1 + rnd.nextInt(old.size() - a))));
+            }
+            // Half the time the first export after the back-value is the whole new history, with
+            // Opening/Closing rows dated outside it (every day held whole); later ones are stretches.
+            boolean wholeFirst = rnd.nextBoolean();
+            if (wholeFirst) files.add(new FileSpec(now, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null));
+            // Exports after the back-value are date ranges (whole days, as a bank exports them;
+            // the service cannot tell): a time-window cut re-exporting part of a settled day
+            // after the bank added a line to it is outside S25-01 (see the PR).
+            for (int f = 0, n = rnd.nextInt(3); f < n; f++) {
+                int a = rnd.nextInt(DAYS.length), z = a + rnd.nextInt(DAYS.length - a);
+                List<Bank> range = now.stream().filter(l -> !l.date().isBefore(DAYS[a]) && !l.date().isAfter(DAYS[z])).toList();
+                if (!range.isEmpty()) files.add(FileSpec.plain(range));
+            }
+            if (!wholeFirst && rnd.nextBoolean()) files.add(FileSpec.plain(now));
+            Books books = importFiles(files);
+            moved += books.moved();
+            if (books.lines().isEmpty()) continue;
+            Set<Integer> arrived = books.arrived();
+            Map<String, Integer> have = new HashMap<>(), brought = new HashMap<>();
+            for (int i = 0; i < books.lines().size(); i++) {
+                BankStatementImportService.StoredLine l = books.lines().get(i);
+                have.merge(key(books.dates().get(i), l.amount(), l.description()), 1, Integer::sum);
+            }
+            for (Bank l : now) if (arrived.contains(l.index())) brought.merge(key(l.date(), l.amount(), l.description()), 1, Integer::sum);
+            for (Bank l : old) {
+                if (arrived.contains(l.index()) && now.stream().noneMatch(x -> x.index() == l.index())) {
+                    brought.merge(key(l.date(), l.amount(), l.description()), 1, Integer::sum);
+                }
+            }
+            String what = String.format("trial %d: old %s, now %s, files %s, books %s %s, unconfirmed %s, unproven %s", trial,
+                    old, now, files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList(), books.lines(),
+                    books.dates(), books.unconfirmed(), books.unproven());
+            if (wholeFirst) {
+                whole++;
+                brought.forEach((k, n) -> assertThat(have.getOrDefault(k, 0)).as(what + " — stored twice: " + k).isLessThanOrEqualTo(n));
+                have.forEach((k, n) -> assertThat(n).as(what + " — stored twice: " + k).isLessThanOrEqualTo(brought.getOrDefault(k, 0)));
+            }
+            List<BankReconciliationService.SL> sl = new ArrayList<>();
+            for (int i = 0; i < books.lines().size(); i++) {
+                BankStatementImportService.StoredLine l = books.lines().get(i);
+                sl.add(new BankReconciliationService.SL(UUID.randomUUID(), books.dates().get(i), i + 1, l.description(), null, null,
+                        l.amount(), l.balance()));
+            }
+            if (!books.unproven().isEmpty()) {
+                List<BankReconciliationService.SL> bank = now.stream().map(l -> new BankReconciliationService.SL(
+                        UUID.randomUUID(), l.date(), l.index(), l.description(), null, null, l.amount(), l.balance())).toList();
+                boolean allAgree = books.unproven().stream().allMatch(d -> {
+                    BigDecimal[] paper = BankReconciliationService.dayTotals(bank, d);
+                    return BankReconciliationService.totalsAgree(BankReconciliationService.dayTotals(sl, d), paper[0], paper[1]);
+                });
+                if (!allAgree) {
+                    refused++;
+                    continue;
+                }
+            }
+            // The paper's opening and closing typed (the CLOSING gate, S22-03): the lines must reach them.
+            boolean confirmed = books.unconfirmed().isEmpty();
+            BigDecimal movement = books.lines().stream().map(BankStatementImportService.StoredLine::amount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            Set<LocalDate> skipped = confirmed ? Set.of() : books.unconfirmed();
+            if (BankReconciliationService.continuity(OPENING, trueClosing, movement, sl, DAYS[0], skipped, books.unconfirmed()).ok()) {
+                finalized++;
+                brought.forEach((k, n) -> assertThat(have.getOrDefault(k, 0))
+                        .as(what + " — finalized with a line a file brought lost: " + k).isGreaterThanOrEqualTo(n));
+            } else {
+                refused++;
+            }
+        }
+        assertThat(whole).as("whole re-exports of the new history").isGreaterThan(10_000);
+        assertThat(moved).as("lines taken at a moved balance").isGreaterThan(1_000);
+        assertThat(finalized).as("finalized").isGreaterThan(1_000);
+        assertThat(refused).as("refused").isGreaterThan(1_000);
+    }
+
+    /**
+     * Sim r25 S25-01, the new rule's own bar on any exports — time-window cuts included, one
+     * or two back-valued lines: a row taken for a stored line at a moved balance is that very
+     * bank line, or the stored one's own line is in the same file (identical lines trading
+     * places), or — as with the exact rule on a part day (S20-01) — its day is left unproven,
+     * so the paper's day totals expose a separate line taken. Never silently. (Judging a
+     * first-date row by the shift after it did lose one silently here: a line inserted right
+     * after an identical one, in a file starting at it, was taken for that one.)
+     */
+    @Test
+    void aMovedBalanceNeverTakesASeparateLine() {
+        Random rnd = new Random(2502);
+        int moved = 0, guarded = 0;
+        List<String> silent = new ArrayList<>();
+        for (int trial = 0; trial < 40_000; trial++) {
+            List<Bank> old = statement(rnd);
+            if (old.size() < 3) continue;
+            List<Bank> now = backValued(old, rnd, 1 + rnd.nextInt(2));
+            List<FileSpec> files = new ArrayList<>();
+            for (List<Bank> h : List.of(old, now)) {
+                for (int f = 0, n = 1 + rnd.nextInt(3); f < n; f++) {
+                    int a = rnd.nextInt(h.size());
+                    files.add(FileSpec.plain(h.subList(a, a + 1 + rnd.nextInt(h.size() - a))));
+                }
+            }
+            Books books = importFiles(files);
+            moved += books.moved();
+            for (String w : books.wrongTakes()) {
+                if (books.unproven().contains(LocalDate.parse(w.substring(0, 10)))) guarded++;
+                else silent.add(String.format("trial %d: %s; old %s, now %s, files %s", trial, w, old, now,
+                        files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList()));
+            }
+        }
+        assertThat(silent).as("taken silently (%d moved takes, %d guarded by an unproven day)", moved, guarded).isEmpty();
+        assertThat(moved).as("lines taken at a moved balance").isGreaterThan(1_000);
+    }
+
+    /** S25-01 on named examples: what {@code match} takes at a moved balance, and what it never takes. */
+    @Test
+    void movedBalanceExamples() {
+        LocalDate d1 = DAYS[0], d2 = DAYS[1], d3 = DAYS[2];
+        Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
+        stored.put(d2, List.of(new BankStatementImportService.StoredLine("S1", new BigDecimal("-10.50"), "SMS", new BigDecimal("989.50")),
+                new BankStatementImportService.StoredLine("S2", new BigDecimal("-10.50"), "SMS", new BigDecimal("979.00"))));
+        // A whole day (d2 between d1 and d3) re-exported 20.00 lower: both identical charges taken, nothing new.
+        List<StatementMapper.Row> rows = List.of(
+                new StatementMapper.Row(1, d1, d1, "X", null, null, new BigDecimal("-20.00"), new BigDecimal("980.00")),
+                new StatementMapper.Row(2, d2, d2, "SMS", null, null, new BigDecimal("-10.50"), new BigDecimal("969.50")),
+                new StatementMapper.Row(3, d2, d2, "SMS", null, null, new BigDecimal("-10.50"), new BigDecimal("959.00")),
+                new StatementMapper.Row(4, d3, d3, "Y", null, null, new BigDecimal("5.00"), new BigDecimal("964.00")));
+        BankStatementImportService.Matched m = BankStatementImportService.match(BANK, rows, stored);
+        assertThat(m.hashes().subList(1, 3)).containsExactly("S1", "S2");
+        assertThat(m.moved()).containsOnlyKeys("S1", "S2");
+        assertThat(m.moved().get("S2")).isEqualByComparingTo("959.00");
+        // A third identical charge on the whole day is a new line: the count stays the bank's.
+        List<StatementMapper.Row> three = List.of(rows.get(0), rows.get(1), rows.get(2),
+                new StatementMapper.Row(4, d2, d2, "SMS", null, null, new BigDecimal("-10.50"), new BigDecimal("948.50")),
+                new StatementMapper.Row(5, d3, d3, "Y", null, null, new BigDecimal("5.00"), new BigDecimal("953.50")));
+        m = BankStatementImportService.match(BANK, three, stored);
+        assertThat(m.duplicates()).containsExactlyInAnyOrder("S1", "S2");
+        assertThat(m.hashes().get(3)).isNotIn("S1", "S2");
+        // A different reference or value date is a different line.
+        List<StatementMapper.Row> other = List.of(rows.get(0),
+                new StatementMapper.Row(2, d2, d1, "SMS", null, null, new BigDecimal("-10.50"), new BigDecimal("969.50")), rows.get(3));
+        assertThat(BankStatementImportService.match(BANK, other, Map.of(d2, List.of(new BankStatementImportService.StoredLine(
+                "S1", new BigDecimal("-10.50"), "SMS", new BigDecimal("989.50"), d2, null)))).duplicates()).isEmpty();
+        // The file's last day (part of it): a moved balance is taken only at the shift the file shows before it.
+        stored.put(d3, List.of(new BankStatementImportService.StoredLine("Y1", new BigDecimal("5.00"), "Y", new BigDecimal("984.00"))));
+        m = BankStatementImportService.match(BANK, rows, stored);
+        assertThat(m.duplicates()).as("Y moved by the same -20.00 as d2's charges").contains("Y1");
+        stored.put(d3, List.of(new BankStatementImportService.StoredLine("Y1", new BigDecimal("5.00"), "Y", new BigDecimal("990.00"))));
+        m = BankStatementImportService.match(BANK, rows, stored);
+        assertThat(m.duplicates()).as("Y at another shift: a separate line").doesNotContain("Y1");
+        // #97 P2-2 kept: a part day with nothing shown moved — an identical line at another balance is new.
+        Map<LocalDate, List<BankStatementImportService.StoredLine>> part = Map.of(d2, List.of(
+                new BankStatementImportService.StoredLine("F2", new BigDecimal("-5.00"), "FEE", new BigDecimal("985.00"))));
+        List<StatementMapper.Row> head = List.of(
+                new StatementMapper.Row(1, d1, d1, "FEE", null, null, new BigDecimal("-5.00"), new BigDecimal("995.00")),
+                new StatementMapper.Row(2, d2, d2, "FEE", null, null, new BigDecimal("-5.00"), new BigDecimal("990.00")));
+        assertThat(BankStatementImportService.match(BANK, head, part).duplicates()).isEmpty();
     }
 }
