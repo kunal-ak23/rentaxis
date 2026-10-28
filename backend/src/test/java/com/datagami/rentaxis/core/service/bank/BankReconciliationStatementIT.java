@@ -74,6 +74,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
 
     @Autowired BankReconciliationService recs;
     @Autowired BankStatementImportService imports;
+    @Autowired com.datagami.rentaxis.domain.repository.BankStatementImportRepository importRepo;
     @Autowired BankMatchService matches;
     @Autowired BankLineActionService actions;
     @Autowired BankStatementPostingService bnk;
@@ -3213,8 +3214,11 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         });
         // Before the undo the step is refused (the copies are booked) and nothing goes.
         assertThatThrownBy(() -> deleteAsOffered(orig.importId(), id)).hasMessageContaining("undo those matches first");
-        List<UUID> shown = jdbc.queryForList("select id from bank_statement_lines where bank_account_id = ? and copy_proven_by = ?",
-                UUID.class, ei.getId(), now.importId());
+        // PR #451 review P2-1: nothing is marked at import; the check shows the copies on now.csv's word.
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and copy_proven_by is not null",
+                Integer.class, ei.getId())).as("legacy twins are not marked at import").isZero();
+        List<UUID> shown = jdbc.queryForList("select id from bank_statement_lines where bank_account_id = ? and txn_date = ? "
+                + "and running_balance in (1005.00, 1015.00)", UUID.class, ei.getId(), sep11);
         assertThat(shown).hasSize(2);
         for (UUID c : shown) matches.undo(matchOf.get(c), true, SEP_30, "copy");
         deleteAsOffered(orig.importId(), id);
@@ -3422,6 +3426,526 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         BankRecDTOs.Reconciliation r = recs.get(sep);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(sep).status()).isEqualTo("FINALIZED");
+    }
+
+    // ------------------------------------------------------------------ PR #451 review (the reviewer's tests, then r2's)
+
+    private void followCopySteps(UUID recId) {
+        for (int n = 0; n < 5; n++) {
+            List<BankRecDTOs.DeleteOffer> offers = recs.get(recId).deleteOffers();
+            if (offers.isEmpty()) return;
+            BankRecDTOs.DeleteOffer o = offers.get(0);
+            System.out.println("REV offer " + o.day() + " copies=" + o.copies() + " proof=" + o.proofFileName() + " imports=" + o.imports());
+            imports.delete(o.imports().get(0).id(), o.proofImportId());
+        }
+    }
+
+    /** Two genuine same-amount same-narration lines on 11/09, split by a cut between two pre-#441 imports. */
+    @Test
+    void rev451GenuinePairAcrossCutsCurrentStatementSameBalances() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importNamed("a.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        importNamed("b.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                """);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        importNamed("now.csv", """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,015.00"
+                """);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1015.00"))).id();
+        followCopySteps(id);
+        System.out.println("REV lines " + storedLines());
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+        assertThat(storedLines()).containsExactly("2026-09-10 CREDIT X 1010.00", "2026-09-11 FEE 1005.00",
+                "2026-09-11 FEE 1000.00", "2026-09-11 CREDIT R 1010.00", "2026-09-12 CREDIT Y 1015.00");
+    }
+
+    /** As above, but the bank back-valued a CHARGE onto 10/09 before the current export: every later balance -2. */
+    @Test
+    void rev451GenuinePairAcrossCutsCurrentStatementShiftedBalances() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importNamed("a.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        importNamed("b.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                """);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        importNamed("now.csv", """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                10/09/2026,10/09/2026,CHARGE,,2.00,,"1,008.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,003.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,998.00
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,008.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,013.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,013.00"
+                """);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1013.00"))).id();
+        System.out.println("REV msg " + check(recs.get(id), "LINE_ORDER").message());
+        followCopySteps(id);
+        System.out.println("REV lines " + storedLines());
+        assertThat(storedLines().stream().filter(s -> s.startsWith("2026-09-11 FEE")).count())
+                .as("both genuine FEEs of 11/09 stay").isEqualTo(2);
+    }
+
+    /** Same, but now.csv was imported by main (marks nothing): the check's legacyProof path. */
+    @Test
+    void rev451GenuinePairAcrossCutsLegacyProofPath() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importNamed("a.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        importNamed("b.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                """);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        importNamed("now.csv", """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                10/09/2026,10/09/2026,CHARGE,,2.00,,"1,008.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,003.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,998.00
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,008.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,013.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,013.00"
+                """);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false, copy_proven_by = null where bank_account_id = ?", ei.getId());
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1013.00"))).id();
+        System.out.println("REV msg " + check(recs.get(id), "LINE_ORDER").message());
+        followCopySteps(id);
+        System.out.println("REV lines " + storedLines());
+        assertThat(storedLines().stream().filter(s -> s.startsWith("2026-09-11 FEE")).count())
+                .as("both genuine FEEs of 11/09 stay").isEqualTo(2);
+    }
+
+    /**
+     * A legacy-copy day inside a finalized period (finalized under older rules) shares proof and first holder with
+     * an open day: does it block the open day's copy step?
+     */
+    @Test
+    void rev451LockedLegacyDayBlocksOpenDaysCopyStep() {
+        jv(LocalDate.of(2026, 7, 31), marinaBank, "1000.00");
+        importNamed("orig.csv", """
+                19/08/2026,19/08/2026,CREDIT A,,,10.00,"1,010.00"
+                20/08/2026,20/08/2026,FEE,,5.00,,"1,005.00"
+                21/08/2026,21/08/2026,CREDIT B,,,10.00,"1,015.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,025.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,020.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,025.00"
+                """);
+        // The bank back-values a 2.00 CHARGE onto 19/08: a cut of 20/08 .. 11/09 at moved balances.
+        importNamed("cut.csv", """
+                20/08/2026,20/08/2026,FEE,,5.00,,"1,003.00"
+                21/08/2026,21/08/2026,CREDIT B,,,10.00,"1,013.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,023.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,018.00"
+                """);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        String now = HEAD + """
+                18/08/2026,18/08/2026,Opening balance,,,,"1,000.00"
+                19/08/2026,19/08/2026,CREDIT A,,,10.00,"1,010.00"
+                19/08/2026,19/08/2026,CHARGE,,2.00,,"1,008.00"
+                20/08/2026,20/08/2026,FEE,,5.00,,"1,003.00"
+                21/08/2026,21/08/2026,CREDIT B,,,10.00,"1,013.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,023.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,018.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,023.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,023.00"
+                """;
+        imports.importFile(ei.getId(), "now.csv", now.getBytes(StandardCharsets.UTF_8), null, false);
+        // main marked nothing
+        jdbc.update("update bank_statement_lines set lookalike_kept = false, copy_proven_by = null where bank_account_id = ?", ei.getId());
+        System.out.println("REV lines0 " + storedLines());
+        // August finalized under older rules (simulated): reconciled_through set directly.
+        UUID aug = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(AUG_1, AUG_31, new BigDecimal("1000.00"), null)).id();
+        System.out.println("REV aug checks " + recs.get(aug).checks());
+        jdbc.update("update bank_reconciliations set status = 'FINALIZED' where id = ?", aug);
+        jdbc.update("update bank_accounts set reconciled_through = ? where id = ?", AUG_31, ei.getId());
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, null, new BigDecimal("1023.00"))).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        System.out.println("REV sep msg " + check(r, "LINE_ORDER").message());
+        System.out.println("REV sep offers " + r.deleteOffers());
+        System.out.println("REV all offers " + recs.deleteOffers(ei.getId()));
+        // PR #451 r2 (P2-2): the server offers nothing on a day of the finalized period.
+        assertThat(recs.deleteOffers(ei.getId())).as("no offer inside the finalized period")
+                .allSatisfy(o -> assertThat(o.day()).isAfter(AUG_31)).isNotEmpty();
+        List<String> august = jdbc.queryForList("select description || ' ' || running_balance from bank_statement_lines "
+                + "where bank_account_id = ? and txn_date <= ? order by txn_date, seq", String.class, ei.getId(), AUG_31);
+        UUID augCopy = jdbc.queryForObject("select id from bank_statement_lines where bank_account_id = ? and txn_date = ? "
+                + "and running_balance = 1005.00", UUID.class, ei.getId(), AUG_20);
+        Throwable err = null;
+        try { followCopySteps(id); } catch (RuntimeException e) { err = e; System.out.println("REV refused: " + e.getMessage()); }
+        System.out.println("REV lines1 " + storedLines());
+        assertThat(jdbc.queryForList("select description || ' ' || running_balance from bank_statement_lines "
+                + "where bank_account_id = ? and txn_date <= ? order by txn_date, seq", String.class, ei.getId(), AUG_31))
+                .as("finalized August unchanged").isEqualTo(august);
+        assertThat(err).as("open day's copy step not blocked by a finalized day").isNull();
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ? and txn_date > ?",
+                Integer.class, ei.getId(), AUG_31)).as("the open days' copies went").isPositive();
+        // M1: even a step naming the finalized day's copy (as no offer does) leaves it, and says to reopen first.
+        UUID orig = jdbc.queryForObject("select id from bank_statement_imports where bank_account_id = ? and file_name = 'orig.csv'",
+                UUID.class, ei.getId());
+        UUID nowId = jdbc.queryForObject("select id from bank_statement_imports where bank_account_id = ? and file_name = 'now.csv'",
+                UUID.class, ei.getId());
+        assertThatThrownBy(() -> forgedCopyStep(orig, nowId, List.of(AUG_20), List.of(augCopy)))
+                .hasMessageContaining("reopen that reconciliation first");
+        assertThat(jdbc.queryForList("select description || ' ' || running_balance from bank_statement_lines "
+                + "where bank_account_id = ? and txn_date <= ? order by txn_date, seq", String.class, ei.getId(), AUG_31))
+                .as("finalized August unchanged by a forged step").isEqualTo(august);
+    }
+
+    /**
+     * PR #451 r2: runs the copy step's removal directly with an offer the check never makes (a forged one), so
+     * the removal's own guards are tested, not only the check that builds the offers.
+     */
+    private void forgedCopyStep(UUID importId, UUID proof, List<LocalDate> days, List<UUID> shown) {
+        BankStatementImportService target = org.springframework.test.util.AopTestUtils.getTargetObject(imports);
+        tx.executeWithoutResult(s -> target.removeShownCopies(tenantId, importRepo.findById(importId).orElseThrow(), proof,
+                days.stream().map(d -> new BankReconciliationService.DeleteOffer(d, proof, List.of(importId), "forged", true, shown))
+                        .toList(), reconciledThrough()));
+    }
+
+    /** The reviewer's pair (P1-1): a.csv and b.csv each hold one genuine FEE of 11/09; old-whole.csv is a stale whole day. */
+    private void stalePair(String bRows) {
+        jv(AUG_31, marinaBank, "1000.00");
+        importNamed("a.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        importNamed("b.csv", bRows);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        importNamed("old-whole.csv", """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,015.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,020.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,020.00"
+                """);
+    }
+
+    private static final String B_ROWS = """
+            11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+            11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+            12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+            """;
+
+    private UUID importId(String fileName) {
+        return jdbc.queryForObject("select id from bank_statement_imports where bank_account_id = ? and file_name = ?",
+                UUID.class, ei.getId(), fileName);
+    }
+
+    /**
+     * Control for the guard tests below: the reviewer's pair with no totals typed. The check offers the copy
+     * step for 11/09 (the user's word decides, with the confirm), naming b.csv's FEE at 1,000.00.
+     */
+    @Test
+    void r2StalePairWithoutTotalsIsOfferedTheCopyStep() {
+        stalePair(B_ROWS);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1015.00"))).id();
+        assertThat(recs.get(id).deleteOffers()).singleElement().satisfies(o -> {
+            assertThat(o.copies()).isTrue();
+            assertThat(o.proofImportId()).isEqualTo(importId("old-whole.csv"));
+        });
+        assertThat(recs.deleteOffers(ei.getId())).singleElement().satisfies(o -> assertThat(o.shown()).hasSize(1));
+    }
+
+    /** M2: one import holds both FEEs, so they are two lines of the bank: never a copy, whatever W misses. */
+    @Test
+    void r2TwinsOneImportHoldsBothAreNeverACopy() {
+        stalePair("""
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                """);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1015.00"))).id();
+        LocalDate sep11 = LocalDate.of(2026, 9, 11);
+        assertThat(recs.get(id).unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(sep11);
+        assertThat(recs.get(id).deleteOffers()).isEmpty();
+        assertThat(recs.deleteOffers(ei.getId())).isEmpty();
+        // Even with totals that disagree (a line missing elsewhere), the check does not call either FEE a copy.
+        BankRecDTOs.Reconciliation r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(sep11, new BigDecimal("5.00"), new BigDecimal("10.00")))));
+        paperDayTotalsExcept(id, sep11);
+        r = recs.get(id);
+        assertThat(r.dayTotalsVerdict()).isEqualTo("DISAGREE");
+        assertThat(check(r, "LINE_ORDER").message()).doesNotContain("is a copy of one already imported");
+        assertThat(r.deleteOffers()).isEmpty();
+    }
+
+    /** M5: the whole-day statement lacks another line of the day (CHQ 7), so it is not the day's statement: no copy. */
+    @Test
+    void r2StatementMissingAnotherLineOfTheDayShowsNoCopy() {
+        stalePair("""
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,CHQ 7,,3.00,,"1,007.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,012.00"
+                """);
+        System.out.println("R2-M5 lines " + storedLines());
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1012.00"))).id();
+        assertThat(recs.get(id).unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(LocalDate.of(2026, 9, 11));
+        assertThat(recs.get(id).deleteOffers()).isEmpty();
+        assertThat(recs.deleteOffers(ei.getId())).isEmpty();
+    }
+
+    /**
+     * M4/M3: an import made after the whole-day statement also holds b.csv's FEE (the bank may have added it after
+     * that statement was exported): the check shows no copy, and the removal refuses it even when named.
+     */
+    @Test
+    void r2LaterHolderOfTheTwinShowsNoCopyAndRemovalRefusesIt() {
+        stalePair(B_ROWS);
+        importNamed("late.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                """);
+        UUID late = importId("late.csv");
+        UUID fee = jdbc.queryForObject("select id from bank_statement_lines where bank_account_id = ? and running_balance = 1000.00",
+                UUID.class, ei.getId());
+        assertThat(jdbc.queryForList("select import_id from bank_statement_line_sources where line_id = ?", UUID.class, fee))
+                .as("late.csv holds b.csv's FEE").contains(late);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1015.00"))).id();
+        assertThat(recs.get(id).deleteOffers()).isEmpty();
+        assertThat(recs.deleteOffers(ei.getId())).isEmpty();
+        List<String> before = storedLines();
+        assertThatThrownBy(() -> forgedCopyStep(importId("b.csv"), importId("old-whole.csv"), List.of(LocalDate.of(2026, 9, 11)),
+                List.of(fee))).hasMessageContaining("does not offer");
+        assertThat(storedLines()).isEqualTo(before);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+    }
+
+    /**
+     * P3-2: the copy step removes the copies from every import holding them; an import it leaves empty (dup.csv
+     * held only a copy) is deleted too, the import named and its other lines stay, and each copy has its audit row.
+     */
+    @Test
+    void r2AnImportTheCopyStepLeavesEmptyIsDeleted() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult orig = importNamed("orig.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,015.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,020.00"
+                """);
+        importNamed("cut.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,003.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,013.00"
+                """);
+        BankRecDTOs.ImportResult dup = importNamed("dup.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        assertThat(dup.linesNew()).isZero();
+        BankRecDTOs.ImportResult now = importNamed("now.csv", """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                10/09/2026,10/09/2026,CHARGE,,2.00,,"1,008.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,003.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,013.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,018.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,018.00"
+                """);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1018.00"))).id();
+        LocalDate sep11 = LocalDate.of(2026, 9, 11);
+        paperDayTotalsExcept(id, sep11);
+        BankRecDTOs.Reconciliation r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(sep11, new BigDecimal("5.00"), new BigDecimal("10.00")))));
+        assertThat(r.deleteOffers()).singleElement().satisfies(o -> {
+            assertThat(o.copies()).isTrue();
+            assertThat(o.proofImportId()).isEqualTo(now.importId());
+            assertThat(o.imports()).extracting(BankRecDTOs.ImportRef::id).containsExactly(orig.importId());
+        });
+        deleteAsOffered(orig.importId(), id);
+        assertThat(jdbc.queryForList("select running_balance || ' ' || proof_file_name from bank_statement_removed_lines "
+                + "where bank_account_id = ? order by running_balance", String.class, ei.getId()))
+                .containsExactly("1005.00 now.csv", "1015.00 now.csv");
+        assertThat(imports.history(ei.getId())).extracting(BankRecDTOs.ImportRow::id)
+                .contains(orig.importId(), now.importId()).doesNotContain(dup.importId());
+        assertThat(storedLines()).containsExactly("2026-09-10 CREDIT X 1010.00", "2026-09-10 CHARGE 1008.00",
+                "2026-09-11 FEE 1003.00", "2026-09-11 CREDIT R 1013.00", "2026-09-12 CREDIT Y 1018.00");
+        r = paperDayTotalsExcept(id);
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
+        bookEveryLine();
+        r = recs.get(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * Two genuine FEEs on 11/09 (the paper has both); a whole-day download made before the bank added the
+     * second was imported later by main. The paper's totals agree with the stored lines.
+     */
+    @Test
+    void rev451StaleWholeDayLegacyProofWithAgreeingTotals() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importNamed("a.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        importNamed("b.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                """);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        importNamed("old-whole.csv", """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,015.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,020.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,020.00"
+                """);
+        System.out.println("REV2 marked " + jdbc.queryForList("select description || ' ' || running_balance || ' ' || lookalike_kept || ' ' || (copy_proven_by is not null) from bank_statement_lines where bank_account_id = ? order by txn_date, seq", String.class, ei.getId()));
+        // as main left it
+        jdbc.update("update bank_statement_lines set lookalike_kept = false, copy_proven_by = null where bank_account_id = ?", ei.getId());
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1015.00"))).id();
+        BankRecDTOs.Reconciliation r = paperDayTotalsExcept(id);  // the paper's totals = both FEEs: they agree
+        bookEveryLine();
+        r = recs.get(id);
+        System.out.println("REV2 verdict " + r.dayTotalsVerdict() + " canFinalize " + r.canFinalize());
+        System.out.println("REV2 checks " + r.checks());
+        System.out.println("REV2 offers " + r.deleteOffers());
+        System.out.println("REV2 server offers " + recs.deleteOffers(ei.getId()));
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
+        assertThat(r.canFinalize()).isTrue();
+        boolean offered = !r.deleteOffers().isEmpty();
+        // The server's own re-run (delete) applies the same rule: a press with that proof is refused, nothing goes.
+        assertThat(recs.deleteOffers(ei.getId())).as("server offers").isEmpty();
+        UUID oldWhole = jdbc.queryForObject("select id from bank_statement_imports where bank_account_id = ? and file_name = 'old-whole.csv'",
+                UUID.class, ei.getId());
+        UUID b = jdbc.queryForObject("select id from bank_statement_imports where bank_account_id = ? and file_name = 'b.csv'",
+                UUID.class, ei.getId());
+        List<String> before = storedLines();
+        assertThatThrownBy(() -> imports.delete(b, oldWhole)).hasMessageContaining("does not offer");
+        assertThat(storedLines()).isEqualTo(before);
+        assertThat(offered).as("no copy step offered for a day the paper proved").isFalse();
+    }
+
+    /** As above, but old-whole.csv is imported on this branch (marks the genuine FEE as a copy at import). */
+    @Test
+    void rev451StaleWholeDayImportTimeWithAgreeingTotals() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importNamed("a.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        importNamed("b.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                """);
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1015.00"))).id();
+        paperDayTotalsExcept(id);
+        bookEveryLine();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        System.out.println("REV3 before old-whole: verdict " + r.dayTotalsVerdict() + " canFinalize " + r.canFinalize());
+        importNamed("old-whole.csv", """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,015.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,020.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,020.00"
+                """);
+        r = paperDayTotalsExcept(id);
+        System.out.println("REV3 unproven " + r.unprovenDays());
+        r = recs.get(id);
+        System.out.println("REV3 after old-whole: verdict " + r.dayTotalsVerdict() + " canFinalize " + r.canFinalize()
+                + " checks " + r.checks().stream().filter(c -> !c.ok()).toList() + " offers " + r.deleteOffers());
+        assertThat(r.canFinalize()).as("a day proven by its paper totals stays proven").isTrue();
+    }
+
+    /**
+     * Data imported before changeset 172: its backfill gave each line only the import that stored it as a
+     * source, so a whole-day import's duplicate matches are not in bank_statement_line_sources. Two genuine
+     * FEEs on 11/09 (the paper has both); W, a current whole-day export, matched FEE#1 (from a.csv) and stored
+     * FEE#2. A later partial import makes 11/09 unproven. Does the check offer to remove genuine FEE#1?
+     */
+    @Test
+    void rev451Pre172SourcesGenuineLineShownAsCopy() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importNamed("a.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        BankRecDTOs.ImportResult w = importNamed("w.csv", """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,015.00"
+                """);
+        // As changeset 172's backfill leaves pre-172 data: only the storing import is a source.
+        jdbc.update("delete from bank_statement_line_sources s using bank_statement_lines l where l.id = s.line_id "
+                + "and l.bank_account_id = ? and s.import_id <> l.import_id", ei.getId());
+        jdbc.update("update bank_statement_lines set lookalike_kept = false, copy_proven_by = null where bank_account_id = ?", ei.getId());
+        System.out.println("REV4 days0 " + jdbc.queryForList("select txn_date || ' ' || order_confirmed || ' ' || merge_unproven from bank_statement_days where bank_account_id = ? order by txn_date", String.class, ei.getId()));
+        // Changeset 171's backfill (#97 deploy): every open day more than one import covered is unconfirmed and unproven.
+        jdbc.update("""
+                INSERT INTO bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, merge_unproven,
+                                                 start_known, end_known, updated_at)
+                SELECT l.tenant_id, l.bank_account_id, l.txn_date, FALSE, TRUE, FALSE, FALSE, CURRENT_TIMESTAMP
+                  FROM (SELECT DISTINCT tenant_id, bank_account_id, txn_date FROM bank_statement_lines where bank_account_id = ?) l
+                  JOIN bank_accounts b ON b.id = l.bank_account_id AND b.tenant_id = l.tenant_id
+                 WHERE (b.reconciled_through IS NULL OR l.txn_date > b.reconciled_through)
+                   AND (SELECT count(*) FROM bank_statement_imports i
+                         WHERE i.tenant_id = l.tenant_id AND i.bank_account_id = l.bank_account_id
+                           AND i.first_date IS NOT NULL AND i.last_date IS NOT NULL
+                           AND l.txn_date BETWEEN i.first_date AND i.last_date) > 1
+                ON CONFLICT (bank_account_id, txn_date)
+                DO UPDATE SET order_confirmed = FALSE, merge_unproven = TRUE""", ei.getId());
+        System.out.println("REV4 days1 " + jdbc.queryForList("select txn_date || ' ' || order_confirmed || ' ' || merge_unproven from bank_statement_days where bank_account_id = ? order by txn_date", String.class, ei.getId()));
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1015.00"))).id();
+        BankRecDTOs.Reconciliation r = paperDayTotalsExcept(id);  // the paper has both FEEs
+        System.out.println("REV4 verdict " + r.dayTotalsVerdict() + " canFinalize " + r.canFinalize());
+        System.out.println("REV4 msg " + check(r, "LINE_ORDER").message());
+        System.out.println("REV4 offers " + r.deleteOffers());
+        System.out.println("REV4 srcs " + jdbc.queryForList("select l.txn_date || ' ' || l.description || ' ' || l.running_balance || ' own=' || i0.file_name || ' src=' || i.file_name from bank_statement_lines l join bank_statement_imports i0 on i0.id = l.import_id join bank_statement_line_sources s on s.line_id = l.id join bank_statement_imports i on i.id = s.import_id where l.bank_account_id = ? order by l.txn_date, l.seq", String.class, ei.getId()));
+        System.out.println("REV4 imports " + jdbc.queryForList("select file_name || ' ' || first_date || '..' || last_date || ' ' || imported_at from bank_statement_imports where bank_account_id = ? order by imported_at", String.class, ei.getId()));
+        if (!r.deleteOffers().isEmpty()) {
+            BankRecDTOs.DeleteOffer o = r.deleteOffers().get(0);
+            imports.delete(o.imports().get(0).id(), o.proofImportId());
+            System.out.println("REV4 after press " + storedLines() + " verdict " + recs.get(id).dayTotalsVerdict());
+        }
+        assertThat(storedLines().stream().filter(s -> s.startsWith("2026-09-11 FEE")).count())
+                .as("both genuine FEEs of 11/09 stay").isEqualTo(2);
+        assertThat(r.deleteOffers()).as("no copy step for a genuine line a current statement holds").isEmpty();
     }
 
     // ------------------------------------------------------------------ purge

@@ -1260,6 +1260,7 @@ public class BankReconciliationService {
         // narration at different running balances, neither marked, that no one import holds both of.
         List<LocalDate> rest = unproven.stream().filter(d -> !out.containsKey(d)).toList();
         if (!rest.isEmpty()) {
+            Set<LocalDate> totalsProven = totalsProven(t, b, rest);
             jdbc.queryForList("""
                     select distinct u.txn_date from bank_statement_lines u
                     join bank_statement_lines s on s.tenant_id = u.tenant_id and s.bank_account_id = u.bank_account_id
@@ -1272,6 +1273,10 @@ public class BankReconciliationService {
                                         join bank_statement_line_sources c on c.import_id = a.import_id and c.tenant_id = a.tenant_id
                                        where a.line_id = u.id and a.tenant_id = u.tenant_id and c.line_id = s.id)""",
                     new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", rest), LocalDate.class)
+                    .stream().distinct()
+                    // PR #451 review P1-1: a day the paper's typed totals prove keeps that verdict: no copy step is
+                    // offered there (the step would remove a line those totals just proved genuine).
+                    .filter(d -> !totalsProven.contains(d))
                     .forEach(d -> out.put(d, legacyProof(t, b, d).orElseGet(KeptCopies::legacyDay)));
         }
         // #441 review r3: a statement holding the day whole imported after the kept lines, which
@@ -1438,6 +1443,36 @@ public class BankReconciliationService {
                 null, List.of(), List.of(), holderIds, w, null, List.of(), true, null, shown));
     }
 
+    /**
+     * PR #451 review P1-1: the days of {@code days} whose total debits and total credits, typed from the paper
+     * statement on the account's draft reconciliation, agree with the day's stored lines (as {@link #dayProof}
+     * decides it for that draft). The same rule for the page and for the server's re-run in delete.
+     */
+    private Set<LocalDate> totalsProven(UUID t, UUID b, Collection<LocalDate> days) {
+        Set<LocalDate> out = new HashSet<>();
+        if (days.isEmpty()) return out;
+        jdbc.query("""
+                select dt.txn_date, dt.debit_total, dt.credit_total,
+                       (select coalesce(sum(-l.amount), 0) from bank_statement_lines l
+                         where l.tenant_id = dt.tenant_id and l.bank_account_id = r.bank_account_id
+                           and l.txn_date = dt.txn_date and l.amount < 0) as debits,
+                       (select coalesce(sum(l.amount), 0) from bank_statement_lines l
+                         where l.tenant_id = dt.tenant_id and l.bank_account_id = r.bank_account_id
+                           and l.txn_date = dt.txn_date and l.amount >= 0) as credits
+                from bank_rec_day_totals dt
+                join bank_reconciliations r on r.id = dt.reconciliation_id and r.tenant_id = dt.tenant_id
+                where dt.tenant_id = :t and r.bank_account_id = :b and r.status = 'DRAFT'
+                  and dt.txn_date between r.period_from and r.period_to and dt.txn_date in (:d)""",
+                new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", days), rs -> {
+                    BigDecimal[] lines = {rs.getBigDecimal("debits").setScale(2, RoundingMode.HALF_UP),
+                            rs.getBigDecimal("credits").setScale(2, RoundingMode.HALF_UP)};
+                    if (totalsAgree(lines, rs.getBigDecimal("debit_total"), rs.getBigDecimal("credit_total"))) {
+                        out.add(rs.getObject("txn_date", LocalDate.class));
+                    }
+                });
+        return out;
+    }
+
     /** #441 r6: the page's view of the deletes the check offers this period (file names for the buttons). */
     private List<BankRecDTOs.DeleteOffer> offersFor(UUID t, Map<LocalDate, KeptCopies> copies) {
         List<BankRecDTOs.DeleteOffer> out = new ArrayList<>();
@@ -1468,9 +1503,13 @@ public class BankReconciliationService {
     public List<DeleteOffer> deleteOffers(UUID bankAccountId) {
         UUID t = BankAccountLedgerService.requireTenant();
         Map<LocalDate, Boolean> unproven = new TreeMap<>();
+        // PR #451 review P2-2: a day inside the finalized period is offered nothing (nothing there changes), so
+        // its copies never join, or block, an open day's step.
         jdbc.query("""
                 select d.txn_date from bank_statement_days d
-                where d.tenant_id = :t and d.bank_account_id = :b and not d.order_confirmed and d.merge_unproven""",
+                join bank_accounts ba on ba.id = d.bank_account_id and ba.tenant_id = d.tenant_id
+                where d.tenant_id = :t and d.bank_account_id = :b and not d.order_confirmed and d.merge_unproven
+                  and (ba.reconciled_through is null or d.txn_date > ba.reconciled_through)""",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId),
                 rs -> { unproven.put(rs.getObject("txn_date", LocalDate.class), true); });
         List<DeleteOffer> out = new ArrayList<>();

@@ -397,7 +397,9 @@ class StatementOrderPropertyTest {
             }
             for (String h : m.hashes()) sources.computeIfAbsent(h, k -> new HashSet<>()).add(no);
             // #441 review r3: marked only (copy_proven_by); the service removes nothing at import. S26-01: a
-            // legacy look-alike shown as a copy becomes a kept look-alike (lookalike_kept = true) too.
+            // legacy look-alike the file shows as a copy is modelled as marked too; the service reads it when
+            // the check runs instead (PR #451 review P2-1: legacyProof, on the latest whole-day file), on the
+            // same rules, and offers its step only while the day's paper totals do not prove it.
             for (String h : copies) marked.put(h, no);
             stored.replaceAll((d, ls) -> ls.stream().map(l -> copies.contains(l.hash()) && !l.lookalike()
                     ? new BankStatementImportService.StoredLine(l.hash(), l.amount(), l.description(), l.balance(), null, null, true)
@@ -1450,6 +1452,27 @@ class StatementOrderPropertyTest {
      * its paper totals (no dead end); a finalized day's lines are unchanged; and, as in the cuts property,
      * from every state holding exactly the bank's lines, the paper's totals settle every day.
      */
+    /**
+     * PR #451 r2 (M2): two lines of one import are two lines of the bank, so a twin the whole-day file does not
+     * hold is a legacy look-alike only if no import holds both; whitespace and case of the narration do not
+     * matter, the amount and a different balance do.
+     */
+    @Test
+    void legacyLookalikesNeedTwinsThatNoImportHoldsBoth() {
+        BankStatementImportService.StoredLine s = new BankStatementImportService.StoredLine("s", new BigDecimal("-5.00"), "FEE",
+                new BigDecimal("1005.00"));
+        BankStatementImportService.StoredLine u = new BankStatementImportService.StoredLine("u", new BigDecimal("-5.00"), " fee ",
+                new BigDecimal("1000.00"));
+        List<BankStatementImportService.StoredLine> day = List.of(s, u);
+        assertThat(BankStatementImportService.legacyLookalikes(day, Set.of("s"), Map.of("s", Set.of(0), "u", Set.of(1))))
+                .containsExactly("u");
+        assertThat(BankStatementImportService.legacyLookalikes(day, Set.of("s"), Map.of("s", Set.of(0, 1), "u", Set.of(1))))
+                .as("one import holds both").isEmpty();
+        assertThat(BankStatementImportService.legacyLookalikes(List.of(s, new BankStatementImportService.StoredLine("u",
+                new BigDecimal("-5.00"), "FEE", new BigDecimal("1005.00"))), Set.of("s"), Map.of("s", Set.of(0), "u", Set.of(1))))
+                .as("same balance").isEmpty();
+    }
+
     @Test
     void legacyTwinsAreClearedByTheCopyStepAndNeverCostAGenuineLine() {
         Random rnd = new Random(2601);

@@ -485,6 +485,9 @@ describe("the check's delete steps (sim r26)", () => {
             fireEvent.click(copyButton);
             expect(confirm).toHaveBeenCalledWith(msgs.BankRec.removeCopiesConfirm
                 .replaceAll("{proof}", "now.csv").replaceAll("{file}", "orig.csv"));
+            // PR #451 review P3-1: the step removes the copies from every import holding them, so the
+            // confirm asks for the statement to postdate every one of them, not only the button's.
+            expect(msgs.BankRec.removeCopiesConfirm).toContain(locale === "ar" ? "بعد كل استيراد يحملها" : "after every import holding them");
             await waitFor(() => expect(calls.some(c => c.method === "DELETE"
                 && c.url.includes("/imports/imp-orig?proofImportId=imp-now"))).toBe(true));
         });

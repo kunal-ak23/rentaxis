@@ -397,16 +397,22 @@ public class BankStatementImportService {
         // such a line — the user's call, on the check's advice to use a current export — removes
         // it with an audit record, history or not (delete()).
         // Sim r26 S26-01: a twin kept by code from before #441 carries no marker (changeset 183 set
-        // lookalike_kept = false on every existing row); on the same proof rules it is shown as a copy
-        // too, and from then on is a kept look-alike like any other (the check's steps reach it).
+        // lookalike_kept = false on every existing row); it does not stop this file showing the marked
+        // ones (provenCopies). PR #451 review P2-1: it is not marked here — marking it would make its day a
+        // copy day, on which agreeing paper totals no longer prove it. The check reads it on the word of
+        // the latest statement holding the day whole (BankReconciliationService#legacyProof), and only
+        // while the day's paper totals do not prove it.
         Set<String> copies = provenCopies(r.rows(), hashes, stored, r.openingRow(), r.closingRow(), sources);
+        Set<String> markedBefore = new HashSet<>();
+        stored.values().forEach(ls -> ls.forEach(l -> { if (l.lookalike()) markedBefore.add(l.hash()); }));
+        copies.retainAll(markedBefore);
         if (!copies.isEmpty()) {
             Map<String, LocalDate> copyDays = new HashMap<>();
             stored.forEach((d, ls) -> ls.forEach(l -> { if (copies.contains(l.hash())) copyDays.put(l.hash(), d); }));
             copyDays.values().removeIf(d -> locked != null && !d.isAfter(locked));
             if (!copyDays.isEmpty()) {
                 jdbc.update("""
-                        update bank_statement_lines set copy_proven_by = :imp, lookalike_kept = true
+                        update bank_statement_lines set copy_proven_by = :imp
                         where tenant_id = :t and bank_account_id = :b and line_hash in (:h)""",
                         new MapSqlParameterSource("t", t).addValue("b", bankAccountId)
                                 .addValue("h", copyDays.keySet()).addValue("imp", imp.getId()));
@@ -1415,8 +1421,11 @@ public class BankStatementImportService {
             List<BankReconciliationService.DeleteOffer> copyOffers = offers.stream()
                     .filter(BankReconciliationService.DeleteOffer::copies).toList();
             if (!copyOffers.isEmpty()) {
-                removeShownCopies(t, imp, proofImportId, copyOffers, locked);
-                offers = offers.stream().filter(o -> !o.copies()).toList();
+                boolean gone = removeShownCopies(t, imp, proofImportId, copyOffers, locked);
+                if (gone || offers.stream().allMatch(BankReconciliationService.DeleteOffer::copies)) return;
+                // PR #451 review P3-3: a delete-the-others offer is read again now the copies are gone.
+                offers = reconciliations.getObject().deleteOffers(imp.getBankAccountId()).stream()
+                        .filter(o -> !o.copies() && o.proof().equals(proofImportId) && o.imports().contains(importId)).toList();
                 if (offers.isEmpty()) return;
             }
         }
@@ -1523,12 +1532,14 @@ public class BankStatementImportService {
      * holding them, each with an audit record, undone match history or not — provided every import
      * holding a copy was made before that statement (#441 r7: a later one may hold a line the bank added
      * after it was exported). The import named, and every other line it holds, stay: deleting it could
-     * take genuine lines no statement holds (on other days, or in a finalized period). It goes too only
-     * when it then holds nothing at all. A copy in a confirmed match stays until that match is undone; refused
-     * only when every copy shown is (undo them first).
+     * take genuine lines no statement holds (on other days, or in a finalized period). PR #451 review P3-2:
+     * every import holding a copy that the step leaves holding nothing goes too (each line it held has its
+     * audit record). A line inside the finalized period is never removed and never blocks the others (review
+     * P2-2). A copy in a confirmed match stays until that match is undone; refused only when every copy shown
+     * is (undo them first). Returns whether {@code imp} itself went.
      */
-    private void removeShownCopies(UUID t, BankStatementImport imp, UUID proof,
-                                   List<BankReconciliationService.DeleteOffer> offers, LocalDate locked) {
+    boolean removeShownCopies(UUID t, BankStatementImport imp, UUID proof,
+                              List<BankReconciliationService.DeleteOffer> offers, LocalDate locked) {
         List<LocalDate> days = offers.stream().map(BankReconciliationService.DeleteOffer::day).distinct().toList();
         // The lines the check (re-run now) shows as copies on the statement's word: marked by it at import
         // (copy_proven_by), or — S26-01, pre-#441 twins — shown by it now on the same rules.
@@ -1552,6 +1563,14 @@ public class BankStatementImportService {
                                                             where w.id = :w and w.tenant_id = :t))
                   and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)
                 order by l.txn_date, l.seq""", p);
+        // PR #451 review P2-2: a line inside the finalized period never goes, and never blocks the open days'
+        // copies either (the check offers no copy step there; this holds even if an offer named one).
+        long lockedShown = shown.stream().filter(m -> isLocked(m.get("txn_date"), locked)).count();
+        shown = shown.stream().filter(m -> !isLocked(m.get("txn_date"), locked)).toList();
+        if (shown.isEmpty() && lockedShown > 0) {
+            throw new BusinessRuleViolationException("The lines this step would remove are inside the reconciliation "
+                    + "finalized through " + dmy(locked) + "; reopen that reconciliation first, then follow the check again");
+        }
         if (shown.isEmpty()) {
             throw BankRecRefusal.refuse("deleteNotOffered", "The reconciliation check does not offer deleting this import "
                     + "on the word of that statement; delete it without it, or follow the check as it reads now");
@@ -1566,24 +1585,46 @@ public class BankStatementImportService {
                     + "matches; undo those matches first, reversing the entries the booking created, then use this step again",
                     "count", booked);
         }
-        if (locked != null && shown.stream().anyMatch(m -> !((java.sql.Date) m.get("txn_date")).toLocalDate().isAfter(locked))) {
-            throw new BusinessRuleViolationException("A line this step removes is inside the reconciliation finalized through "
-                    + dmy(locked) + "; reopen that reconciliation first");
-        }
         String text = offers.stream().map(BankReconciliationService.DeleteOffer::text)
                 .collect(java.util.stream.Collectors.joining(" | "));
+        List<UUID> removed = shown.stream().map(m -> (UUID) m.get("id")).toList();
+        // PR #451 review P3-2: every import holding a copy, to delete those the step leaves empty.
+        List<UUID> holders = new ArrayList<>(jdbc.queryForList("""
+                select distinct s.import_id from bank_statement_line_sources s
+                where s.tenant_id = :t and s.line_id in (:shown)""",
+                new MapSqlParameterSource(p.getValues()).addValue("shown", removed), UUID.class));
+        if (!holders.contains(imp.getId())) holders.add(imp.getId());
         jdbc.update("""
                 update bank_statement_lines set copy_proven_by = :w, lookalike_kept = true
                 where tenant_id = :t and bank_account_id = :b and id in (:shown)""",
-                new MapSqlParameterSource(p.getValues()).addValue("shown", shown.stream().map(m -> (UUID) m.get("id")).toList()));
+                new MapSqlParameterSource(p.getValues()).addValue("shown", removed));
         removeCopies(t, imp.getBankAccountId(), shown.stream().map(m -> (String) m.get("line_hash")).toList(),
                 "shown as a copy by the statement named as proof and removed on the user's word, from the reconciliation "
                         + "check's own step (pressed for " + imp.getFileName() + "), that it is the bank's current one; "
                         + "the check read: " + text);
+        // An import the step leaves holding nothing goes too (each line it held has its audit record above).
+        List<UUID> empty = jdbc.queryForList("""
+                select i.id from bank_statement_imports i
+                where i.tenant_id = :t and i.bank_account_id = :b and i.id in (:h)
+                  and not exists (select 1 from bank_statement_line_sources s where s.tenant_id = i.tenant_id and s.import_id = i.id)
+                  and not exists (select 1 from bank_statement_lines l where l.tenant_id = i.tenant_id and l.import_id = i.id)""",
+                new MapSqlParameterSource(p.getValues()).addValue("h", holders), UUID.class);
+        for (UUID e : empty) {
+            BankStatementImport x = e.equals(imp.getId()) ? imp : imports.findById(e).orElse(null);
+            if (x == null || !t.equals(x.getTenantId())) continue;
+            imports.delete(x);
+            log.info("Statement import {} ({}) of bank account {} deleted: the copy step on the word of {} left it empty",
+                    x.getId(), x.getFileName(), imp.getBankAccountId(), proof);
+        }
+        imports.flush();
         recomputeDays(t, imp.getBankAccountId(), new UUID(0, 0), days);
-        Integer left = jdbc.queryForObject("select count(*) from bank_statement_line_sources where tenant_id = :t and import_id = :i",
-                p, Integer.class);
-        if (left != null && left == 0) imports.delete(imp);
+        return empty.contains(imp.getId());
+    }
+
+    private static boolean isLocked(Object txnDate, LocalDate locked) {
+        if (locked == null) return false;
+        LocalDate d = txnDate instanceof java.sql.Date sd ? sd.toLocalDate() : (LocalDate) txnDate;
+        return !d.isAfter(locked);
     }
 
     /**
