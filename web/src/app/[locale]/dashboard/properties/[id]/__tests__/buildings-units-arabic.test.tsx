@@ -33,7 +33,7 @@ const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body
 beforeEach(() => {
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith("/v1/properties/p1")) return json({ id: "p1", nameEn: "Belle Vue", nameAr: "بيل فيو", emirate: "DUBAI", type: "RESIDENTIAL" });
+        if (url.endsWith("/v1/properties/p1")) return json({ id: "p1", nameEn: "Sample Vista", nameAr: "سامبل فيستا", emirate: "DUBAI", type: "RESIDENTIAL" });
         if (url.includes("/v1/buildings")) return json([building]);
         if (url.includes("/v1/units")) return json(units);
         return json([]);

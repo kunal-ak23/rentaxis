@@ -2,10 +2,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("@/components/finance/useNameLookup", () => ({
-    useNameLookup: () => ({ options: [{ id: "p1", label: "Belle Vue" }, { id: "p2", label: "Marina" }], name: () => "", loading: false }),
+    useNameLookup: () => ({ options: [{ id: "p1", label: "Sample Vista" }, { id: "p2", label: "Marina" }], name: () => "", loading: false }),
 }));
 const accounts = [
-    { id: "a", code: "1101", name: "Belle Vue bank", alias: null, group: false, active: true, accountType: "ASSET", accountSubType: null, propertyId: "p1" },
+    { id: "a", code: "1101", name: "Sample Vista bank", alias: null, group: false, active: true, accountType: "ASSET", accountSubType: null, propertyId: "p1" },
     { id: "b", code: "1102", name: "Marina bank", alias: null, group: false, active: true, accountType: "ASSET", accountSubType: null, propertyId: "p2" },
     { id: "c", code: "4000", name: "Org income", alias: null, group: false, active: true, accountType: "INCOME", accountSubType: null, propertyId: null },
 ];

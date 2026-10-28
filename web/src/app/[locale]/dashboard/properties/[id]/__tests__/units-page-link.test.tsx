@@ -27,7 +27,7 @@ beforeEach(() => {
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         const body = url.endsWith("/v1/properties/p1")
-            ? { id: "p1", nameEn: "Belle Vue", emirate: "DUBAI", type: "RESIDENTIAL" }
+            ? { id: "p1", nameEn: "Sample Vista", emirate: "DUBAI", type: "RESIDENTIAL" }
             : [];
         return { ok: true, status: 200, json: async () => body } as unknown as Response;
     }) as unknown as typeof fetch;

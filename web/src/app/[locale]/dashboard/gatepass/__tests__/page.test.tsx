@@ -69,7 +69,7 @@ const sampleRows = [
 ];
 
 const sampleProperties = [
-    { property: { id: "prop-1", nameEn: "Belle Vue", nameAr: "بيل فيو" } },
+    { property: { id: "prop-1", nameEn: "Sample Vista", nameAr: "سامبل فيستا" } },
     { property: { id: "prop-2", nameEn: "Marina Heights", nameAr: null } },
 ];
 
@@ -137,14 +137,14 @@ describe("GatePassReportPage", () => {
         const body = within(container.querySelector("tbody")!);
         expect(body.getAllByRole("row")).toHaveLength(2);
         // propertyId resolved to a display name via /v1/properties, not shown raw.
-        expect(body.getByText("Belle Vue")).toBeTruthy();
+        expect(body.getByText("Sample Vista")).toBeTruthy();
         expect(body.queryByText("prop-1")).toBeNull();
         expect(body.getByText("A-204")).toBeTruthy();
         expect(body.getByText("أحمد خان")).toBeTruthy();
         expect(body.getByText("Pass expired")).toBeTruthy();
 
         // The property filter is populated from the same fetch.
-        expect(screen.getByRole("option", { name: "Belle Vue" })).toBeTruthy();
+        expect(screen.getByRole("option", { name: "Sample Vista" })).toBeTruthy();
     });
 
     it("names the scanning guard rather than showing a UUID fragment", async () => {
@@ -195,7 +195,7 @@ describe("GatePassReportPage", () => {
 
         await waitFor(() => expect(screen.getByText("Khan, Ahmed")).toBeTruthy());
         const body = within(container.querySelector("tbody")!);
-        expect(body.getByText("بيل فيو")).toBeTruthy();
+        expect(body.getByText("سامبل فيستا")).toBeTruthy();
         // nameAr is null for Marina Heights — must fall back to nameEn, not
         // render an empty cell or the string "null".
         expect(body.getByText("Marina Heights")).toBeTruthy();
@@ -362,7 +362,7 @@ describe("GatePassReportPage — paged on the server (scale #15)", () => {
             return { ok: true, json: async () => sampleProperties };
         });
         render(<GatePassReportPage />);
-        await waitFor(() => expect(screen.getByRole("option", { name: "Belle Vue" })).toBeTruthy());
+        await waitFor(() => expect(screen.getByRole("option", { name: "Sample Vista" })).toBeTruthy());
         await waitFor(() => expect(screen.getByText("Khan, Ahmed")).toBeTruthy());
         fireEvent.click(screen.getByRole("button", { name: "2" }));
         await waitFor(() => expect(reportUrls[reportUrls.length - 1]).toContain("page=1"));

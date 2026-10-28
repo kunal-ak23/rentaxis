@@ -132,7 +132,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
 
     @Test
     void aRentCutIsCreditedDayByDayAndLeftOnTheRentersAccount() {
-        UUID leaseId = galahWithTwoCleared();
+        UUID leaseId = sampleResidencesWithTwoCleared();
         UUID rentLine = lineId(leaseId, "RENT");
 
         ReductionPreviewDTO preview = reductions.preview(leaseId, credit(rentLine, "39000"));
@@ -190,7 +190,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
 
     @Test
     void handingBackAChequeAndReplacingItFundsTheCredit() {
-        UUID leaseId = galahWithTwoCleared();
+        UUID leaseId = sampleResidencesWithTwoCleared();
         UUID rentLine = lineId(leaseId, "RENT");
         Cheque july = chequeOn(leaseId, RENT_4);
 
@@ -218,7 +218,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
      */
     @Test
     void onAnInstalmentVatLeaseTheCreditsVatComesOffThePlannedTaxPoints() {
-        UUID leaseId = commercialGalah();
+        UUID leaseId = commercialSampleResidences();
         UUID rentLine = lineId(leaseId, "RENT");
         Cheque july = chequeOn(leaseId, RENT_4);
 
@@ -248,7 +248,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
     /** Every instalment's VAT already declared: the credit's VAT is credited back with a tax credit note. */
     @Test
     void vatAlreadyDeclaredIsCreditedBackWithACreditNote() {
-        UUID leaseId = commercialGalah();
+        UUID leaseId = commercialSampleResidences();
         UUID rentLine = lineId(leaseId, "RENT");
         vatTaxPoints.runTo(RENT_4, false);
         assertThat(jdbc.queryForObject("select count(*) from vat_tax_points where lease_id = ? and status = 'PLANNED'",
@@ -268,7 +268,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
     /** A termination after the reduction hands back only what the new rate left unearned. */
     @Test
     void aTerminationAfterAReductionRefundsOnlyTheNewRate() {
-        UUID leaseId = galahWithTwoCleared();
+        UUID leaseId = sampleResidencesWithTwoCleared();
         reductions.reduce(leaseId, credit(lineId(leaseId, "RENT"), "39000"));
         LocalDate t = LocalDate.of(2027, 6, 15);
         termination.terminate(leaseId, new TerminateLeaseRequest(t, null, null, null), null);
@@ -286,7 +286,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
      */
     @Test
     void aTerminationBeforeTheReductionTakesEffectStillCutsTheOldRate() {
-        UUID leaseId = galahWithTwoCleared();
+        UUID leaseId = sampleResidencesWithTwoCleared();
         LocalDate june = LocalDate.of(2027, 6, 1);
         AddendumResponse done = reductions.reduce(leaseId, new ReduceLeaseRequest(june, SIGNED, null, null,
                 List.of(new ReduceLeaseRequest.LineReduction(lineId(leaseId, "RENT"), new BigDecimal("39000"))),
@@ -309,7 +309,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
      */
     @Test
     void theReducedTermsAreWhatRenewalTransferAndTheHeaderRead() {
-        UUID leaseId = galahWithTwoCleared();
+        UUID leaseId = sampleResidencesWithTwoCleared();
         reductions.reduce(leaseId, credit(lineId(leaseId, "RENT"), "39000"));
         LocalDate from = LocalDate.of(2027, 9, 24), to = LocalDate.of(2028, 9, 23);
         var same = renewal.planFor(leaseId, new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(null, from, to,
@@ -384,7 +384,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
      */
     @Test
     void aReductionAfterAnExtensionPricesTheContractLineOverItsOwnTerm() {
-        UUID leaseId = galahWithTwoCleared();
+        UUID leaseId = sampleResidencesWithTwoCleared();
         renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 12, 31),
                 null, List.of(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(null, "RENT", new BigDecimal("13900"),
                         BigDecimal.ZERO, null, null, null, null, null)),
@@ -421,7 +421,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
 
     @Test
     void refusals() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         UUID rentLine = lineId(leaseId, "RENT");
         assertThatThrownBy(() -> reductions.reduce(leaseId, credit(rentLine, "-1")))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -448,7 +448,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
 
     @Test
     void anUnassignedPropertyManagerCannotReduce() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         UUID rentLine = lineId(leaseId, "RENT");
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(), null,
@@ -461,7 +461,7 @@ class LeaseReductionIT extends AbstractPostgresIT {
     // fixture
     // ------------------------------------------------------------------
 
-    private UUID galah() {
+    private UUID sampleResidences() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000")));
         chequeGeneration.saveRows(leaseId, List.of(
@@ -474,15 +474,15 @@ class LeaseReductionIT extends AbstractPostgresIT {
         return leaseId;
     }
 
-    private UUID galahWithTwoCleared() {
-        UUID leaseId = galah();
+    private UUID sampleResidencesWithTwoCleared() {
+        UUID leaseId = sampleResidences();
         clearOnItsOwnDate(chequeOn(leaseId, ADMIN_CHEQUE));
         clearOnItsOwnDate(chequeOn(leaseId, RENT_1));
         clearOnItsOwnDate(chequeOn(leaseId, RENT_2));
         return leaseId;
     }
 
-    private UUID commercialGalah() {
+    private UUID commercialSampleResidences() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(LeaseTestFixtures.vatLine("RENT", "51000")));
         jdbc.update("update leases set vat_timing = ? where id = ?", VatTiming.INSTALMENT.name(), leaseId);

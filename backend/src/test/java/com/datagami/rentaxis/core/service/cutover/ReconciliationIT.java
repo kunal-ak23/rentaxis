@@ -88,12 +88,12 @@ class ReconciliationIT extends AbstractPostgresIT {
         propertyAccounts.seedDefaultTemplateAndDefaults();
 
         Property p = new Property();
-        p.setNameEn("Tulip Oasis 7");
+        p.setNameEn("Sample Plaza Oasis 7");
         p.setEmirate(Emirate.DUBAI);
         propertyId = propertyRepo.save(p).getId();
 
-        rentReceivable = accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), propertyId);
-        advanceRent = accounts.createLeaf("Advance Rent - Tulip 7", accounts.getAccountByCode("B-01-01"), propertyId);
+        rentReceivable = accounts.createLeaf("Rent Receivable - Sample Plaza 7", accounts.getAccountByCode("A-02-01"), propertyId);
+        advanceRent = accounts.createLeaf("Advance Rent - Sample Plaza 7", accounts.getAccountByCode("B-01-01"), propertyId);
         cashInHand = accounts.createLeaf("Cash In Hand", accounts.getAccountByCode("A-02"), null);
         // Seeded as F-02 and mapped by seedDefaultTemplateAndDefaults; resolved by role.
         obDifference = resolver.resolve(AccountRole.OPENING_BALANCE_DIFFERENCE, null);
@@ -146,8 +146,8 @@ class ReconciliationIT extends AbstractPostgresIT {
         importedContract("61000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Rent Receivable - Tulip 7,61000.00,0.00
-                %s,Advance Rent - Tulip 7,0.00,61000.00
+                %s,Rent Receivable - Sample Plaza 7,61000.00,0.00
+                %s,Advance Rent - Sample Plaza 7,0.00,61000.00
                 """.formatted(rentReceivable.getCode(), advanceRent.getCode()));
 
         List<OpeningBalanceService.ReconciliationRow> rows = ob.reconcile();
@@ -168,7 +168,7 @@ class ReconciliationIT extends AbstractPostgresIT {
         importedContract("45000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Rent Receivable - Tulip 7,61000.00,0.00
+                %s,Rent Receivable - Sample Plaza 7,61000.00,0.00
                 """.formatted(rentReceivable.getCode()));
         assertThat(ob.reconcile()).filteredOn(r -> rentReceivable.getId().equals(r.accountId()))
                 .singleElement()
@@ -185,8 +185,8 @@ class ReconciliationIT extends AbstractPostgresIT {
         importedContract("61000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Rent Receivable - Tulip 7,61000.00,0.00
-                %s,Advance Rent - Tulip 7,0.00,61000.00
+                %s,Rent Receivable - Sample Plaza 7,61000.00,0.00
+                %s,Advance Rent - Sample Plaza 7,0.00,61000.00
                 %s,Cash In Hand,50000.00,0.00
                 """.formatted(rentReceivable.getCode(), advanceRent.getCode(), cashInHand.getCode()));
 
@@ -216,8 +216,8 @@ class ReconciliationIT extends AbstractPostgresIT {
         importedContract("61000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Rent Receivable - Tulip 7,61000.00,0.00
-                %s,Advance Rent - Tulip 7,0.00,61000.00
+                %s,Rent Receivable - Sample Plaza 7,61000.00,0.00
+                %s,Advance Rent - Sample Plaza 7,0.00,61000.00
                 %s,Cash In Hand,50000.00,0.00
                 """.formatted(rentReceivable.getCode(), advanceRent.getCode(), cashInHand.getCode()));
 
@@ -244,8 +244,8 @@ class ReconciliationIT extends AbstractPostgresIT {
         importedContract("61000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Rent Receivable - Tulip 7,61000.00,0.00
-                %s,Advance Rent - Tulip 7,0.00,61000.00
+                %s,Rent Receivable - Sample Plaza 7,61000.00,0.00
+                %s,Advance Rent - Sample Plaza 7,0.00,61000.00
                 %s,Cash In Hand,50000.00,0.00
                 """.formatted(rentReceivable.getCode(), advanceRent.getCode(), cashInHand.getCode()));
 
@@ -282,7 +282,7 @@ class ReconciliationIT extends AbstractPostgresIT {
         importedContract("61000.00");
         upload("""
                 Account Code,Account Name,Debit,Credit
-                %s,Advance Rent - Tulip 7,0.00,61000.00
+                %s,Advance Rent - Sample Plaza 7,0.00,61000.00
                 """.formatted(advanceRent.getCode()));
 
         assertThat(ob.reconcile()).filteredOn(r -> rentReceivable.getId().equals(r.accountId()))

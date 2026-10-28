@@ -24,9 +24,9 @@ import type { Cheque } from "@/lib/api/leasing";
 function cheque(over: Partial<Cheque> & { id: string; seqNo: number }): Cheque {
     return {
         leaseId: "l1", propertyId: "p1", unitId: "u1", renterId: "r1",
-        propertyName: "L'Olivier", unitIdentifier: "204", renterName: "Prabhjot Singh",
+        propertyName: "Sample Heights", unitIdentifier: "204", renterName: "Sample Renter One",
         postingDate: "2026-01-01", chequeNumber: "000101", chequeDate: "2026-06-01",
-        payeeBank: "ENBD", payerName: "Prabhjot Singh", debitAccountId: null, debitAccountName: null,
+        payeeBank: "ENBD", payerName: "Sample Renter One", debitAccountId: null, debitAccountName: null,
         narration: null, mode: "PDC", status: "BOUNCED", failureReason: null,
         replacesId: null, replacedById: null, imageUrl: null, depositedAt: null, clearedAt: null,
         bouncedAt: null, returnedAt: null, pdrJournalId: null, crtJournalId: null, cbrJournalId: null,

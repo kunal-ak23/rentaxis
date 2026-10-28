@@ -51,7 +51,7 @@ const activeLease = {
     unitId: "unit-1",
     unitIdentifier: "A-204",
     propertyId: "prop-1",
-    propertyName: "Belle Vue",
+    propertyName: "Sample Vista",
     status: "ACTIVE",
 };
 
@@ -87,7 +87,7 @@ function facilitiesWithSpot(held: boolean): MyFacilitiesDTO {
             {
                 id: "spot-1",
                 propertyId: "prop-1",
-                propertyName: "Belle Vue",
+                propertyName: "Sample Vista",
                 spotNumber: "P-101",
                 level: null,
                 covered: false,
@@ -217,7 +217,7 @@ describe("RenterFacilitiesPage stale-state resync", () => {
     it("shows each amenity's fee before booking (F14-50)", async () => {
         api.fetchMyFacilities.mockResolvedValue({
             ...facilitiesWithSpot(false),
-            amenities: [{ id: "pool", propertyId: "prop-1", propertyName: "Belle Vue", nameEn: "Pool", nameAr: null,
+            amenities: [{ id: "pool", propertyId: "prop-1", propertyName: "Sample Vista", nameEn: "Pool", nameAr: null,
                 description: null, photoUrls: [], bookable: true, pendingCount: 0, feeType: "PER_HOUR", feeAmount: 50 }],
         } as unknown as MyFacilitiesDTO);
         api.fetchMyBookings.mockResolvedValue([]);

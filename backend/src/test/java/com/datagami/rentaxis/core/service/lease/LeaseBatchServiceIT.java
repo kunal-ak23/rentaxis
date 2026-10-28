@@ -114,11 +114,11 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
     }
 
     /** A posted contract on a new unit of {@code property} for a new renter. */
-    private UUID posted(Property property, LocalDate start, LocalDate end, boolean rentFreeJanuary) {
+    private UUID posted(Property property, LocalDate start, LocalDate end, boolean januaryRentFree) {
         Unit unit = f.createUnit(property, String.valueOf(unitSeq++));
         Renter renter = f.createRenter("Renter " + unitSeq);
         UUID id = f.draftLease(unit, renter, CONTRACT, start, end, terms());
-        if (rentFreeJanuary) {
+        if (januaryRentFree) {
             rentFree.replace(id, List.of(new RentFreePeriodDTO(null, start, start.plusMonths(1).minusDays(1), null,
                     "Fit-out", null, null)));
         }
@@ -127,8 +127,8 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
         return id;
     }
 
-    private UUID posted(boolean rentFreeJanuary) {
-        return posted(f.property(), START, END, rentFreeJanuary);
+    private UUID posted(boolean januaryRentFree) {
+        return posted(f.property(), START, END, januaryRentFree);
     }
 
     private static LeaseBatch.RenewRequest renewAll(List<UUID> ids, LeaseBatch.RentRule rule, boolean grid,
@@ -186,17 +186,17 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
         posting.post(draftId);
     }
 
-    private void assertRenewParity(LeaseBatch.RentRule rule, RentChange singleChange, boolean rentFreeJanuary,
+    private void assertRenewParity(LeaseBatch.RentRule rule, RentChange singleChange, boolean januaryRentFree,
                                    List<LeaseLineInput> extra, String expectedRent) {
-        assertRenewParity(rule, singleChange, rentFreeJanuary, extra, extra, expectedRent);
+        assertRenewParity(rule, singleChange, januaryRentFree, extra, extra, expectedRent);
     }
 
     /** {@code batchExtra} is what the bulk dialog sends, {@code singleExtra} what the single renew dialog sends. */
-    private void assertRenewParity(LeaseBatch.RentRule rule, RentChange singleChange, boolean rentFreeJanuary,
+    private void assertRenewParity(LeaseBatch.RentRule rule, RentChange singleChange, boolean januaryRentFree,
                                    List<LeaseLineInput> batchExtra, List<LeaseLineInput> singleExtra, String expectedRent) {
         List<LeaseLineInput> extra = batchExtra;
-        List<UUID> viaBatch = List.of(posted(rentFreeJanuary), posted(rentFreeJanuary));
-        List<UUID> byHand = List.of(posted(rentFreeJanuary), posted(rentFreeJanuary));
+        List<UUID> viaBatch = List.of(posted(januaryRentFree), posted(januaryRentFree));
+        List<UUID> byHand = List.of(posted(januaryRentFree), posted(januaryRentFree));
 
         List<LeaseBatch.RenewRow> rows = batch.renew(renewAll(viaBatch, rule, true, extra));
         assertThat(rows).allSatisfy(r -> assertThat(r.ok()).as(r.message()).isTrue());

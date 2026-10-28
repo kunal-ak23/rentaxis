@@ -29,16 +29,16 @@ vi.mock("@/lib/api/facilities", async (importOriginal) => {
 
 import RenterFacilitiesPage from "../page";
 
-const lease = { id: "l1", unitId: "unit-1", unitIdentifier: "A-204", propertyId: "prop-1", propertyName: "Belle Vue", status: "ACTIVE" };
+const lease = { id: "l1", unitId: "unit-1", unitIdentifier: "A-204", propertyId: "prop-1", propertyName: "Sample Vista", status: "ACTIVE" };
 
 const facilities: MyFacilitiesDTO = {
     amenities: [],
     allocatedParking: [
-        { id: "a1", propertyId: "prop-1", propertyName: "Belle Vue", unitId: "unit-1", unitNumber: "A-204",
+        { id: "a1", propertyId: "prop-1", propertyName: "Sample Vista", unitId: "unit-1", unitNumber: "A-204",
             spotNumber: "B1-07", level: "B1", covered: true, photoUrls: [] },
     ],
     parkingSpots: [
-        { id: "spot-1", propertyId: "prop-1", propertyName: "Belle Vue", spotNumber: "P-101", level: null, covered: false,
+        { id: "spot-1", propertyId: "prop-1", propertyName: "Sample Vista", spotNumber: "P-101", level: null, covered: false,
             held: false, pendingCount: 0,
             bookedRanges: [
                 { from: "2027-03-01", to: "2027-03-31" },

@@ -18,7 +18,7 @@ vi.mock("@/lib/api/leasing", async orig => {
 function bouncedCheque(amount = 10000): Cheque {
     return {
         id: "c1", leaseId: "l1", propertyId: "p1", unitId: "u1", renterId: "r1",
-        propertyName: "L'Olivier", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+        propertyName: "Sample Heights", unitIdentifier: "A-101", renterName: "Sample Renter One",
         seqNo: 1, postingDate: "2026-06-01", chequeNumber: "000101", chequeDate: "2026-06-01",
         payeeBank: "ENBD", payerName: null, debitAccountId: "acc-1", debitAccountName: "PDC Receivable",
         amount, narration: null, mode: "PDC", status: "BOUNCED",

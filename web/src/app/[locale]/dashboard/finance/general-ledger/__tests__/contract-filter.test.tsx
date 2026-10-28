@@ -9,7 +9,7 @@ const general = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.current) }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "ACCOUNTANT" } } }) }));
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
-vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", label: "Belle Vue" }], name: () => "", loading: false }) }));
+vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", label: "Sample Vista" }], name: () => "", loading: false }) }));
 const accounts = [{ id: "a0", code: "1100", name: "Acct 0", alias: null, group: false, active: true, accountType: "ASSET", accountSubType: null, propertyId: null }];
 vi.mock("@/components/finance/AccountPicker", async orig => {
     const m = await orig<typeof import("@/components/finance/AccountPicker")>();
@@ -21,7 +21,7 @@ vi.mock("@/lib/api/ledger", async orig => {
 });
 const lookup = vi.hoisted(() => ({
     searchUnits: vi.fn(async () => [
-        { id: "22222222-2222-4222-8222-222222222222", unitNumber: "101", propertyId: "11111111-1111-4111-8111-111111111111", propertyName: "Belle Vue", propertyType: "RESIDENTIAL", buildingId: null, buildingName: null, status: "VACANT" },
+        { id: "22222222-2222-4222-8222-222222222222", unitNumber: "101", propertyId: "11111111-1111-4111-8111-111111111111", propertyName: "Sample Vista", propertyType: "RESIDENTIAL", buildingId: null, buildingName: null, status: "VACANT" },
     ]),
     searchRenters: vi.fn(async () => []),
     unitNames: vi.fn(async (ids: string[]) => ({ rows: ids.map(id => ({ id, unitNumber: `Unit-${id}`, propertyId: null, propertyName: null, propertyType: null, buildingId: null, buildingName: null, status: null })), failedIds: [] })),

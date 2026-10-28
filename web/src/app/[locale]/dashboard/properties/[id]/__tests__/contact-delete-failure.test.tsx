@@ -30,7 +30,7 @@ function mockFetch() {
         const url = String(input);
         if (init?.method === "DELETE") return del();
         if (url.endsWith("/v1/properties/p1")) {
-            return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Belle Vue", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
+            return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Sample Vista", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
         }
         if (url.endsWith("/contacts")) {
             return { ok: true, status: 200, json: async () => ([{ id: "c1", name: "Carla Contact", phone: "+971500000000", category: "SECURITY" }]) } as unknown as Response;

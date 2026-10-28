@@ -10,7 +10,7 @@ vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
 vi.mock("@/components/cheques/ReceiveCashDialog", () => ({ default: ({ open }: { open: boolean }) => (open ? <div data-testid="cash-dialog-open" /> : null) }));
 vi.mock("@/components/cheques/UnappliedPaymentsTile", () => ({ default: () => null }));
-vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "p1", label: "Belle Vue" }], name: () => "", loading: false }) }));
+vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "p1", label: "Sample Vista" }], name: () => "", loading: false }) }));
 vi.mock("@/lib/api/bankRec", () => ({ bankRecApi: { chequeEvidence: vi.fn().mockResolvedValue([]) } }));
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();

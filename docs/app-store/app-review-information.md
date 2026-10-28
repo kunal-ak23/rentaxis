@@ -104,13 +104,13 @@ property organisation. Free; no in-app purchases, subscriptions, advertising or 
 
 ## 4. How to sign in and reach the main features
 
-**Everything below is on the "Al Ashram Demo Account" organisation, a purpose-built demo
+**Everything below is on the "Miftah Demo Account" organisation, a purpose-built demo
 tenant on production with every feature switch enabled.** It is not a customer.
 
 | App | Sign in with | Credentials |
 | --- | --- | --- |
-| Miftah Manager | Email + password | `admin@alashramdemo.com` / `<demo password — scripts/seed_demo_tenant.out.json, gitignored>` (organisation administrator — sees every Manager feature) |
-| Miftah Resident | Email + password | `ahmed@alashramdemo.com` / `<demo password — scripts/seed_demo_tenant.out.json, gitignored>` (active lease with cheques, tickets and passes). Also `fatima@`, `rajesh@`, `sara@alashramdemo.com`, same password. |
+| Miftah Manager | Email + password | `admin@miftahdemo.example` / `<demo password — scripts/seed_demo_tenant.out.json, gitignored>` (organisation administrator — sees every Manager feature) |
+| Miftah Resident | Email + password | `ahmed@miftahdemo.example` / `<demo password — scripts/seed_demo_tenant.out.json, gitignored>` (active lease with cheques, tickets and passes). Also `fatima@`, `rajesh@`, `sara@miftahdemo.example`, same password. |
 | Miftah Security | Phone number + code | **OWNER ACTION** — Firebase test number, e.g. `+971 50 000 0001` with fixed code `123456`; see "Reviewer access for Security" below |
 | Disposable accounts for the deletion demo | as above | **OWNER ACTION** — create one extra renter, one extra staff user and one extra guard on the demo tenant purely to be deleted on camera |
 
@@ -129,7 +129,7 @@ Reviewer access for Security (**OWNER ACTION**, ~10 minutes):
 1. Firebase console → project `rent-axis-493307` → Authentication → Sign-in method →
    Phone → **Phone numbers for testing** → add `+971500000001` with code `123456`.
    Firebase sends no SMS and needs no APNs/reCAPTCHA for a test number.
-2. Sign in to the web as `admin@alashramdemo.com` → Security guards → add a guard with that
+2. Sign in to the web as `admin@miftahdemo.example` → Security guards → add a guard with that
    exact phone, active, assigned to the demo property. (Or `POST /api/v1/gatepass/guards`.)
 3. Put the number and code in the Notes field. Keep the test number configured for the life
    of the listing — Apple re-reviews updates.

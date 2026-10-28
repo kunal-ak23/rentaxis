@@ -25,7 +25,7 @@ function cheque(over: Partial<RenterCheque> = {}): RenterCheque {
     return {
         id: "c1", leaseId: "l1", installmentNumber: 1, dueDate: "2026-06-01",
         amount: 5000, status: "REGISTERED", mode: "PDC", chequeNumber: "000101",
-        bankName: "ENBD", narration: null, propertyName: "L'Olivier", unitIdentifier: "A-101",
+        bankName: "ENBD", narration: null, propertyName: "Sample Heights", unitIdentifier: "A-101",
         renterName: "Tenant", due: true, overdue: false, daysOverdue: 0, gracePeriodDays: 5,
         penaltyOutstanding: 0, payable: 5000, payableOnline: true, onlineEnabled: true, penaltyAssessmentId: null,
         failureReason: null, clearedAt: null, statusChangedAt: null,

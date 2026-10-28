@@ -212,7 +212,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * cleared on their own dates — so nothing is ever late and no penalty proposal
      * appears to muddy what the register is holding.
      */
-    private UUID galah() {
+    private UUID sampleResidences() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
                         line("SECURITY_DEPOSIT", "3000")));
@@ -240,8 +240,8 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * had the unearned rent reversed out of it, which is a renter apparently 2,095.88
      * better off than they are.</p>
      */
-    private UUID terminatedGalah() {
-        UUID leaseId = galah();
+    private UUID terminatedSampleResidences() {
+        UUID leaseId = sampleResidences();
         recognition.runTo(RECOGNISED_TO, false);
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Renter relocating"), null);
         recognition.runTo(T, false);
@@ -256,7 +256,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * and the receivable it leaves ({@code 25,500 handed back − 34,372.60 unearned
      * = −8,872.60}) is the same whichever way round that is.</p>
      */
-    private UUID galahWithAKeptCheque() {
+    private UUID sampleResidencesWithAKeptCheque() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
                         line("SECURITY_DEPOSIT", "3000")));
@@ -284,7 +284,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * ended — which is itself the reason a fine has to be settled through the
      * register rather than added as a deduction.</p>
      */
-    private UUID galahKeptAndFined() {
+    private UUID sampleResidencesKeptAndFined() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
                         line("SECURITY_DEPOSIT", "3000")));
@@ -306,8 +306,8 @@ class SettlementServiceIT extends AbstractPostgresIT {
         return leaseId;
     }
 
-    /** The Galah lease with a 1,500 parking deposit on its own leaf, then terminated. */
-    private UUID galahWithParkingDeposit() {
+    /** The Sample Residences lease with a 1,500 parking deposit on its own leaf, then terminated. */
+    private UUID sampleResidencesWithParkingDeposit() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
                         line("SECURITY_DEPOSIT", "3000"), line("PARKING_DEPOSIT", "1500")));
@@ -336,8 +336,8 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * the only thing left on its books is the deposit. What a tenancy that simply
      * ran its course looks like on the day it is settled.
      */
-    private UUID galahFullyCollected() {
-        UUID leaseId = galah();
+    private UUID sampleResidencesFullyCollected() {
+        UUID leaseId = sampleResidences();
         clearOnItsOwnDate(chequeOn(leaseId, RENT_3));
         clearOnItsOwnDate(chequeOn(leaseId, RENT_4));
         return leaseId;
@@ -347,8 +347,8 @@ class SettlementServiceIT extends AbstractPostgresIT {
      * A tenancy that simply ran out: the same lease, marked EXPIRED the day after
      * its term ended, with no termination and therefore no returned paper.
      */
-    private UUID expiredGalah() {
-        UUID leaseId = galah();
+    private UUID expiredSampleResidences() {
+        UUID leaseId = sampleResidences();
         leaseService.markExpired(leaseId, END.plusDays(1));
         return leaseId;
     }
@@ -582,7 +582,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
     @Test
     void statementShowsCreditOwedToTenant() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
 
         SettlementStatementDTO statement = settlement.statement(leaseId);
 
@@ -617,7 +617,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void statementCountsTheRentStillWaitingToBeRecognised() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         recognition.runTo(RECOGNISED_TO, false);
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, null), null);
 
@@ -666,7 +666,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void finalizeCarriesTheSettlersNameOnTheStatement() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
         UUID bank = leaf(AccountRole.BANK).getId();
 
@@ -694,7 +694,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void anUndecidedProposalLapsesWhenTheSettlementIsFinalised() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
                 leaseId, null, PenaltyReason.LATE_PAYMENT, new BigDecimal("500"), "Late"), null);
         recognition.runTo(RECOGNISED_TO, false);
@@ -711,7 +711,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
     @Test
     void finalizeWithoutASavedDraftCreatesItFromTheStatement() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         assertThat(settlement.getSettlement(leaseId)).isEmpty();
         SettlementResponseDTO response = finalize(leaseId, leaf(AccountRole.BANK).getId());
         assertThat(response.getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
@@ -729,7 +729,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aSettlementCannotBeDatedAfterToday() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         UUID bank = leaf(AccountRole.BANK).getId();
         for (LocalDate typo : new LocalDate[]{com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.TODAY.plusDays(1),
                 LocalDate.of(2099, 12, 31)}) {
@@ -744,7 +744,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
     @Test
     void finalizeRefundPostsStlAndClosesLease() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
         UUID bank = leaf(AccountRole.BANK).getId();
         UUID deposit = leaf(AccountRole.SECURITY_DEPOSIT).getId();
@@ -807,7 +807,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void finalizeWithDeductionsExceedingDepositLeavesBalanceDue() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "10000"));
         UUID deposit = leaf(AccountRole.SECURITY_DEPOSIT).getId();
         UUID receivable = leaf(AccountRole.RENT_RECEIVABLE).getId();
@@ -853,7 +853,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aDeductionTheDepositCoversStillRefunds() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId, deduction(DeductionCategory.CLEANING, "4000"));
 
         assertThat(settlement.statement(leaseId).netRefund())
@@ -876,7 +876,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aFinaliseOnTheNetRefundTheUserSawIsRefusedWhenAnotherTabChangedIt() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         BigDecimal seenByA = settlement.statement(leaseId).netRefund();
         assertThat(seenByA).isEqualByComparingTo("8239.73");
         saveDraft(leaseId, deduction(DeductionCategory.CLEANING, "2000"));
@@ -901,7 +901,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void anAdditionIsDebitedAndIncreasesTheRefund() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId, addition(AdditionCategory.DEPOSIT_INTEREST, "150"));
         UUID otherIncome = leaf(AccountRole.OTHER_INCOME).getId();
 
@@ -933,7 +933,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void rejectsUnpaidRentAndPenaltiesCategories() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
 
         assertThatThrownBy(() -> saveDraft(leaseId, deduction(DeductionCategory.PENALTIES, "500")))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -971,7 +971,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
     /** A valid override is what the {@code STL} credits, not the category's default. */
     @Test
     void anAccountOverrideIsWhatTheStlCredits() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         UUID otherIncome = leaf(AccountRole.OTHER_INCOME).getId();
         UUID maintenance = leaf(AccountRole.MAINTENANCE_CHARGES).getId();
 
@@ -999,7 +999,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void rejectsAnAccountOverrideThatIsNotAnActiveIncomeLeaf() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
 
         UUID group = tx.execute(s -> accounts.findByParentIsNullOrderByDisplayOrderAscCodeAsc().stream()
                 .filter(Account::isGroup).findFirst().orElseThrow().getId());
@@ -1026,7 +1026,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
     /** An account belonging to somebody else is simply not there. */
     @Test
     void anAccountFromAnotherTenantIsNotFound() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         UUID mine = fixtures.tenantId();
 
         // A second organisation with its own chart, then back to ours.
@@ -1051,7 +1051,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void draftCanBeEditedUntilFinalized() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
 
         saveDraft(leaseId, deduction(DeductionCategory.CLEANING, "500"));
         assertThat(settlement.statement(leaseId).totalDeductions()).isEqualByComparingTo("500.00");
@@ -1085,7 +1085,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
     /** Finalising twice posts one {@code STL}, not two. */
     @Test
     void aSecondFinaliseIsRefused() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
         UUID bank = leaf(AccountRole.BANK).getId();
         finalize(leaseId, bank);
@@ -1121,7 +1121,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aSaveWhileTheLeaseRowIsHeldIsRefusedRatherThanOverwritingTheSettlement() throws Exception {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
         UUID bank = leaf(AccountRole.BANK).getId();
         UUID tenantId = fixtures.tenantId();
@@ -1185,7 +1185,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aSettlementCannotBeFinalisedWhileTheLeaseIsStillRunning() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         saveDraft(leaseId);
 
         assertThatThrownBy(() -> finalize(leaseId, leaf(AccountRole.BANK).getId()))
@@ -1203,7 +1203,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void theSettlementDateMustBeAfterTerminationAndInAnOpenPeriod() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
         UUID bank = leaf(AccountRole.BANK).getId();
 
@@ -1240,7 +1240,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aSettlementFinalizedUnderTheOldFlowOwesNoRefund() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
         SettlementResponseDTO done = finalize(leaseId, null);
         UUID bank = leaf(AccountRole.BANK).getId();
@@ -1269,7 +1269,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
     /** R2 N2: owed is read off the STL's own refund line, so a later mapping change does not zero it. */
     @Test
     void owedFollowsTheLeafTheFinalizeCreditedEvenAfterTheMappingChanges() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
         SettlementResponseDTO done = finalize(leaseId, null);
         UUID original = leaf(AccountRole.RENTER_REFUND_PAYABLE).getId();
@@ -1302,7 +1302,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
     @Test
     void aRefundIsOwedToTheRenterAndPaidByAPaymentVoucherNamingTheSettlement() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
         SettlementResponseDTO done = finalize(leaseId, null);
         assertThat(done.getRefundOutstanding()).isEqualByComparingTo("8239.73");
@@ -1345,7 +1345,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aSettlementWithoutATenantInContextIsRefused() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         TenantContextHolder.clear();
 
         assertThatThrownBy(() -> settlement.statement(leaseId))
@@ -1371,7 +1371,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void depositsHeldIsWhatIsLeftAfterAPartialRefund() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         assertThat(settlement.statement(leaseId).depositsHeld()).isEqualByComparingTo("3000.00");
 
         refundDeposit(leaseId, "1000");
@@ -1391,7 +1391,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aCarriedForwardPredecessorHoldsNothing() {
-        UUID predecessor = galah();
+        UUID predecessor = sampleResidences();
 
         LeaseDTO successor = renewal.renew(predecessor, new RenewLeaseRequest(
                 END.minusDays(14), END.plusDays(1), END.plusYears(1), null, true));
@@ -1421,7 +1421,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aRenewedPredecessorWhoseDepositStayedBehindIsSettledAndClosed() {
-        UUID predecessor = galahFullyCollected();
+        UUID predecessor = sampleResidencesFullyCollected();
         LeaseDTO successor = renewal.renew(predecessor, new RenewLeaseRequest(
                 END.minusDays(14), END.plusDays(1), END.plusYears(1), null, false));
         fixtures.generateGrid(successor.getId(), 4, END.plusDays(1));
@@ -1467,7 +1467,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aCarriedForwardPredecessorSettlesToZeroAndCloses() {
-        UUID predecessor = galahFullyCollected();
+        UUID predecessor = sampleResidencesFullyCollected();
         LeaseDTO successor = renewal.renew(predecessor, new RenewLeaseRequest(
                 END.minusDays(14), END.plusDays(1), END.plusYears(1), null, true));
         fixtures.generateGrid(successor.getId(), 4, END.plusDays(1));
@@ -1502,7 +1502,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void anApprovedPenaltyIsShownOutstandingAndNeverDeductedTwice() {
-        UUID leaseId = galah();
+        UUID leaseId = sampleResidences();
         BigDecimal receivableBefore = settlement.statement(leaseId).receivableBalance();
 
         PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
@@ -1560,7 +1560,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void statementListsWhatTheRegisterIsStillHolding() {
-        UUID leaseId = galahKeptAndFined();
+        UUID leaseId = sampleResidencesKeptAndFined();
 
         SettlementStatementDTO statement = settlement.statement(leaseId);
 
@@ -1590,7 +1590,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aRefundWhileInstrumentsAreOutstandingNeedsAcknowledgement() {
-        UUID leaseId = galahKeptAndFined();
+        UUID leaseId = sampleResidencesKeptAndFined();
         saveDraft(leaseId);
         UUID bank = leaf(AccountRole.BANK).getId();
 
@@ -1624,7 +1624,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aBalanceDueNeedsNoAcknowledgement() {
-        UUID leaseId = galahWithAKeptCheque();
+        UUID leaseId = sampleResidencesWithAKeptCheque();
         saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "40000"));
         assertThat(settlement.statement(leaseId).netRefund()).isNegative();
         assertThat(settlement.statement(leaseId).instrumentsOutstanding()).isPositive();
@@ -1654,7 +1654,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void twoDepositAccountsAreEachDebitedForTheirOwnBalance() {
-        UUID leaseId = galahWithParkingDeposit();
+        UUID leaseId = sampleResidencesWithParkingDeposit();
         saveDraft(leaseId);
         UUID security = leaf(AccountRole.SECURITY_DEPOSIT).getId();
         UUID parking = leaf(AccountRole.PARKING_DEPOSIT).getId();
@@ -1692,7 +1692,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void anExpiredLeaseIsSettledByTheSameStatement() {
-        UUID leaseId = expiredGalah();
+        UUID leaseId = expiredSampleResidences();
         saveDraft(leaseId);
         UUID bank = leaf(AccountRole.BANK).getId();
         UUID deposit = leaf(AccountRole.SECURITY_DEPOSIT).getId();
@@ -1715,7 +1715,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
     /** …and it is refused on a date before the tenancy actually ended. */
     @Test
     void anExpiredLeaseCannotBeSettledBeforeItEnded() {
-        UUID leaseId = expiredGalah();
+        UUID leaseId = expiredSampleResidences();
         saveDraft(leaseId);
 
         assertThatThrownBy(() -> settlement.finalizeSettlement(leaseId,
@@ -1734,7 +1734,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     @Test
     void aSettlementThatNetsToZeroPostsNoBankLineAndCollectsNothing() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "8239.73"));
         UUID bank = leaf(AccountRole.BANK).getId();
         UUID deposit = leaf(AccountRole.SECURITY_DEPOSIT).getId();
@@ -1773,7 +1773,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
     /** Another organisation's settlement is simply not there. */
     @Test
     void anotherTenantCanNeitherReadNorFinaliseThisSettlement() {
-        UUID leaseId = terminatedGalah();
+        UUID leaseId = terminatedSampleResidences();
         saveDraft(leaseId);
 
         LeaseTestFixtures other = new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,

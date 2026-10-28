@@ -98,8 +98,8 @@ class ImportBatchReverseIT extends AbstractPostgresIT {
         tenantId = orgRepo.save(org).getId();
         TenantContextHolder.setTenantId(tenantId);
         accounts.seedDefaultAccounts();
-        receivable = accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), null);
-        advanceRent = accounts.createLeaf("Advance Rent - Tulip 7", accounts.getAccountByCode("B-01-01"), null);
+        receivable = accounts.createLeaf("Rent Receivable - Sample Plaza 7", accounts.getAccountByCode("A-02-01"), null);
+        advanceRent = accounts.createLeaf("Advance Rent - Sample Plaza 7", accounts.getAccountByCode("B-01-01"), null);
         fiscal.setBooksStartDate(LocalDate.of(2026, 10, 1));
         fiscal.lockThrough(LocalDate.of(2026, 9, 30));
     }

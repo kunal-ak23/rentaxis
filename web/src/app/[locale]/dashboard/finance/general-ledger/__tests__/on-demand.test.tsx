@@ -7,7 +7,7 @@ const general = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.current) }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "ACCOUNTANT" } } }) }));
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
-vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", label: "Belle Vue" }], name: () => "", loading: false }) }));
+vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", label: "Sample Vista" }], name: () => "", loading: false }) }));
 const accounts = Array.from({ length: 21 }, (_, i) => ({ id: `a${i}`, code: `${1100 + i}`, name: `Acct ${i}`, alias: null, group: false, active: true, accountType: "ASSET", accountSubType: null, propertyId: null }));
 vi.mock("@/components/finance/AccountPicker", async orig => {
     const m = await orig<typeof import("@/components/finance/AccountPicker")>();

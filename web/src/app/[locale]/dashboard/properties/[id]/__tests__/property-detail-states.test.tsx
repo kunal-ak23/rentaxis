@@ -30,7 +30,7 @@ function mockPropertyStatus(statuses: number[]) {
         const url = String(input);
         if (url.endsWith("/v1/properties/p1")) {
             const status = statuses[Math.min(call++, statuses.length - 1)];
-            const body = status === 200 ? { id: "p1", nameEn: "Belle Vue", emirate: "DUBAI", type: "RESIDENTIAL" } : { message: "nope" };
+            const body = status === 200 ? { id: "p1", nameEn: "Sample Vista", emirate: "DUBAI", type: "RESIDENTIAL" } : { message: "nope" };
             return { ok: status === 200, status, json: async () => body } as unknown as Response;
         }
         return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
@@ -63,7 +63,7 @@ describe("property detail — unresolvable ids (F5)", () => {
         expect(await screen.findByTestId("page-load-failed")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: /retry/i }));
         await waitFor(() => expect(screen.queryByTestId("page-load-failed")).not.toBeInTheDocument());
-        expect((await screen.findAllByText("Belle Vue")).length).toBeGreaterThan(0);
+        expect((await screen.findAllByText("Sample Vista")).length).toBeGreaterThan(0);
     });
 
     it("shows an error with a retry when the request itself fails", async () => {

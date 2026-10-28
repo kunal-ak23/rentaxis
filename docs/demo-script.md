@@ -13,7 +13,7 @@ Make sure you have these credentials ready:
 | Role | Email | Password | Tenant |
 |------|-------|----------|--------|
 | Super Admin | *(your super admin)* | *(your password)* | System |
-| Tenant Admin | admin@alashram.ae | password123 | Al Ashram Real Estate |
+| Tenant Admin | admin@miftahdemo.ae | password123 | Miftah Demo Properties |
 
 > **Tip:** Open two browser tabs — one for Super Admin, one for Tenant Admin. Use incognito for the second.
 
@@ -35,9 +35,9 @@ Make sure you have these credentials ready:
 
 ### 1.2 — Switch to Tenant Admin
 
-**Login as Al Ashram Real Estate (admin@alashram.ae)**
+**Login as Miftah Demo Properties (admin@miftahdemo.ae)**
 
-> "Now let me switch to a tenant admin — Al Ashram Real Estate, a Dubai-based landlord managing residential and commercial properties."
+> "Now let me switch to a tenant admin — Miftah Demo Properties, a Dubai-based landlord managing residential and commercial properties."
 
 - Show the **Dashboard** — KPI cards (properties, units, occupancy, revenue, overdue)
 - Point out the **sidebar** — Overview, Finance, HR, Settings sections
@@ -50,7 +50,7 @@ Make sure you have these credentials ready:
 
 ### 2.1 — Properties
 
-> "Al Ashram manages two properties — a residential tower and a commercial business centre."
+> "Miftah Demo manages two properties — a residential tower and a commercial business centre."
 
 - Open **Properties** page
 - Click into **Al Barsha Tower** — show property details, unit breakdown
@@ -280,7 +280,7 @@ Make sure you have these credentials ready:
 ```
 PRE-DEMO
 [ ] Open browser tab 1 — Super Admin login
-[ ] Open browser tab 2 (incognito) — Tenant Admin (admin@alashram.ae / password123)
+[ ] Open browser tab 2 (incognito) — Tenant Admin (admin@miftahdemo.ae / password123)
 [ ] Verify site is up: https://rentaxis.uaenorth.cloudapp.azure.com
 
 ACT 1 — OVERVIEW (5 min)

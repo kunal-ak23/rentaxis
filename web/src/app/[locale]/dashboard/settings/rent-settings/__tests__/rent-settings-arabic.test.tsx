@@ -19,7 +19,7 @@ beforeEach(() => {
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
-        if (url.includes("/v1/properties")) return json([{ property: { id: "p1", nameEn: "Belle Vue", nameAr: "بيل فيو" } }]);
+        if (url.includes("/v1/properties")) return json([{ property: { id: "p1", nameEn: "Sample Vista", nameAr: "سامبل فيستا" } }]);
         if (url.includes("/v1/rent-settings/")) {
             return json({
                 propertyId: "p1", dueDayOfMonth: 1, gracePeriodDays: 5, penaltyType: "FIXED_PER_DAY", penaltyAmount: 50,
@@ -41,7 +41,7 @@ describe("rent settings in Arabic", () => {
         const { container } = render(
             <NextIntlClientProvider locale="ar" messages={ar}><RentSettingsPage /></NextIntlClientProvider>,
         );
-        await screen.findByText("بيل فيو");
+        await screen.findByText("سامبل فيستا");
         expect(screen.getByText(ar.OnlinePayments.rentSettingsDesc)).toBeInTheDocument();
         expect(screen.getByText(ar.OnlinePayments.selectPropertyPlaceholder)).toBeInTheDocument();
         expect(leftoverLatinWords(visibleText(container))).toEqual([]);

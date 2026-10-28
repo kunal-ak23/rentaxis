@@ -63,6 +63,6 @@ class PayeeNameMatcherTest {
 
     @Test
     void normaliseIsCaseSpaceAndPunctuationFree() {
-        assertThat(PayeeNameMatcher.normalise(" Al-Ashram  L.L.C ")).isEqualTo("alashramllc");
+        assertThat(PayeeNameMatcher.normalise(" Miftah-Demo  L.L.C ")).isEqualTo("miftahdemollc");
     }
 }

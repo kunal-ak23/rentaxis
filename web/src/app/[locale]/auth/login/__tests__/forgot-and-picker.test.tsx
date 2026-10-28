@@ -34,7 +34,7 @@ describe("LoginPage", () => {
         signIn.mockResolvedValue({
             ok: false,
             error: "LOGIN_AMBIGUOUS:" + JSON.stringify([
-                { tenantId: "a", tenantName: "Palm Ridge" }, { tenantId: "b", tenantName: "Al Ashram" }]),
+                { tenantId: "a", tenantName: "Palm Ridge" }, { tenantId: "b", tenantName: "Miftah Demo" }]),
         });
         render(<LoginPage />);
         fireEvent.change(screen.getByLabelText(en.Auth.emailLabel), { target: { value: "p@x.com" } });
@@ -43,7 +43,7 @@ describe("LoginPage", () => {
 
         expect(await screen.findByText(en.Auth.pickOrganisation)).toBeTruthy();
         expect(screen.getByText("Palm Ridge")).toBeTruthy();
-        expect(screen.getByText("Al Ashram")).toBeTruthy();
+        expect(screen.getByText("Miftah Demo")).toBeTruthy();
     });
 
     it("says the password is set after a link was used", () => {

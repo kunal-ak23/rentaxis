@@ -34,7 +34,7 @@ function mockFetch() {
         const url = String(input);
         calledUrls.push(url);
         if (url.endsWith("/v1/properties/p1")) {
-            return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Belle Vue", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
+            return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Sample Vista", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
         }
         if (url.endsWith("/managers")) {
             return { ok: true, status: 200, json: async () => ([{ id: "m1", name: "Manny Manager", email: "manny@x.com" }]) } as unknown as Response;
@@ -55,7 +55,7 @@ describe("property detail — managers request is role-gated (F: managers 403 fo
         role.current = "ACCOUNTANT";
         const calledUrls = mockFetch();
         renderPage();
-        expect(await screen.findAllByText("Belle Vue")).not.toHaveLength(0);
+        expect(await screen.findAllByText("Sample Vista")).not.toHaveLength(0);
         await waitFor(() => expect(calledUrls.some(u => u.endsWith("/v1/properties/p1"))).toBe(true));
         expect(calledUrls.some(u => u.endsWith("/managers"))).toBe(false);
         expect(screen.queryByText("Manny Manager")).not.toBeInTheDocument();
@@ -92,7 +92,7 @@ describe("property detail — the Property Manager card lists property managers 
         global.fetch = vi.fn(async (input: RequestInfo | URL) => {
             const url = String(input);
             if (url.endsWith("/v1/properties/p1")) {
-                return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Belle Vue", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
+                return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Sample Vista", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
             }
             if (url.endsWith("/managers")) return { ok: true, status: 200, json: async () => rows } as unknown as Response;
             return { ok: true, status: 200, json: async () => ([]) } as unknown as Response;
