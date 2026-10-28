@@ -139,6 +139,25 @@ export function ReconciliationPanel({ bankAccountId, onChanged, refreshKey }: {
                     {rec.checks.some(c => c.code === "CLOSING" && !c.ok) && (
                         <p className="text-[11px] text-muted break-words" data-testid="rec-closing-needed">{t("closingNeededHint")}</p>
                     )}
+                    {(rec.deleteOffers ?? []).length > 0 && (
+                        <div className="text-[11px] space-y-1" data-testid="rec-delete-offers">
+                            {(rec.deleteOffers ?? []).map(o => (
+                                <div key={o.day + o.proofImportId} className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-muted">{t("deleteOfferHint", { day: dmy(o.day), proof: o.proofFileName ?? "" })}</span>
+                                    {o.imports.map(i => (
+                                        <button key={i.id} type="button" className={small} disabled={busy}
+                                                data-testid={`rec-delete-offer-${i.id}`}
+                                                onClick={() => {
+                                                    if (!window.confirm(t("deleteOfferConfirm", { file: i.fileName ?? "", proof: o.proofFileName ?? "" }))) return;
+                                                    run(() => bankRecApi.deleteImport(i.id, o.proofImportId));
+                                                }}>
+                                            <Trash2 size={12} />{t("deleteOfferButton", { file: i.fileName ?? "" })}
+                                        </button>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     {rec.remedyReopenThrough && (
                         <p className="text-[11px] text-muted break-words" data-testid="rec-reopen-first">
                             {t("reopenFirstHint", { date: dmy(rec.remedyReopenThrough) })}
