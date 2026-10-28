@@ -458,3 +458,35 @@ describe("an unproven closing and a statement reaching into a finalized month (s
         expect(screen.queryByTestId("rec-reopen-first")).not.toBeInTheDocument();
     });
 });
+
+/** Sim r26 S26-02/03: the copy step removes only the copies (one button); the delete-the-others step deletes. */
+describe("the check's delete steps (sim r26)", () => {
+    const WITH_OFFERS: Reconciliation = {
+        ...SEPT, canFinalize: false,
+        deleteOffers: [
+            { day: "2026-09-11", proofImportId: "imp-now", proofFileName: "now.csv", copies: true,
+                imports: [{ id: "imp-orig", fileName: "orig.csv" }] },
+            { day: "2026-09-12", proofImportId: "imp-now", proofFileName: "now.csv", copies: false,
+                imports: [{ id: "imp-old", fileName: "old.csv" }] },
+        ],
+    };
+    for (const locale of ["en", "ar"] as const) {
+        it(`labels the copy step as removing the copies and sends its proof (${locale})`, async () => {
+            stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+                { match: "/reconciliations/rec-9", body: WITH_OFFERS }]);
+            const msgs = locale === "ar" ? ar : en;
+            const confirm = vi.fn(() => true);
+            vi.stubGlobal("confirm", confirm);
+            renderIn(locale, <ReconciliationPanel bankAccountId="ba-1" />);
+            const copyButton = await screen.findByTestId("rec-delete-offer-imp-orig");
+            expect(copyButton).toHaveTextContent(msgs.BankRec.removeCopiesButton.replace("{file}", "orig.csv"));
+            expect(screen.getByTestId("rec-delete-offer-imp-old"))
+                .toHaveTextContent(msgs.BankRec.deleteOfferButton.replace("{file}", "old.csv"));
+            fireEvent.click(copyButton);
+            expect(confirm).toHaveBeenCalledWith(msgs.BankRec.removeCopiesConfirm
+                .replaceAll("{proof}", "now.csv").replaceAll("{file}", "orig.csv"));
+            await waitFor(() => expect(calls.some(c => c.method === "DELETE"
+                && c.url.includes("/imports/imp-orig?proofImportId=imp-now"))).toBe(true));
+        });
+    }
+});

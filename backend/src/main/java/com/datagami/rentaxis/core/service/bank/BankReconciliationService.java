@@ -885,16 +885,6 @@ public class BankReconciliationService {
                     + ": if the import is refused because it brings a line there, reopen that reconciliation first)";
         }
 
-        /**
-         * Sim r26 S26-02: a step naming an import that brought a line of the finalized period: say to reopen
-         * that reconciliation first (and offer the reopen on the page), so the deletes then go through.
-         */
-        String reopenFirst(LocalDate through) {
-            if (this != NONE) reopenThrough = through;
-            return "first reopen the reconciliation finalized through " + through.format(DMY) + " (an import named here "
-                    + "brought a line inside it, so it cannot be deleted while that period is finalized); then ";
-        }
-
         /** The first and last dates of a statement that holds {@code first}..{@code last} whole. */
         Optional<LocalDate[]> span(LocalDate first, LocalDate last) {
             LocalDate a = complete.lower(first), z = complete.higher(last);
@@ -1453,7 +1443,11 @@ public class BankReconciliationService {
                     + "narration at another running balance, and the statement " + k.whole() + ", which holds the day "
                     + "whole, does not settle it. If " + k.whole() + " was exported from the bank after those imports, "
                     + "make the day its alone: "
-                    + (k.lockedThrough() == null ? "" : remedy.reopenFirst(k.lockedThrough()))
+                    // Sim r26 S26-02: an import named brought a line of the finalized period; it deletes once that
+                    // reconciliation is reopened (which needs this draft discarded first).
+                    + (k.lockedThrough() == null ? "" : "first discard this draft and reopen the reconciliation finalized "
+                            + "through " + k.lockedThrough().format(DMY) + " (an import named here brought a line inside it, "
+                            + "so it cannot be deleted while that period is finalized); then ")
                     + (k.othersBooked().isEmpty() ? "" : "undo the match" + (k.othersBooked().size() == 1 ? "" : "es") + " of "
                             + String.join(", ", k.othersBooked()) + " first, reversing the entr"
                             + (k.othersBooked().size() == 1 ? "y" : "ies") + " the booking created (only those imports hold "

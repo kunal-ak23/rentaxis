@@ -4943,6 +4943,8 @@
     "deleteOfferHint": "The check's step for {day}, on the word of {proof}:",
     "deleteOfferButton": "Delete {file}",
     "deleteOfferConfirm": "Delete {file}? Lines that {proof} does not hold go with it (each with an audit record), even if a match on them was undone. Only do this if {proof} was exported from the bank after {file}.",
+    "removeCopiesButton": "Remove the copies (from {file} and every import holding them)",
+    "removeCopiesConfirm": "Remove the lines {proof} shows as copies? Each goes with an audit record, even if a match on it was undone; {file} and its other lines stay. Only do this if {proof} was exported from the bank after {file}.",
     "reopenFirstHint": "The statement the check names starts inside the reconciliation finalized through {date}. If its import is refused because it brings a line there, reopen that reconciliation first.",
     "finalize": "Finalize",
     "finalizeHint": "Every check passes: finalize to lock this bank account through the period's last day.",

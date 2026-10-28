@@ -3300,6 +3300,73 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
 
+    /**
+     * Sim r26 S26-02, the delete-the-other-imports step: an import it names brought a line of the
+     * finalized August, so its delete is refused while August is finalized. The step now says first to
+     * discard the draft and reopen August; following that, every delete it names goes through, every
+     * genuine line stays (the August line is held by the whole statement too), and both months finalize.
+     */
+    @Test
+    void s2602theDeleteTheOthersStepSaysToReopenFirstWhenAnImportOwnsAFinalizedLine() {
+        jv(LocalDate.of(2026, 7, 31), marinaBank, "1000.00");
+        BankRecDTOs.ImportResult a = importNamed("sep-old.csv", """
+                31/08/2026,31/08/2026,FEE Q,,5.00,,995.00
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,005.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,CHQ 000123,,20.00,,990.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,995.00
+                """);
+        book("FEE Q", "CHARGE");
+        UUID aug = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(AUG_1, AUG_31, new BigDecimal("1000.00"),
+                new BigDecimal("995.00"))).id();
+        assertThat(recs.finalizeRec(aug).status()).isEqualTo("FINALIZED");
+        // The bank adds a second FEE after CREDIT R and re-dates the cheque to 12/09. A cut of 11/09:
+        BankRecDTOs.ImportResult b = importNamed("cut.csv", """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                """);
+        UUID chqMatch = book("CHQ 000123", "CHARGE").matchId();
+        importNamed("sep-now.csv", """
+                30/08/2026,30/08/2026,Opening balance,,,,"1,000.00"
+                31/08/2026,31/08/2026,FEE Q,,5.00,,995.00
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,005.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                12/09/2026,12/09/2026,CHQ 000123,,20.00,,985.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,990.00
+                13/09/2026,13/09/2026,Closing balance,,,,990.00
+                """);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, null, new BigDecimal("990.00"))).id();
+        LocalDate sep11 = LocalDate.of(2026, 9, 11);
+        String msg = check(paperDayTotalsExcept(id, sep11), "LINE_ORDER").message();
+        assertThat(msg).contains("the statement sep-now.csv, which holds the day whole, does not settle it")
+                .contains("first discard this draft and reopen the reconciliation finalized through 31/08/2026")
+                .contains("then delete sep-old.csv (31/08/2026–12/09/2026), cut.csv (11/09/2026–11/09/2026)");
+        assertThat(msg.indexOf("reopen the reconciliation")).isLessThan(msg.indexOf("undo the match"));
+        // Literally: the draft goes, August is reopened, the cheque's match undone, the imports deleted.
+        recs.discard(id);
+        recs.reopen(aug, "the bank re-dated a cheque; deleting an import that holds an August line");
+        matches.undo(chqMatch, true, SEP_30, "re-dated by the bank");
+        UUID proof = recs.deleteOffers(ei.getId()).get(0).proof();
+        imports.delete(a.importId(), proof);
+        imports.delete(b.importId(), proof);
+        assertThat(storedLines()).as("every line of the bank's statement, once").containsExactly(
+                "2026-08-31 FEE Q 995.00", "2026-09-10 CREDIT X 1005.00", "2026-09-11 FEE 1000.00", "2026-09-11 CREDIT R 1010.00",
+                "2026-09-11 FEE 1005.00", "2026-09-12 CHQ 000123 985.00", "2026-09-12 CREDIT Y 990.00");
+        UUID aug2 = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(AUG_1, AUG_31, new BigDecimal("1000.00"),
+                new BigDecimal("995.00"))).id();
+        paperDayTotalsExcept(aug2);
+        assertThat(recs.finalizeRec(aug2).status()).isEqualTo("FINALIZED");
+        UUID sep = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, null, new BigDecimal("990.00"))).id();
+        paperDayTotalsExcept(sep);
+        bookEveryLine();
+        BankRecDTOs.Reconciliation r = recs.get(sep);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(sep).status()).isEqualTo("FINALIZED");
+    }
+
     // ------------------------------------------------------------------ purge
 
     @Test

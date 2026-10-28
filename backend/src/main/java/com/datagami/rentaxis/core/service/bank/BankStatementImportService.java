@@ -1425,7 +1425,8 @@ public class BankStatementImportService {
                     new MapSqlParameterSource(p.getValues()).addValue("r", locked), Integer.class);
             if (inside != null && inside > 0) {
                 throw new BusinessRuleViolationException(inside + " line(s) of this import are inside the reconciliation finalized through "
-                        + locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "; the import cannot be deleted");
+                        + locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "; the import cannot be deleted"
+                        + " while that reconciliation is finalized (reopen it first)");
             }
         }
         Integer confirmed = jdbc.queryForObject("""
