@@ -19,14 +19,12 @@ public interface OrgSettingsRepository extends JpaRepository<OrgSettings, UUID> 
      * callers that had no transaction were reading every landlord's row and
      * taking the first one. See {@code OrgSettingsService}.</p>
      *
-     * <p>It returns a list and orders it because <b>nothing in the schema says
-     * there is one row per tenant</b> — {@code org_settings} has no unique
-     * constraint on {@code tenant_id} or {@code landlord_org_id} (changesets 01
-     * and 49 are the only ones that touch the table). "There is exactly one per
-     * LandlordOrg" is a convention the code keeps, not a rule the database
-     * enforces, so a duplicate would otherwise make the answer depend on row
-     * order. Deterministic is what a hotfix can do here; the constraint belongs
-     * in a migration of its own.</p>
+     * <p>It returns a list and orders it because, until changeset 186, <b>nothing
+     * in the schema said there is one row per tenant</b>, so a duplicate would
+     * have made the answer depend on row order. Changeset 186 removed any
+     * duplicates (keeping the lowest id, the row this returns first) and added
+     * {@code uq_org_settings_tenant}, so the list now holds at most one row; the
+     * order stays so the read is deterministic either way.</p>
      */
     List<OrgSettings> findByTenantIdOrderByIdAsc(UUID tenantId);
 }
