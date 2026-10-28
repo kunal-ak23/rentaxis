@@ -1196,6 +1196,22 @@ public class BankReconciliationService {
                                 List.of()));
                     }
                 });
+        // #441 r7: a delete on the word of the statement that marked copies names only imports made before
+        // it — a later import may hold a line the bank added after that statement was exported.
+        for (Map.Entry<LocalDate, KeptCopies> e : new ArrayList<>(out.entrySet())) {
+            KeptCopies k = e.getValue();
+            if (k.proofId() == null) continue;
+            List<UUID> before = jdbc.queryForList("""
+                    select i.id from bank_statement_imports i
+                    where i.tenant_id = :t and i.id in (:h)
+                      and i.imported_at < (select w.imported_at from bank_statement_imports w where w.id = :w and w.tenant_id = :t)
+                    order by i.imported_at, i.id""",
+                    new MapSqlParameterSource("t", t).addValue("h", k.holderIds()).addValue("w", k.proofId()), UUID.class);
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < k.holderIds().size(); i++) if (before.contains(k.holderIds().get(i))) names.add(k.holders().get(i));
+            out.put(e.getKey(), new KeptCopies(names, k.proof(), k.proven(), k.booked(), null, List.of(), List.of(),
+                    new ArrayList<>(before), k.proofId(), null, List.of()));
+        }
         // #441 review r3: a statement holding the day whole imported after the kept lines, which
         // showed none of them as a copy (it holds them, or the day differs elsewhere): the day is
         // then settled by making it that statement's alone — deleting every other import holding
@@ -1291,7 +1307,7 @@ public class BankReconciliationService {
     }
 
     /** #441 r6: a delete the check offers: on {@code day}, deleting {@code imports} on the word of {@code proof}. */
-    public record DeleteOffer(LocalDate day, UUID proof, List<UUID> imports, String text) { }
+    public record DeleteOffer(LocalDate day, UUID proof, List<UUID> imports, String text, boolean copies) { }
 
     /**
      * #441 r6: the deletes the check currently offers for the account's unproven days that hold a kept
@@ -1311,7 +1327,7 @@ public class BankReconciliationService {
         keptLookalikes(t, bankAccountId, unproven).forEach((d, k) -> {
             if (k.offerProof() == null || k.offerImports().isEmpty()) return;
             out.add(new DeleteOffer(d, k.offerProof(), List.copyOf(k.offerImports()),
-                    copySteps(d, k, remedy(t, bankAccountId, d, d))));
+                    copySteps(d, k, remedy(t, bankAccountId, d, d)), k.proofId() != null));
         });
         return out;
     }

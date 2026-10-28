@@ -2939,6 +2939,60 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
     }
 
 
+
+    /**
+     * #441 review r7: after the statement that marked the copies, a later import brings a genuine FEE the
+     * bank added since. The copy offer names only imports made before that statement, so a delete of the
+     * later import on its word is refused and the FEE stays.
+     */
+    @Test
+    void reviewProbeR7ProofOfferNamesALaterHolder() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,005.00"
+                """);
+        imports.importFile(ei.getId(), "cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,995.00
+                11/09/2026,11/09/2026,FEE,,5.00,,990.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "whole.csv", (HEAD + """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,995.00
+                11/09/2026,11/09/2026,FEE,,5.00,,990.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,995.00
+                13/09/2026,13/09/2026,Closing balance,,,,995.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        // After whole.csv was exported, the bank adds yet another FEE at the end of 11/09; a later one-line export brings it.
+        BankRecDTOs.ImportResult h2 = imports.importFile(ei.getId(), "later.csv", (HEAD + """
+                11/09/2026,11/09/2026,FEE,,5.00,,985.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        UUID line = jdbc.queryForObject("select id from bank_statement_lines where bank_account_id = ? and import_id = ?",
+                UUID.class, ei.getId(), h2.importId());
+        UUID m = actions.post(new BankRecDTOs.PostLinesInput(List.of(line), "CHARGE", false, null, null, marinaBank.getId(), true, null)).matchId();
+        matches.undo(m, true, SEP_30, "rebook");
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("990.00"))).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        String refusal = null;
+        try { imports.delete(h2.importId(), w.importId()); } catch (RuntimeException e) { refusal = e.getMessage(); }
+        Integer left = jdbc.queryForObject("select count(*) from bank_statement_lines where id = ?", Integer.class, line);
+        assertThat(left).as("a genuine line newer than the proof stays").isEqualTo(1);
+        assertThat(refusal).contains("does not offer deleting this import");
+        assertThat(r.deleteOffers()).allSatisfy(o -> assertThat(o.imports()).noneMatch(i -> i.id().equals(h2.importId())));
+    }
+
+
     /**
      * #438 review: the whole-then-delete remedy never tells the user to delete an import that
      * cannot be deleted. August holds a one-day import of 31/08 (it owns FEE B) and is

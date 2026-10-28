@@ -1361,15 +1361,38 @@ public class BankStatementImportService {
             }
             copyDays = offers.stream().map(BankReconciliationService.DeleteOffer::day).toList();
             String shown = offers.stream().map(BankReconciliationService.DeleteOffer::text).collect(java.util.stream.Collectors.joining(" | "));
-            MapSqlParameterSource cp = new MapSqlParameterSource(p.getValues()).addValue("w", proofImportId).addValue("d", copyDays);
-            // The lines only this import holds on those days that the named statement does not hold.
-            List<String> copies = jdbc.queryForList("""
-                    select l.line_hash from bank_statement_lines l
-                    where l.tenant_id = :t and l.import_id = :i and l.txn_date in (:d) and """ + ONLY_THIS_IMPORT + """
-                      and not exists (select 1 from bank_statement_line_sources s
-                                       where s.line_id = l.id and s.tenant_id = l.tenant_id and s.import_id = :w)
-                      and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)""",
-                    cp, String.class);
+            List<LocalDate> copyOfferDays = offers.stream().filter(BankReconciliationService.DeleteOffer::copies)
+                    .map(BankReconciliationService.DeleteOffer::day).toList();
+            List<LocalDate> wholeOfferDays = offers.stream().filter(o -> !o.copies())
+                    .map(BankReconciliationService.DeleteOffer::day).toList();
+            MapSqlParameterSource cp = new MapSqlParameterSource(p.getValues()).addValue("w", proofImportId);
+            // #441 r7: the import being deleted must predate the statement whose word it is deleted on.
+            String predates = """
+                     and (select x.imported_at from bank_statement_imports x where x.id = l.import_id and x.tenant_id = l.tenant_id)
+                       < (select w.imported_at from bank_statement_imports w where w.id = :w and w.tenant_id = l.tenant_id)
+                    """;
+            List<String> copies = new ArrayList<>();
+            if (!copyOfferDays.isEmpty()) {
+                // Copy offer: only the lines that statement itself marked as copies.
+                copies.addAll(jdbc.queryForList("""
+                        select l.line_hash from bank_statement_lines l
+                        where l.tenant_id = :t and l.import_id = :i and l.txn_date in (:cd) and l.copy_proven_by = :w and """
+                        + ONLY_THIS_IMPORT + predates + """
+                          and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)""",
+                        new MapSqlParameterSource(cp.getValues()).addValue("cd", copyOfferDays), String.class));
+            }
+            if (!wholeOfferDays.isEmpty()) {
+                // Delete-others offer: the lines that statement, holding the day whole, does not hold.
+                copies.addAll(jdbc.queryForList("""
+                        select l.line_hash from bank_statement_lines l
+                        where l.tenant_id = :t and l.import_id = :i and l.txn_date in (:wd) and """ + ONLY_THIS_IMPORT + predates + """
+                          and exists (select 1 from bank_statement_imports w where w.id = :w and w.tenant_id = l.tenant_id
+                                        and w.first_date < l.txn_date and w.last_date > l.txn_date)
+                          and not exists (select 1 from bank_statement_line_sources s
+                                           where s.line_id = l.id and s.tenant_id = l.tenant_id and s.import_id = :w)
+                          and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)""",
+                        new MapSqlParameterSource(cp.getValues()).addValue("wd", wholeOfferDays), String.class));
+            }
             if (!copies.isEmpty()) {
                 jdbc.update("""
                         update bank_statement_lines set copy_proven_by = :w
