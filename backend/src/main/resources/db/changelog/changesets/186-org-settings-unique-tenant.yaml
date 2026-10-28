@@ -6,22 +6,22 @@
 # of it (lowest id), and creates a row only when the tenant has none, so a second
 # row could only come from two first-time saves racing each other.
 #
-#   185-org-settings-dedupe-tenant: a tenant's rows after its lowest id are the ones
-#     no code path reads or writes. They are copied to org_settings_dup_backup_185
+#   186-org-settings-dedupe-tenant: a tenant's rows after its lowest id are the ones
+#     no code path reads or writes. They are copied to org_settings_dup_backup_186
 #     (same columns) and then deleted. On a database with no duplicates both
 #     statements touch nothing and the backup table is created empty.
-#   185-org-settings-unique-tenant: uq_org_settings_tenant on tenant_id. A racing
+#   186-org-settings-unique-tenant: uq_org_settings_tenant on tenant_id. A racing
 #     second create now fails on the constraint instead of leaving a row behind.
 #
 # No foreign key references org_settings, so the delete cannot cascade.
 databaseChangeLog:
   - changeSet:
-      id: 185-org-settings-dedupe-tenant
+      id: 186-org-settings-dedupe-tenant
       author: claude
       changes:
         - sql:
             sql: >
-              CREATE TABLE org_settings_dup_backup_185 AS
+              CREATE TABLE org_settings_dup_backup_186 AS
                 SELECT o.* FROM org_settings o
                 WHERE o.id IN (
                   SELECT id FROM (
@@ -32,15 +32,15 @@ databaseChangeLog:
         - sql:
             sql: >
               DELETE FROM org_settings
-              WHERE id IN (SELECT id FROM org_settings_dup_backup_185)
+              WHERE id IN (SELECT id FROM org_settings_dup_backup_186)
       rollback:
         - sql:
             sql: >
-              INSERT INTO org_settings SELECT * FROM org_settings_dup_backup_185
-        - dropTable: { tableName: org_settings_dup_backup_185 }
+              INSERT INTO org_settings SELECT * FROM org_settings_dup_backup_186
+        - dropTable: { tableName: org_settings_dup_backup_186 }
 
   - changeSet:
-      id: 185-org-settings-unique-tenant
+      id: 186-org-settings-unique-tenant
       author: claude
       changes:
         - addUniqueConstraint:

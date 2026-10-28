@@ -306,7 +306,7 @@ class CrossTenantAdminSurfacesIT extends AbstractPostgresIT {
     }
 
     /**
-     * Changeset 185: one settings row per organisation is a rule of the schema now,
+     * Changeset 186: one settings row per organisation is a rule of the schema now,
      * not only of {@code OrgSettingsService}. A second row for the same tenant (two
      * first-time saves racing) is refused, and the first row is left as it was.
      */

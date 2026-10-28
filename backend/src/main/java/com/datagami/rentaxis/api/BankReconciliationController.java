@@ -168,9 +168,11 @@ public class BankReconciliationController {
     }
 
     @DeleteMapping("/imports/{id}")
-    public ResponseEntity<Void> deleteImport(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteImport(@PathVariable UUID id,
+                                             @RequestParam(name = "proofImportId", required = false) UUID proofImportId) {
         requireTenantSelected();
-        imports.delete(id);
+        // #441 r6: proofImportId only from the check's own delete step; the service re-runs the check.
+        imports.delete(id, proofImportId);
         return ResponseEntity.noContent().build();
     }
 

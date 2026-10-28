@@ -393,10 +393,11 @@ public class BankReconciliationService {
         Map<LocalDate, Boolean> unconfirmed = unconfirmedDays(t, b, from, to);
         // Review P2-3: an unproven day is proven by the day's total debits and total
         // credits typed from the paper statement, when they agree with its stored lines.
-        Map<LocalDate, List<String>> copies = keptLookalikes(t, b, unconfirmed);
+        Map<LocalDate, KeptCopies> copies = keptLookalikes(t, b, unconfirmed);
         List<BankRecDTOs.UnprovenDay> dayVerdicts = dayProof(t, r.id(), unconfirmed, period, copies.keySet());
         // P3-20: the page sees only whether a day's totals were entered, not the verdict.
         List<BankRecDTOs.UnprovenDay> unprovenDays = dayVerdicts.stream().map(d -> "NEEDED".equals(d.status()) ? d
+                : d.typedDebits() == null ? new BankRecDTOs.UnprovenDay(d.date(), null, null, "NEEDED")
                 : new BankRecDTOs.UnprovenDay(d.date(), d.typedDebits(), d.typedCredits(), "ENTERED")).toList();
         boolean openingKnown = !first || r.opening() != null;
         // S20-02: with the paper's balances typed, the order of an unconfirmed day's
@@ -581,7 +582,7 @@ public class BankReconciliationService {
                 adjustedBank, adjustedBook, difference, dit, unpresented, bookedAfter, unrecorded, withoutEvidence,
                 byMethod, checks, canFinalize, Instant.now(clock), userName(BankStatementImportService.currentUserId()),
                 r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
-                unprovenDays, dayTotalsVerdict(dayVerdicts), remedy.reopenThrough());
+                unprovenDays, dayTotalsVerdict(dayVerdicts), remedy.reopenThrough(), offersFor(t, copies));
     }
 
     /**
@@ -776,6 +777,22 @@ public class BankReconciliationService {
         private final LocalDate openingDay;
         /** Sim r22 S22-04: set when a named statement starts inside the finalized period. */
         private LocalDate reopenThrough;
+        /** #441 ruling A: the account has shown a back-value ({@code bank_accounts.back_value_seen}). */
+        private boolean backValues;
+
+        Remedy backValues(boolean seen) {
+            this.backValues = seen;
+            return this;
+        }
+
+        boolean backValues() {
+            return backValues;
+        }
+
+        /** #441 ruling A: what a whole-day statement no longer does alone on such an account. */
+        static final String BACK_VALUES = "the bank has back-valued lines on this account (a running balance has moved), "
+                + "so a statement holding a day whole no longer settles an unproven day by itself — an older download "
+                + "would look the same";
 
         Remedy(TreeSet<LocalDate> complete, LocalDate locked) {
             this(complete, locked, List.of());
@@ -872,6 +889,21 @@ public class BankReconciliationService {
         }
 
         /** "; or import one statement that runs from … to …", or how to settle it when none can be named. */
+        /**
+         * #441 r4: for unproven days. A statement holding the day whole still brings a line missing
+         * there, but no longer settles an unproven day (an older download looks the same as a
+         * current one): the day's paper totals, which always settle it once its lines are stored,
+         * are the way out, and the text says so.
+         */
+        String orImportUnproven(LocalDate first, LocalDate last) {
+            if (this == NONE) return "";
+            String imp = orImport(first, last);
+            String why = "a statement holding a day whole no longer settles an unproven day by itself (an older download "
+                    + "looks the same as a current one)";
+            return imp.isEmpty() ? " (" + why + ")" : imp + " — it brings any line missing there, but " + why
+                    + ": type the day's totals after it";
+        }
+
         String orImport(LocalDate first, LocalDate last) {
             if (this == NONE) return "";
             Optional<LocalDate[]> s = span(first, last);
@@ -932,9 +964,11 @@ public class BankReconciliationService {
          * front of an identical one there, S25-P1), so that day is left to settle by its paper
          * totals — the one day the statement leaves, said as it is.
          */
-        private static String endDay(LocalDate z) {
-            return "; it leaves only " + z.format(DMY) + ", the day it ends on, to settle: type that day's total debits"
-                    + " and total credits from the paper statement";
+        private String endDay(LocalDate z) {
+            return "; it leaves " + z.format(DMY) + ", the day it ends on, and any day it holds that is already unproven, "
+                    + "to their paper totals: type each such day's total debits and total credits from the paper statement"
+                    + (backValues ? " (" + BACK_VALUES + ": every day it holds whole on which it moves a balance is then "
+                            + "left to its totals too, and the check names each)" : "");
         }
     }
 
@@ -981,7 +1015,9 @@ public class BankReconciliationService {
         LocalDate openingDay = jdbc.queryForObject("""
                 select max(txn_date) from bank_statement_lines where tenant_id = :t and bank_account_id = :b
                 and txn_date < :from""", p.addValue("from", from), LocalDate.class);
-        return new Remedy(complete, locked, spans, openingDay);
+        Boolean seen = jdbc.queryForObject("select back_value_seen from bank_accounts where id = :b and tenant_id = :t", p,
+                Boolean.class);
+        return new Remedy(complete, locked, spans, openingDay).backValues(Boolean.TRUE.equals(seen));
     }
 
     private static String dayList(Collection<LocalDate> days) {
@@ -1007,7 +1043,7 @@ public class BankReconciliationService {
     private static Optional<BankRecDTOs.Check> lineOrder(Map<LocalDate, Boolean> unconfirmed,
                                                         List<BankRecDTOs.UnprovenDay> unprovenDays, boolean closingTyped,
                                                         boolean openingKnown, boolean typedOpening, Remedy remedy,
-                                                        Map<LocalDate, List<String>> copies) {
+                                                        Map<LocalDate, KeptCopies> copies) {
         if (unconfirmed.isEmpty()) return Optional.empty();
         List<LocalDate> mismatch = unprovenDays.stream().filter(d -> "MISMATCH".equals(d.status()))
                 .map(BankRecDTOs.UnprovenDay::date).toList();
@@ -1019,7 +1055,7 @@ public class BankReconciliationService {
                     + "did not hold the whole day, so it may have been a second, separate line (a fee charged twice, say). "
                     + "A typed closing balance cannot settle this. Type " + (needed.size() == 1 ? "that day's" : "each day's")
                     + " total debits and total credits from the paper statement"
-                    + remedy.orImport(needed.get(0), needed.get(needed.size() - 1)) + "." + AVOID));
+                    + remedy.orImportUnproven(needed.get(0), needed.get(needed.size() - 1)) + "." + AVOID));
         }
         // Review P3-20: only once every unproven day's totals are typed, and only the
         // overall result — no per-day verdict to probe the stored totals with.
@@ -1031,24 +1067,15 @@ public class BankReconciliationService {
                     + "missing" + copied.map(d -> ", or on " + d.format(DMY) + " a line an import kept is a copy of one "
                             + "already imported at another balance").orElse("")
                     + ". Check the figures against the paper statement"
-                    + remedy.orImport(all.get(0), all.get(all.size() - 1))
-                    + copied.map(d -> ". If " + d.format(DMY) + " is still not settled after a statement holding it whole, "
-                            + "the kept line is a copy: delete " + String.join(", ", copies.get(d))
-                            + " (every import holding it), then type the day's totals again").orElse("") + "."));
+                    + remedy.orImportUnproven(all.get(0), all.get(all.size() - 1))
+                    + "." + copied.map(d -> " " + copySteps(d, copies.get(d), remedy)).orElse("")));
         }
         // #441 review: totals that agree on a day holding a kept look-alike prove nothing.
         List<LocalDate> copy = unprovenDays.stream().filter(d -> "COPY".equals(d.status()))
                 .map(BankRecDTOs.UnprovenDay::date).toList();
         if (!copy.isEmpty()) {
             LocalDate d = copy.get(0);
-            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(copy) + " an import kept a line "
-                    + "beside one already imported with the same amount and narration at another running balance: the bank "
-                    + "may have moved balances since (a line added earlier), so it may be a copy of that line or a separate "
-                    + "one, and agreeing totals cannot tell (a copy can stand in for a line missing that day). Import a "
-                    + "statement that holds " + d.format(DMY) + " whole" + remedy.orImport(d, d).replaceFirst("^; or import", "; for instance")
-                    + ". If the day is still not settled after it, the kept line is a copy: delete "
-                    + String.join(", ", copies.getOrDefault(d, List.of("the import that brought it")))
-                    + " (every import holding it), then type the day's totals again."));
+            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, copySteps(d, copies.get(d), remedy)));
         }
         // Days proven by their typed totals have all their lines, but not a known order:
         // like any unconfirmed day they need the typed closing (an order that chains by
@@ -1097,7 +1124,8 @@ public class BankReconciliationService {
         for (LocalDate d : unproven) {
             BigDecimal[] tt = typed.get(d);
             if (tt == null) {
-                out.add(new BankRecDTOs.UnprovenDay(d, null, null, "NEEDED"));
+                // #441 review r2: on a day holding a kept look-alike, totals alone never settle it.
+                out.add(new BankRecDTOs.UnprovenDay(d, null, null, lookalike.contains(d) ? "COPY" : "NEEDED"));
                 continue;
             }
             boolean agree = totalsAgree(dayTotals(period, d), tt[0], tt[1]);
@@ -1107,28 +1135,259 @@ public class BankReconciliationService {
     }
 
     /**
-     * #441 review (changeset 183): the period's unproven days that hold a line an import kept
-     * beside a stored look-alike at another running balance ({@code lookalike_kept}), each with
-     * the names of the imports that hold such a line (deleting all of them removes it).
+     * #441 review (changeset 183): what an unproven day holding a line kept beside a stored
+     * look-alike ({@code lookalike_kept}) needs. {@code holders}: the imports holding such a line
+     * (deleting all of them removes it); {@code proof}: the import that held the day whole and
+     * showed some of them copies ({@code copy_proven_by}), or null; {@code proven}: those copies;
+     * {@code booked}: those of them in a confirmed match.
      */
-    private Map<LocalDate, List<String>> keptLookalikes(UUID t, UUID b, Map<LocalDate, Boolean> unconfirmed) {
+    record KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked, String whole,
+                      List<String> others, List<String> othersBooked, List<UUID> holderIds, UUID proofId, UUID wholeId,
+                      List<UUID> otherIds) {
+        KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked) {
+            this(holders, proof, proven, booked, null, List.of(), List.of(), new ArrayList<>(), null, null, List.of());
+        }
+
+        /** #441 r6: the statement the check names as proof for deleting imports, and the imports it names. */
+        UUID offerProof() {
+            return proof != null ? proofId : wholeId;
+        }
+
+        List<UUID> offerImports() {
+            return proof != null ? holderIds : wholeId != null ? otherIds : List.of();
+        }
+    }
+
+    private Map<LocalDate, KeptCopies> keptLookalikes(UUID t, UUID b, Map<LocalDate, Boolean> unconfirmed) {
         List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
-        Map<LocalDate, List<String>> out = new TreeMap<>();
+        Map<LocalDate, KeptCopies> out = new TreeMap<>();
         if (unproven.isEmpty()) return out;
         jdbc.query("""
-                select l.txn_date, i.file_name, i.first_date, i.last_date from bank_statement_lines l
+                select l.txn_date, l.description, l.amount, l.running_balance, i.id as import_id, i.file_name, i.first_date,
+                       i.last_date, pi.file_name as proof_file, l.copy_proven_by,
+                       exists (select 1 from bank_match_statement_lines ml
+                                 join bank_matches m on m.id = ml.match_id and m.tenant_id = ml.tenant_id
+                                where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id and not ml.released
+                                  and m.status = 'CONFIRMED') as booked,
+                       l.copy_proven_by is not null as proven
+                from bank_statement_lines l
                 join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
                 join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
+                left join bank_statement_imports pi on pi.id = l.copy_proven_by and pi.tenant_id = l.tenant_id
                 where l.tenant_id = :t and l.bank_account_id = :b and l.lookalike_kept and l.txn_date in (:d)
-                order by l.txn_date, i.imported_at, i.id""",
+                order by l.txn_date, l.seq, i.imported_at, i.id""",
                 new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", unproven),
                 rs -> {
+                    LocalDate d = rs.getObject("txn_date", LocalDate.class);
+                    KeptCopies k = out.computeIfAbsent(d, x -> new KeptCopies(new ArrayList<>(), null, new ArrayList<>(),
+                            new ArrayList<>()));
                     String name = rs.getString("file_name") + " (" + rs.getObject("first_date", LocalDate.class).format(DMY)
                             + "–" + rs.getObject("last_date", LocalDate.class).format(DMY) + ")";
-                    List<String> names = out.computeIfAbsent(rs.getObject("txn_date", LocalDate.class), k -> new ArrayList<>());
-                    if (!names.contains(name)) names.add(name);
+                    if (!k.holders().contains(name)) k.holders().add(name);
+                    UUID holder = rs.getObject("import_id", UUID.class);
+                    if (!k.holderIds().contains(holder)) k.holderIds().add(holder);
+                    if (rs.getBoolean("proven")) {
+                        String line = rs.getString("description") + " " + StatementValues.money(rs.getBigDecimal("amount").abs())
+                                + " at " + StatementValues.money(rs.getBigDecimal("running_balance"));
+                        if (!k.proven().contains(line)) k.proven().add(line);
+                        if (rs.getBoolean("booked") && !k.booked().contains(line)) k.booked().add(line);
+                        if (k.proof() == null) out.put(d, k = new KeptCopies(k.holders(), rs.getString("proof_file"), k.proven(),
+                                k.booked(), null, List.of(), List.of(), k.holderIds(), rs.getObject("copy_proven_by", UUID.class), null,
+                                List.of()));
+                    }
                 });
+        // #441 r7: a delete on the word of the statement that marked copies names only imports made before
+        // it — a later import may hold a line the bank added after that statement was exported.
+        for (Map.Entry<LocalDate, KeptCopies> e : new ArrayList<>(out.entrySet())) {
+            KeptCopies k = e.getValue();
+            if (k.proofId() == null) continue;
+            List<UUID> before = jdbc.queryForList("""
+                    select i.id from bank_statement_imports i
+                    where i.tenant_id = :t and i.id in (:h)
+                      and i.imported_at < (select w.imported_at from bank_statement_imports w where w.id = :w and w.tenant_id = :t)
+                    order by i.imported_at, i.id""",
+                    new MapSqlParameterSource("t", t).addValue("h", k.holderIds()).addValue("w", k.proofId()), UUID.class);
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < k.holderIds().size(); i++) if (before.contains(k.holderIds().get(i))) names.add(k.holders().get(i));
+            out.put(e.getKey(), new KeptCopies(names, k.proof(), k.proven(), k.booked(), null, List.of(), List.of(),
+                    new ArrayList<>(before), k.proofId(), null, List.of()));
+        }
+        // #441 review r3: a statement holding the day whole imported after the kept lines, which
+        // showed none of them as a copy (it holds them, or the day differs elsewhere): the day is
+        // then settled by making it that statement's alone — deleting every other import holding
+        // its lines (lines it holds stay, with their matches).
+        for (Map.Entry<LocalDate, KeptCopies> e : new ArrayList<>(out.entrySet())) {
+            if (e.getValue().proof() != null) continue;
+            MapSqlParameterSource q = new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", e.getKey());
+            List<Map<String, Object>> whole = jdbc.queryForList("""
+                    select w.id, w.file_name, w.first_date, w.last_date from bank_statement_imports w
+                    where w.tenant_id = :t and w.bank_account_id = :b and w.first_date < :d and w.last_date > :d
+                      and w.imported_at > (select max(i.imported_at) from bank_statement_lines l
+                                             join bank_statement_imports i on i.id = l.import_id and i.tenant_id = l.tenant_id
+                                            where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d and l.lookalike_kept)
+                    order by w.imported_at desc, w.id limit 1""", q);
+            if (whole.isEmpty()) continue;
+            UUID w = (UUID) whole.get(0).get("id");
+            LocalDate wf = day(whole.get(0).get("first_date")), wl = day(whole.get(0).get("last_date"));
+            q.addValue("w", w);
+            List<UUID> otherIds = new ArrayList<>();
+            List<String> others = new ArrayList<>();
+            boolean inside = true;
+            boolean later = false;
+            for (Map<String, Object> o : jdbc.queryForList("""
+                    select distinct i.id, i.file_name, i.first_date, i.last_date, i.imported_at,
+                           i.imported_at > (select x.imported_at from bank_statement_imports x where x.id = :w and x.tenant_id = :t)
+                               as after_w
+                    from bank_statement_lines l
+                    join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
+                    join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
+                    where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d and i.id <> :w
+                    order by i.imported_at, i.id""", q)) {
+                LocalDate f = day(o.get("first_date")), z = day(o.get("last_date"));
+
+                // #441 r5: an import made after the statement cannot be overridden by it (delete would
+                // refuse its lines' history): the check then asks for a newer whole-day export instead.
+                if (Boolean.TRUE.equals(o.get("after_w"))) later = true;
+                otherIds.add((UUID) o.get("id"));
+                others.add(o.get("file_name") + " (" + f.format(DMY) + "–" + z.format(DMY) + ")");
+            }
+            if (later || otherIds.isEmpty()) continue;
+            // Deleting them may only drop lines of days the whole statement holds whole: a line only
+            // those imports hold, on any other day, would be lost with them.
+            Integer outside = jdbc.queryForObject("""
+                    select count(*) from bank_statement_lines l
+                    where l.tenant_id = :t and l.bank_account_id = :b
+                      and exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                    and s.import_id in (:o))
+                      and not exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                        and s.import_id not in (:o))
+                      and not (l.txn_date > :wf and l.txn_date < :wl)""",
+                    q.addValue("o", otherIds).addValue("wf", wf).addValue("wl", wl), Integer.class);
+            if (outside != null && outside > 0) inside = false;
+            if (!inside) continue;
+            // Booked lines only those imports hold: their matches are undone first.
+            List<String> othersBooked = new ArrayList<>();
+            jdbc.query("""
+                    select l.description, l.amount, l.running_balance, l.txn_date from bank_statement_lines l
+                    where l.tenant_id = :t and l.bank_account_id = :b
+                      and exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                    and s.import_id in (:o))
+                      and not exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                        and s.import_id not in (:o))
+                      and exists (select 1 from bank_match_statement_lines ml
+                                    join bank_matches m on m.id = ml.match_id and m.tenant_id = ml.tenant_id
+                                   where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id and not ml.released
+                                     and m.status = 'CONFIRMED')
+                    order by l.txn_date, l.seq""", q,
+                    rs -> { othersBooked.add(rs.getString("description") + " " + StatementValues.money(rs.getBigDecimal("amount").abs())
+                            + " at " + StatementValues.money(rs.getBigDecimal("running_balance")) + " on "
+                            + rs.getObject("txn_date", LocalDate.class).format(DMY)); });
+            KeptCopies k = e.getValue();
+            out.put(e.getKey(), new KeptCopies(k.holders(), null, k.proven(), k.booked(), (String) whole.get(0).get("file_name"),
+                    others, othersBooked, k.holderIds(), null, w, otherIds));
+        }
         return out;
+    }
+
+    /** #441 r6: the page's view of the deletes the check offers this period (file names for the buttons). */
+    private List<BankRecDTOs.DeleteOffer> offersFor(UUID t, Map<LocalDate, KeptCopies> copies) {
+        List<BankRecDTOs.DeleteOffer> out = new ArrayList<>();
+        copies.forEach((d, k) -> {
+            if (k.offerProof() == null || k.offerImports().isEmpty()) return;
+            Map<UUID, String> names = new HashMap<>();
+            List<UUID> ids = new ArrayList<>(k.offerImports());
+            ids.add(k.offerProof());
+            jdbc.query("select id, file_name from bank_statement_imports where tenant_id = :t and id in (:i)",
+                    new MapSqlParameterSource("t", t).addValue("i", ids),
+                    rs -> { names.put(rs.getObject("id", UUID.class), rs.getString("file_name")); });
+            out.add(new BankRecDTOs.DeleteOffer(d, k.offerProof(), names.get(k.offerProof()),
+                    k.offerImports().stream().map(i -> new BankRecDTOs.ImportRef(i, names.get(i))).toList()));
+        });
+        return out;
+    }
+
+    /** #441 r6: a delete the check offers: on {@code day}, deleting {@code imports} on the word of {@code proof}. */
+    public record DeleteOffer(LocalDate day, UUID proof, List<UUID> imports, String text, boolean copies) { }
+
+    /**
+     * #441 r6: the deletes the check currently offers for the account's unproven days that hold a kept
+     * look-alike, each with the statement it names as proof, the imports it names and its text.
+     * Delete re-runs this on the server before removing a line with undone match history.
+     */
+    @Transactional(readOnly = true)
+    public List<DeleteOffer> deleteOffers(UUID bankAccountId) {
+        UUID t = BankAccountLedgerService.requireTenant();
+        Map<LocalDate, Boolean> unproven = new TreeMap<>();
+        jdbc.query("""
+                select d.txn_date from bank_statement_days d
+                where d.tenant_id = :t and d.bank_account_id = :b and not d.order_confirmed and d.merge_unproven""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId),
+                rs -> { unproven.put(rs.getObject("txn_date", LocalDate.class), true); });
+        List<DeleteOffer> out = new ArrayList<>();
+        keptLookalikes(t, bankAccountId, unproven).forEach((d, k) -> {
+            if (k.offerProof() == null || k.offerImports().isEmpty()) return;
+            out.add(new DeleteOffer(d, k.offerProof(), List.copyOf(k.offerImports()),
+                    copySteps(d, k, remedy(t, bankAccountId, d, d)), k.proofId() != null));
+        });
+        return out;
+    }
+
+    private static LocalDate day(Object v) {
+        return v instanceof java.sql.Date d ? d.toLocalDate() : (LocalDate) v;
+    }
+
+    /**
+     * #441 review r2/r3: the steps that settle a day holding a kept look-alike, in order. Each step
+     * leads to the next or settles the day; none dead-ends: a whole-day statement exported now
+     * holds a separate kept line (and settles the day) or shows it as a copy; a booked copy's
+     * match is undone; deleting the import holding it removes it (with an audit record, the
+     * undone match kept); the day's paper totals then prove it. When the whole statement settles
+     * nothing and shows no copy, the day is made its alone by deleting the other imports holding
+     * its lines (recomputeDays then confirms it). Every step that removes a line says it relies
+     * on the statement having been exported after the imports it overrides.
+     */
+    static String copySteps(LocalDate d, KeptCopies k, Remedy remedy) {
+        String holders = String.join(", ", k.holders());
+        String fresh = "exported now from the bank (an older download of that day shows it as it was before the line was "
+                + "added and proves nothing)";
+        if (k.proof() != null) {
+            return "On " + d.format(DMY) + " the statement " + k.proof() + " held the day whole and shows "
+                    + String.join(", ", k.proven()) + (k.proven().size() == 1 ? " as a copy" : " as copies")
+                    + " of a line already imported at another balance. If " + k.proof() + " was exported from the bank"
+                    + " after the import that brought " + (k.proven().size() == 1 ? "it" : "them") + ": "
+                    + (k.booked().isEmpty() ? "" : "undo the match" + (k.booked().size() == 1 ? "" : "es") + " of "
+                            + String.join(", ", k.booked()) + " first, reversing the entr" + (k.booked().size() == 1 ? "y" : "ies")
+                            + " the booking created (" + (k.booked().size() == 1 ? "it is" : "they are") + " booked); then ")
+                    + "delete " + holders + " (every import holding " + (k.proven().size() == 1 ? "it" : "them")
+                    + "; the copy is removed with an audit record), then type " + d.format(DMY)
+                    + "'s total debits and total credits from the paper statement. If it is an older download, import a "
+                    + "statement that holds " + d.format(DMY) + " whole, " + fresh + ", instead: it holds the kept line if "
+                    + "that is a separate line, and the day's totals, typed, then settle it.";
+        }
+        if (k.whole() != null && !k.others().isEmpty()) {
+            return "On " + d.format(DMY) + " an import kept a line beside one already imported with the same amount and "
+                    + "narration at another running balance, and the statement " + k.whole() + ", which holds the day "
+                    + "whole, does not settle it. If " + k.whole() + " was exported from the bank after those imports, "
+                    + "make the day its alone: "
+                    + (k.othersBooked().isEmpty() ? "" : "undo the match" + (k.othersBooked().size() == 1 ? "" : "es") + " of "
+                            + String.join(", ", k.othersBooked()) + " first, reversing the entr"
+                            + (k.othersBooked().size() == 1 ? "y" : "ies") + " the booking created (only those imports hold "
+                            + (k.othersBooked().size() == 1 ? "it" : "them") + "); then ")
+                    + "delete " + String.join(", ", k.others()) + " (" + k.whole() + " keeps every line it holds, with its "
+                    + "matches; the lines it left out go, each with an audit record), then type " + d.format(DMY)
+                    + "'s total debits and total credits from the paper statement. If it is an "
+                    + "older download, import a statement that holds " + d.format(DMY) + " whole, " + fresh
+                    + ", and do the same with that one.";
+        }
+        return "On " + d.format(DMY) + " an import kept a line beside one already imported with the same amount and "
+                + "narration at another running balance: the bank may have moved balances since (a line added earlier), "
+                + "so it may be a copy of that line or a separate one, and the paper's totals cannot tell (a copy can stand "
+                + "in for a line missing that day). Import a statement that holds " + d.format(DMY) + " whole, " + fresh
+                + remedy.orImport(d, d).replaceFirst("^; or import", "; for instance")
+                + ". If the kept line is a separate line it holds it, and the day's totals, typed, then settle the day. "
+                + "If it shows a copy, or the day still differs elsewhere, this check then names the imports to delete on "
+                + "its word (with a button for each), then the day's totals; if an import was made after it, the check asks "
+                + "for a newer whole-day export instead.";
     }
 
     /**

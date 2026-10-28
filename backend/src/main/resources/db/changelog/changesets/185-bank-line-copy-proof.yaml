@@ -1,0 +1,74 @@
+# S25-P1 follow-up (#441 review rounds 2–8). Changeset 183 shipped with lookalike_kept only
+# (#441 merged at a10a3f3d1); this adds what the later rounds need, additively, on a database
+# that already has 183.
+#
+#   - bank_statement_lines.copy_proven_by: the statement a removal rests on. Set at import on a
+#     kept look-alike that a file holding its day whole leaves unclaimed with every other line of
+#     the day held (it only marks; nothing is removed at import), and at delete time on the lines
+#     the reconciliation check's own delete step removes (its proof, re-checked on the server).
+#     Null on every line imported before this changeset.
+#   - bank_accounts.back_value_seen (ruling A): true once an import of the account has taken a line
+#     at a moved running balance. From then on a file holding a day whole confirms no day that
+#     already holds lines; the paper's day totals decide. Backfilled from the warning each such
+#     import already keeps (#438: lines "already imported carry a running balance the bank has
+#     since moved"); other accounts start false and turn true on the first moved balance seen.
+#   - bank_statement_removed_lines: the audit record of each line the check's delete step removed
+#     despite undone match history — the line as it was, the matches it had been in (undone; their
+#     journal entries stay), who, when, why (with the check's text) and the statement it rests on.
+databaseChangeLog:
+  - changeSet:
+      id: 185-bank-line-copy-proof
+      author: claude
+      changes:
+        - addColumn:
+            tableName: bank_statement_lines
+            columns:
+              - column: { name: copy_proven_by, type: uuid }
+        - addColumn:
+            tableName: bank_accounts
+            columns:
+              - column:
+                  name: back_value_seen
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints: { nullable: false }
+        - sql:
+            comment: Accounts whose imports already took a line at a moved balance (#438's warning)
+            sql: |
+              UPDATE bank_accounts ba SET back_value_seen = true
+               WHERE EXISTS (SELECT 1 FROM bank_statement_imports i
+                              WHERE i.tenant_id = ba.tenant_id AND i.bank_account_id = ba.id
+                                AND i.warnings::text LIKE '%carry a running balance the bank has since moved%')
+        - createTable:
+            tableName: bank_statement_removed_lines
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_removed_lines_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_removed_lines_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: line_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: import_id, type: uuid }
+              - column: { name: file_name, type: varchar(255) }
+              - column: { name: txn_date, type: date, constraints: { nullable: false } }
+              - column: { name: value_date, type: date }
+              - column: { name: description, type: text }
+              - column: { name: reference, type: text }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: running_balance, type: "numeric(14,2)" }
+              - column: { name: line_hash, type: varchar(128) }
+              - column: { name: match_ids, type: text }
+              - column: { name: proof_import_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: proof_file_name, type: varchar(255) }
+              - column: { name: reason, type: text, constraints: { nullable: false } }
+              - column: { name: removed_by, type: uuid }
+              - column: { name: removed_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex:
+            tableName: bank_statement_removed_lines
+            indexName: ix_bank_removed_lines_account
+            columns:
+              - column: { name: tenant_id }
+              - column: { name: bank_account_id }
+              - column: { name: txn_date }
+      rollback:
+        - dropTable: { tableName: bank_statement_removed_lines }
+        - dropColumn: { tableName: bank_accounts, columnName: back_value_seen }
+        - dropColumn: { tableName: bank_statement_lines, columnName: copy_proven_by }

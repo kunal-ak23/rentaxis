@@ -374,4 +374,6 @@ databaseChangeLog:
   - include:
       file: db/changelog/changesets/184-promo-ad-platform-redirects.yaml
   - include:
-      file: db/changelog/changesets/185-org-settings-unique-tenant.yaml
+      file: db/changelog/changesets/185-bank-line-copy-proof.yaml
+  - include:
+      file: db/changelog/changesets/186-org-settings-unique-tenant.yaml
