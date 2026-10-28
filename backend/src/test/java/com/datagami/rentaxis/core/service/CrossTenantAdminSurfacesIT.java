@@ -305,6 +305,22 @@ class CrossTenantAdminSurfacesIT extends AbstractPostgresIT {
         assertThat(status).as("PUT with no organisation selected").isEqualTo(400);
     }
 
+    /**
+     * Changeset 185: one settings row per organisation is a rule of the schema now,
+     * not only of {@code OrgSettingsService}. A second row for the same tenant (two
+     * first-time saves racing) is refused, and the first row is left as it was.
+     */
+    @Test
+    void anOrganisationCannotHaveASecondSettingsRow() {
+        orgSettingsRow(tenantA, "Pay tenant A: IBAN AE11 AAAA");
+        orgSettingsRow(tenantB, "Pay tenant B: IBAN AE99 BBBB");
+
+        assertThatThrownBy(() -> orgSettingsRow(tenantA, "Pay tenant A again"))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                .hasMessageContaining("uq_org_settings_tenant");
+        assertThat(instructionsOf(tenantA)).isEqualTo("Pay tenant A: IBAN AE11 AAAA");
+    }
+
     // ---- fixtures ----------------------------------------------------------
 
     /** A real SUPER_ADMIN row: header identities are checked against it (break round 1, F1). */
