@@ -221,6 +221,9 @@ class StatementOrderPropertyTest {
 
     // ------------------------------------------------------------------ #97 review P2-2
 
+    /** #441 ruling A on (the service); off only to measure the friction it adds. */
+    static boolean OPTION_A = true;
+
     static final UUID BANK = UUID.fromString("00000000-0000-0000-0000-000000000097");
     static final LocalDate[] DAYS = {LocalDate.of(2026, 9, 9), LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 11)};
 
@@ -259,7 +262,8 @@ class StatementOrderPropertyTest {
      */
     record Books(List<BankStatementImportService.StoredLine> lines, List<LocalDate> dates, Set<LocalDate> unconfirmed,
                  Set<LocalDate> unproven, Set<Integer> arrived, int moved, List<String> wrongTakes, Set<LocalDate> copies,
-                 Map<String, Integer> swallowed) {
+                 Map<String, Integer> swallowed, List<String> genuineRemoved, int marked,
+                 boolean backValueSeen, Set<LocalDate> everUnproven) {
         /**
          * #441 review: whether the paper's day totals settle every unproven day, as the service
          * decides — never a day holding a kept look-alike (changeset 183): there a copy can
@@ -299,6 +303,15 @@ class StatementOrderPropertyTest {
     }
 
     private static Books importFiles(List<FileSpec> specs) {
+        return importFiles(specs, false);
+    }
+
+    /**
+     * As above; {@code deleteShownCopies}: then the user follows the check after a current last
+     * file — deletes the import holding each line that file showed as a copy (#441 review r2),
+     * which removes it (a copy is held by the cut that kept it alone, as in the service).
+     */
+    private static Books importFiles(List<FileSpec> specs, boolean deleteShownCopies) {
         Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
         Map<LocalDate, BankStatementImportService.DayState> states = new HashMap<>();
         Set<Integer> arrived = new HashSet<>();
@@ -307,15 +320,27 @@ class StatementOrderPropertyTest {
         Map<String, Integer> identity = new HashMap<>();
         List<String> wrongTakes = new ArrayList<>();
         Map<String, Integer> swallowed = new HashMap<>();
+        List<String> genuineRemoved = new ArrayList<>();
+        Map<String, Integer> marked = new HashMap<>();
+        Set<LocalDate> everUnproven = new HashSet<>();
+        int fileNo = 0;
+        boolean[] backValueSeen = {false};
+        // #441 r4: which file stored each line (bank_statement_lines.import_id).
+        Map<String, Integer> owner = new HashMap<>();
         for (FileSpec spec : specs) {
             List<Bank> f = spec.lines();
             if (f.isEmpty() || !acceptedRows(f)) continue;
+            int no = fileNo++;
             f.forEach(l -> arrived.add(l.index()));
             List<StatementMapper.Row> rows = f.stream().map(Bank::row).toList();
             BankStatementImportService.Matched m = BankStatementImportService.match(BANK, rows, stored,
                     spec.openingProves(), spec.closingProves());
+            Map<LocalDate, List<BankStatementImportService.StoredLine>> before = new HashMap<>(stored);
             // S25-01: lines taken at a moved balance carry the file's balance from now on.
             moved += m.moved().size();
+            // #441 ruling A: the account has shown a back-value.
+            if (!m.moved().isEmpty() && OPTION_A) backValueSeen[0] = true;
+            for (int i = 0; i < rows.size(); i++) if (!m.duplicates().contains(m.hashes().get(i))) owner.put(m.hashes().get(i), no);
             Set<Integer> inFile = new HashSet<>();
             f.forEach(l -> inFile.add(l.index()));
             for (int i = 0; i < rows.size(); i++) {
@@ -331,6 +356,11 @@ class StatementOrderPropertyTest {
                     ? new BankStatementImportService.StoredLine(l.hash(), l.amount(), l.description(), m.moved().get(l.hash()),
                             null, null, l.lookalike())
                     : l).toList());
+            // #441 review r2: kept look-alikes this file proves copies are removed (none is booked here).
+            Set<String> copies = BankStatementImportService.provenCopies(rows, m.hashes(), before, spec.openingProves(),
+                    spec.closingProves());
+            // #441 review r3: marked only (copy_proven_by); the service removes nothing at import.
+            for (String h : copies) marked.put(h, no);
             TreeMap<LocalDate, List<Integer>> fileDays = new TreeMap<>();
             for (int i = 0; i < rows.size(); i++) fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(i);
             for (Map.Entry<LocalDate, List<Integer>> day : fileDays.entrySet()) {
@@ -349,16 +379,19 @@ class StatementOrderPropertyTest {
                 }
                 BankStatementImportService.Pos pos = BankStatementImportService.Pos.of(day.getKey(), fileDays.firstKey(),
                         fileDays.lastKey(), spec.openingProves(), spec.closingProves());
+                BankStatementImportService.DayState was = states.getOrDefault(day.getKey(), BankStatementImportService.DayState.UNKNOWN);
                 BankStatementImportService.Settled s = BankStatementImportService.settle(
-                        have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, pos,
-                        states.getOrDefault(day.getKey(), BankStatementImportService.DayState.UNKNOWN),
-                        fileHashes.stream().anyMatch(m.twinned()::contains));
+                        have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, pos, was,
+                        fileHashes.stream().anyMatch(m.twinned()::contains),
+                        BankStatementImportService.distrustWhole(backValueSeen[0], was, fileHashes.stream().anyMatch(m.moved()::containsKey))
+                                || (OPTION_A && BankStatementImportService.orderContradicts(
+                                        have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, owner)));
                 if (s == null) {
                     // S20-03 left the day as it was: a row taken there for a stored line that is another
                     // bank line (by identity) is a file byte-identical to a re-export of the stored lines.
                     for (int i : day.getValue()) {
-                        Integer was = identity.get(m.hashes().get(i));
-                        if (m.duplicates().contains(m.hashes().get(i)) && was != null && was != f.get(i).index()) {
+                        Integer prior = identity.get(m.hashes().get(i));
+                        if (m.duplicates().contains(m.hashes().get(i)) && prior != null && prior != f.get(i).index()) {
                             Bank l = f.get(i);
                             swallowed.merge(l.date() + "|" + l.amount() + "|" + l.description(), 1, Integer::sum);
                         }
@@ -366,14 +399,23 @@ class StatementOrderPropertyTest {
                     continue;
                 }
                 List<BankStatementImportService.StoredLine> order = s.order().stream().map(byHash::get).toList();
-                if (s.state().confirmed()) {
+                if (s.state().confirmed() || (s.state().startKnown() && s.state().endKnown())) {
                     // A statement holding the day whole proved every kept look-alike a line of its own.
                     order = order.stream().map(l -> l.lookalike() ? new BankStatementImportService.StoredLine(l.hash(),
                             l.amount(), l.description(), l.balance()) : l).toList();
                 }
                 stored.put(day.getKey(), order);
                 states.put(day.getKey(), s.state());
+                if (s.state().unproven()) everUnproven.add(day.getKey());
             }
+        }
+        if (deleteShownCopies) {
+            int lastNo = fileNo - 1;
+            Set<String> gone = new HashSet<>();
+            marked.forEach((h, by) -> { if (by == lastNo) gone.add(h); });
+            stored.forEach((d, ls) -> ls.stream().filter(l -> gone.contains(l.hash()))
+                    .forEach(l -> genuineRemoved.add(d + "|" + l.amount() + "|" + l.description())));
+            stored.replaceAll((d, ls) -> ls.stream().filter(l -> !gone.contains(l.hash())).toList());
         }
         List<BankStatementImportService.StoredLine> lines = new ArrayList<>();
         List<LocalDate> dates = new ArrayList<>();
@@ -386,7 +428,8 @@ class StatementOrderPropertyTest {
         stored.forEach((d, ls) -> {
             if (unproven.contains(d) && ls.stream().anyMatch(BankStatementImportService.StoredLine::lookalike)) copies.add(d);
         });
-        return new Books(lines, dates, unconfirmed, unproven, arrived, moved, wrongTakes, copies, swallowed);
+        return new Books(lines, dates, unconfirmed, unproven, arrived, moved, wrongTakes, copies, swallowed, genuineRemoved,
+                marked.size(), backValueSeen[0], everUnproven);
     }
 
     /**
@@ -960,6 +1003,18 @@ class StatementOrderPropertyTest {
         return rebalanced;
     }
 
+    /** Whether {@code file}'s lines appear, by value (date, amount, narration, balance) and in order, within {@code whole}. */
+    private static boolean inOrderIn(List<Bank> file, List<Bank> whole) {
+        int j = 0;
+        for (Bank f : file) {
+            while (j < whole.size() && !(whole.get(j).date().equals(f.date()) && whole.get(j).amount().compareTo(f.amount()) == 0
+                    && whole.get(j).description().equals(f.description()) && whole.get(j).balance().compareTo(f.balance()) == 0)) j++;
+            if (j == whole.size()) return false;
+            j++;
+        }
+        return true;
+    }
+
     private static String key(LocalDate d, BigDecimal amount, String description) {
         return d + "|" + amount + "|" + description;
     }
@@ -1095,9 +1150,15 @@ class StatementOrderPropertyTest {
     @Test
     void aCutReExportAfterABackValueNeverLosesALine() {
         Random rnd = new Random(2503);
-        // 200,000 by default: before S25-P1 the first loss with one back-valued line is trial 175,752.
-        int finalized = 0, refused = 0, unprovenDays = 0, sameBytes = 0, trials = r25Trials(200_000);
-        List<String> lost = new ArrayList<>();
+        // 400,000 by default: the first loss with one back-valued line is trial 175,752 before S25-P1,
+        // and 373,159 with #441 v1's day-start rule (sameLinesAgainExamples pins that one too).
+        int finalized = 0, refused = 0, unprovenDays = 0, sameBytes = 0, staleProofs = 0, genuineCount = 0, removals = 0, staleMarks = 0, staleLost = 0, secondStep = 0,
+                staleSilentConfirmed = 0, staleSilentTyped = 0, staleSilentTotals = 0, staleSilentLinesAlone = 0, staleVisibleTotals = 0,
+                staleVisibleBalance = 0, staleSameBytes = 0, staleSilentCount = 0, backValuing = 0, totalsWithA = 0, trueStates = 0,
+                totalsWithoutA = 0,
+                trials = r25Trials(400_000);
+        List<String> genuine = new ArrayList<>(), staleSilent = new ArrayList<>(), deadEnds = new ArrayList<>();
+        List<String> lost = new ArrayList<>(), stuck = new ArrayList<>();
         for (int trial = 0; trial < trials; trial++) {
             List<Bank> old = statement(rnd);
             if (old.size() < 3) continue;
@@ -1114,9 +1175,106 @@ class StatementOrderPropertyTest {
                 int a = rnd.nextInt(now.size());
                 files.add(FileSpec.plain(now.subList(a, a + 1 + rnd.nextInt(now.size() - a))));
             }
+            // #441 review r3: half the time an older whole export (from before the back-value, other
+            // bytes) comes after the cuts — a candidate proof that must never remove a genuine line.
+            boolean stale = rnd.nextBoolean();
+            if (stale) {
+                files.add(new FileSpec(old, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null));
+                staleProofs++;
+            }
             Books books = importFiles(files);
             if (books.lines().isEmpty()) continue;
             unprovenDays += books.unproven().size();
+            {
+                Map<String, Integer> storedVals = new HashMap<>(), trueVals = new HashMap<>();
+                for (int i = 0; i < books.lines().size(); i++) {
+                    BankStatementImportService.StoredLine l = books.lines().get(i);
+                    storedVals.merge(books.dates().get(i) + "|" + l.amount() + "|" + l.description() + "|" + l.balance(), 1, Integer::sum);
+                }
+                for (Bank l : now) trueVals.merge(l.date() + "|" + l.amount() + "|" + l.description() + "|" + l.balance(), 1, Integer::sum);
+                if (storedVals.equals(trueVals)) {
+                    trueStates++;
+                    // A day holding a kept look-alike: the check names a statement holding it whole, exported now.
+                    Books follow = books;
+                    if (!books.copies().isEmpty()) {
+                        List<FileSpec> plus = new ArrayList<>(files);
+                        plus.add(new FileSpec(now, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null));
+                        follow = importFiles(plus);
+                    }
+                    final Books fb = follow;
+                    List<BankReconciliationService.SL> tsl = new ArrayList<>(), tbank = new ArrayList<>();
+                    for (int i = 0; i < fb.lines().size(); i++) {
+                        BankStatementImportService.StoredLine l = fb.lines().get(i);
+                        tsl.add(new BankReconciliationService.SL(UUID.randomUUID(), fb.dates().get(i), i + 1, l.description(), null,
+                                null, l.amount(), l.balance()));
+                    }
+                    for (Bank l : now) tbank.add(new BankReconciliationService.SL(UUID.randomUUID(), l.date(), l.index(), l.description(),
+                            null, null, l.amount(), l.balance()));
+                    BigDecimal mv = fb.lines().stream().map(BankStatementImportService.StoredLine::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                    boolean ok = fb.totalsSettle(tbank, tsl) && BankReconciliationService.continuity(OPENING, trueClosing, mv, tsl,
+                            DAYS[0], fb.unconfirmed(), fb.unconfirmed()).ok();
+                    if (!ok && deadEnds.size() < 3) deadEnds.add(String.format("trial %d: copies %s, unproven %s, files %s", trial,
+                            fb.copies(), fb.unproven(), files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList()));
+                }
+            }
+            if (books.backValueSeen()) {
+                // #441 ruling A's friction, on accounts that back-value: periods needing typed day totals.
+                backValuing++;
+                if (!books.unproven().isEmpty()) totalsWithA++;
+                OPTION_A = false;
+                try {
+                    if (!importFiles(files).unproven().isEmpty()) totalsWithoutA++;
+                } finally {
+                    OPTION_A = true;
+                }
+            }
+            // #441 review r2: no remedy dead-ends — whatever was imported, the statement holding
+            // every day whole (what the check names) settles every day, with the bank's lines.
+            List<FileSpec> remedied = new ArrayList<>(files);
+            remedied.add(new FileSpec(now, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null));
+            Books after = importFiles(remedied, true);
+            removals += after.genuineRemoved().size();
+            {
+                // #441 review r3: a removal never takes a genuine line — on a day a copy was removed
+                // from, the books still hold every line of that kind a file brought (by value: lines
+                // of one kind at one balance are the same line to the books).
+                Map<String, Integer> haveKind = new HashMap<>(), broughtKind = new HashMap<>();
+                for (int i = 0; i < after.lines().size(); i++) {
+                    BankStatementImportService.StoredLine l = after.lines().get(i);
+                    haveKind.merge(key(after.dates().get(i), l.amount(), l.description()), 1, Integer::sum);
+                }
+                for (Bank l : now) if (after.arrived().contains(l.index())) broughtKind.merge(key(l.date(), l.amount(), l.description()), 1, Integer::sum);
+                for (String k : new HashSet<>(after.genuineRemoved())) {
+                    if (haveKind.getOrDefault(k, 0) < broughtKind.getOrDefault(k, 0)) {
+                        genuineCount++;
+                        if (genuine.size() < 3) genuine.add(String.format("trial %d: %s short after a removal; old %s, now %s, files %s",
+                                trial, k, old, now, files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList()));
+                    }
+                }
+            }
+            // The stale proofs: lines an older whole export showed as copies (marked, never removed by it).
+            staleMarks += books.marked();
+            List<BankReconciliationService.SL> afterSl = new ArrayList<>();
+            for (int i = 0; i < after.lines().size(); i++) {
+                BankStatementImportService.StoredLine l = after.lines().get(i);
+                afterSl.add(new BankReconciliationService.SL(UUID.randomUUID(), after.dates().get(i), i + 1, l.description(), null,
+                        null, l.amount(), l.balance()));
+            }
+            List<BankReconciliationService.SL> nowSl = now.stream().map(l -> new BankReconciliationService.SL(
+                    UUID.randomUUID(), l.date(), l.index(), l.description(), null, null, l.amount(), l.balance())).toList();
+            boolean settled = after.copies().isEmpty() && after.totalsSettle(nowSl, afterSl);
+            if (!settled) {
+                // The check's next step there (#441 review r3): make each such day the whole
+                // statement's alone — delete every other import holding its lines.
+                secondStep++;
+                Books alone = importFiles(List.of(new FileSpec(now, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null)));
+                settled = alone.unconfirmed().isEmpty() && alone.copies().isEmpty();
+            }
+            if (!settled) {
+                if (stuck.size() < 5) stuck.add(String.format("trial %d: unconfirmed %s, copies %s after the whole statement; "
+                        + "now %s, files %s, books %s %s", trial, after.unconfirmed(), after.copies(), now,
+                        files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList(), after.lines(), after.dates()));
+            }
             Set<Integer> arrived = books.arrived();
             Map<String, Integer> have = new HashMap<>(), brought = new HashMap<>();
             for (int i = 0; i < books.lines().size(); i++) {
@@ -1135,12 +1293,15 @@ class StatementOrderPropertyTest {
                 sl.add(new BankReconciliationService.SL(UUID.randomUUID(), books.dates().get(i), i + 1, l.description(), null, null,
                         l.amount(), l.balance()));
             }
+            // #441 coordinator: after an older whole export, each loss is silent (it finalizes) or visible.
+            boolean staleShort = stale && brought.entrySet().stream().anyMatch(e -> have.getOrDefault(e.getKey(), 0) < e.getValue());
             if (!books.unproven().isEmpty()) {
                 List<BankReconciliationService.SL> bank = now.stream().map(l -> new BankReconciliationService.SL(
                         UUID.randomUUID(), l.date(), l.index(), l.description(), null, null, l.amount(), l.balance())).toList();
                 boolean allAgree = books.totalsSettle(bank, sl);
                 if (!allAgree) {
                     refused++;
+                    if (staleShort) staleVisibleTotals++;
                     continue;
                 }
             }
@@ -1150,6 +1311,7 @@ class StatementOrderPropertyTest {
             Set<LocalDate> skipped = confirmed ? Set.of() : books.unconfirmed();
             if (!BankReconciliationService.continuity(OPENING, trueClosing, movement, sl, DAYS[0], skipped, books.unconfirmed()).ok()) {
                 refused++;
+                if (staleShort) staleVisibleBalance++;
                 continue;
             }
             finalized++;
@@ -1161,7 +1323,37 @@ class StatementOrderPropertyTest {
             Map<String, Integer> short_ = new HashMap<>();
             missing.forEach(k -> short_.put(k, brought.get(k) - have.getOrDefault(k, 0)));
             boolean identical = short_.entrySet().stream().allMatch(e -> books.swallowed().getOrDefault(e.getKey(), 0) >= e.getValue());
-            if (identical && extra == 2) {
+            if (stale) {
+                // #441 r4: after an older whole export the same bar holds — the only loss accepted is
+                // the byte-identical residue (S20-03 left the day as it was: below), never one a whole
+                // file confirmed (an unproven day is now settled only by its paper totals).
+                staleLost++;
+                // Or no file shows the back-value at all: every file is, by value and in order, part of the
+                // older whole export imported last (so the files are just as well explained by that export
+                // being the bank's latest statement, with nothing lost) — and the lost line's day was never
+                // unproven (so no whole file confirmed a day a cut had left in doubt, the r4 mechanism).
+                List<Bank> lastFile = files.get(files.size() - 1).lines();
+                boolean noFileShowsIt = files.stream().allMatch(fs -> inOrderIn(fs.lines(), lastFile));
+                boolean neverInDoubt = short_.keySet().stream().noneMatch(k -> books.everUnproven().contains(LocalDate.parse(k.substring(0, 10))));
+                if ((identical && extra == 2) || (noFileShowsIt && neverInDoubt)) {
+                    staleSameBytes++;
+                } else {
+                    staleSilentCount++;
+                    if (staleSilent.size() < 3) staleSilent.add(String.format("trial %d: lost %s; old %s, now %s, files %s; books %s %s; "
+                            + "unconfirmed %s unproven %s copies %s", trial,
+                            short_, old, now, files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList(),
+                            books.lines(), books.dates(), books.unconfirmed(), books.unproven(), books.copies()));
+                }
+                boolean onProven = missing.stream().anyMatch(k -> books.unproven().contains(LocalDate.parse(k.substring(0, 10))));
+                boolean onConfirmed = missing.stream().anyMatch(k -> !books.unconfirmed().contains(LocalDate.parse(k.substring(0, 10))));
+                if (onConfirmed) staleSilentConfirmed++; else if (onProven) staleSilentTotals++; else staleSilentTyped++;
+                // On the lines alone: every day confirmed and the lines' own opening and closing chain.
+                if (confirmed) {
+                    BankStatementImportService.StoredLine f0 = books.lines().get(0), fz = books.lines().get(books.lines().size() - 1);
+                    if (BankReconciliationService.continuity(f0.balance().subtract(f0.amount()), fz.balance(), movement, sl, DAYS[0],
+                            Set.of(), Set.of()).ok()) staleSilentLinesAlone++;
+                }
+            } else if (identical && extra == 2) {
                 sameBytes++;
             } else if (lost.size() < 5) {
                 lost.add(String.format("trial %d: lost %s (%d back-valued); old %s, now %s, files %s, books %s %s, unconfirmed %s, "
@@ -1170,11 +1362,29 @@ class StatementOrderPropertyTest {
                         books.lines(), books.dates(), books.unconfirmed(), books.unproven(), books.copies(), books.swallowed()));
             }
         }
-        System.out.printf("S25-P1 CUTS: trials %d, finalized %d, refused %d, unproven days %d, lost the same bytes as a re-export %d%n",
-                trials, finalized, refused, unprovenDays, sameBytes);
+        System.out.printf("S25-P1 CUTS: trials %d, finalized %d, refused %d, unproven days %d, lost the same bytes as a re-export %d, "
+                + "stale whole exports %d, lines shown as copies (not removed) %d, copies removed by the named remedy %d, "
+                + "genuine lines removed %d, lost after an older whole export %d, remedies needing the delete-the-others step %d%n",
+                trials, finalized, refused, unprovenDays, sameBytes, staleProofs, staleMarks, removals, genuineCount, staleLost, secondStep);
+        assertThat(genuine).as("a genuine line removed as a copy (%d; %d stale whole exports)", genuineCount, staleProofs).isEmpty();
+        System.out.printf("S25-P1 STALE SPLIT: silent %d, byte-identical to a re-export %d; states with the true lines stored %d, "
+                + "dead ends %d%n", staleSilentCount, staleSameBytes, trueStates, deadEnds.size());
+        System.out.printf("S25-P1 RULING A FRICTION: back-valuing accounts %d; periods needing typed day totals %d with A, %d without%n",
+                backValuing, totalsWithA, totalsWithoutA);
+        System.out.printf("S25-P1 STALE: lost and finalized %d (on a confirmed day %d, of which on the lines alone %d; on an unconfirmed "
+                + "day with the typed closing %d; on an unproven day its totals passed %d); lost but refused %d (day totals) + %d (balance)%n",
+                staleLost, staleSilentConfirmed, staleSilentLinesAlone, staleSilentTyped, staleSilentTotals, staleVisibleTotals,
+                staleVisibleBalance);
         assertThat(lost).as("finalized with a line a file brought lost").isEmpty();
+        assertThat(stuck).as("a day the whole statement does not settle").isEmpty();
         // The residue, on its own: two back-valued lines, a file byte-identical to a re-export.
         assertThat(sameBytes).as("lost in a file byte-identical to a re-export").isLessThanOrEqualTo(trials / 2_000);
+        // #441 ruling A: after an older whole export, only the byte-identical residue may still be lost.
+        assertThat(staleSilent).as("lost silently after an older whole export (%d)", staleSilentCount).isEmpty();
+        assertThat(staleSameBytes).as("lost after an older whole export, byte-identical to a re-export").isLessThanOrEqualTo(trials / 1_000);
+        // #441 r4 (P2): from every state whose stored lines are the bank's true ones, following the check
+        // (the paper's day totals for each unproven day, the typed closing) reaches FINALIZED.
+        assertThat(deadEnds).as("states with the bank's true lines stored that do not finalize (%d checked)", trueStates).isEmpty();
         assertThat(finalized).as("finalized").isGreaterThan(trials / 40);
         assertThat(refused).as("refused").isGreaterThan(trials / 40);
     }

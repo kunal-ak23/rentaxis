@@ -251,6 +251,32 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         return recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(in));
     }
 
+    /**
+     * #441 ruling A: on an account that back-values, the days a whole-day statement moved a
+     * balance on are left to their paper totals; types them for every unproven day of the
+     * reconciliation except {@code except} (only where nothing is missing those days).
+     */
+    private BankRecDTOs.Reconciliation paperDayTotalsExcept(UUID id, LocalDate... except) {
+        Set<LocalDate> skip = Set.of(except);
+        return paperDayTotals(id, recs.get(id).unprovenDays().stream().map(BankRecDTOs.UnprovenDay::date)
+                .filter(d -> !skip.contains(d)).toArray(LocalDate[]::new));
+    }
+
+    /**
+     * #441 r6: deletes {@code importId} the way the page's own button for the check's delete step
+     * does — with the proof the current check names for it — or plainly when the check offers none.
+     */
+    private void deleteAsOffered(UUID importId, UUID recId) {
+        UUID proof = recs.get(recId).deleteOffers().stream()
+                .filter(o -> o.imports().stream().anyMatch(i -> i.id().equals(importId)))
+                .map(BankRecDTOs.DeleteOffer::proofImportId).findFirst().orElse(null);
+        imports.delete(importId, proof);
+    }
+
+    private boolean backValueSeen() {
+        return jdbc.queryForObject("select back_value_seen from bank_accounts where id = ?", Boolean.class, ei.getId());
+    }
+
     /** The paper's opening and closing typed (a first reconciliation with an unconfirmed day needs both). */
     private BankRecDTOs.Reconciliation paperBalances(UUID id, String opening) {
         BankRecDTOs.Reconciliation r = recs.get(id);
@@ -607,7 +633,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         book("FEE AFTER", "CHARGE");
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), null));
         r = recs.get(id);
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        r = paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and txn_date = ?",
                 Integer.class, ei.getId(), LocalDate.of(2026, 9, 10))).isEqualTo(2);
         r = paperClosing(id);
@@ -691,9 +717,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         actions.post(new BankRecDTOs.PostLinesInput(List.of(reversal), "INTEREST", false, null, null, marinaBank.getId(), true, null));
         // #441 review: 07/09 is now held whole and settled; the statement's last day (11/09) cannot
         // show it ended there, so it is left to its paper totals — the 07/09 totals typed above now agree.
-        assertThat(dayRows()).contains("2026-09-07:true:false", "2026-09-11:false:true");
+        // #441 r4: 07/09 stays unproven — only its paper totals settle it, and the ones typed above now agree.
+        assertThat(dayRows()).contains("2026-09-07:false:true", "2026-09-11:false:true");
         r = paperDayTotals(id, LocalDate.of(2026, 9, 11));
-        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 11));
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date)
+                .containsExactly(LocalDate.of(2026, 9, 7), LocalDate.of(2026, 9, 11));
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -863,12 +892,13 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         imports.delete(extract.importId());
         assertThat(jdbc.queryForList("select description from bank_statement_lines where bank_account_id = ? order by txn_date, seq",
                 String.class, ei.getId())).containsExactly("FEE ONE", "CREDIT TWO", "FEE THREE");
-        assertThat(jdbc.queryForObject("select count(*) from bank_statement_days where bank_account_id = ? and txn_date = ?",
-                Integer.class, ei.getId(), SEP_1)).as("one import's stretch again: confirmed").isZero();
+        // #441 r4: one import's stretch again, but the day was unproven: its paper totals settle it.
+        assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), SEP_1)).isTrue();
         for (String d : List.of("FEE ONE", "FEE THREE")) book(d, "CHARGE");
         book("CREDIT TWO", "INTEREST");
-        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        BankRecDTOs.Reconciliation r = paperDayTotals(recs.create(ei.getId(), period(SEP_1, SEP_30)).id(), SEP_1);
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
     }
 
     /**
@@ -1078,7 +1108,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), null));
         paperClosing(id);
         r = recs.get(id);
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        paperDayTotalsExcept(id); r = recs.get(id); // #441 r4: an unproven day is settled only by its paper totals
         assertThat(r.statementClosing()).isEqualByComparingTo("995.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
@@ -1132,8 +1162,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         book("FEE AFTER", "CHARGE");
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(r.statementOpening()).isEqualByComparingTo("1000.00");
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
-        r = paperClosing(id);
+        paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
+        r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -1451,8 +1481,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(check(r, "CONTINUITY").ok()).isFalse();
         assertThat(check(r, "CONTINUITY").message()).contains("Lines may be missing before 09/09/2026")
-                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them; it leaves only 10/09/2026,"
-                        + " the day it ends on, to settle: type that day's total debits and total credits");
+                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them; it leaves 10/09/2026,"
+                        + " the day it ends on, and any day it holds that is already unproven, to their paper totals");
 
         importText("""
                 07/09/2026,07/09/2026,FEE A,,5.00,,"1,005.00"
@@ -1462,11 +1492,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 10/09/2026,10/09/2026,FEE E,,5.00,,"1,010.00"
                 """);
         assertThat(dayRows()).as("only the day it ends on is left").filteredOn(d -> !d.endsWith(":true:false"))
-                .containsExactly("2026-09-10:false:true");
+                .contains("2026-09-10:false:true");
         book("FEE C", "CHARGE");
         r = recs.get(id);
-        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 10));
-        paperDayTotals(id, LocalDate.of(2026, 9, 10));
+        // #441 r4: 10/09, and any half-held day already unproven that the statement held whole, go to their totals.
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(LocalDate.of(2026, 9, 10));
+        paperDayTotalsExcept(id);
         r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(r.statementClosing()).isEqualByComparingTo("1005.00");
@@ -1506,8 +1537,9 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 10/09/2026,10/09/2026,FEE E,,5.00,,"1,010.00"
                 """);
         r = recs.get(id);
-        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 10));
-        paperDayTotals(id, LocalDate.of(2026, 9, 10));
+        // #441 r4: 10/09, and any half-held day already unproven that the statement held whole, go to their totals.
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(LocalDate.of(2026, 9, 10));
+        paperDayTotalsExcept(id);
         r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
@@ -1559,8 +1591,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select count(*) from bank_matches where bank_account_id = ? and status = 'CONFIRMED'",
                 Integer.class, ei.getId())).as("every match kept").isEqualTo(confirmed + 1);
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
-        r = paperClosing(id);
+        paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
+        r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -1629,9 +1661,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         for (BankRecDTOs.ImportResult part : parts) imports.delete(part.importId());
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(r.unprovenDays()).isEmpty();
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
-        r = paperClosing(id);
+        paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
+        r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -1833,8 +1864,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 11/09/2026,11/09/2026,FEE Y,,5.00,,990.00
                 """);
         imports.delete(extract.importId());
-        assertThat(jdbc.queryForObject("select count(*) from bank_statement_days where bank_account_id = ? and txn_date = ?",
-                Integer.class, ei.getId(), SEP_10)).as("the delete dropped 10/09's row").isZero();
+        assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), SEP_10)).as("#441 r4: 10/09 stays left to its totals").isTrue();
         book("FEE X", "CHARGE");
         BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_10));
         assertThat(r.checks()).noneMatch(c -> c.code().equals("CLOSING"));
@@ -1976,16 +2007,21 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 + "and txn_date between ? and ? order by txn_date, seq", BigDecimal.class, ei.getId(), AUG_31, SEP_10))
                 .extracting(BigDecimal::toPlainString)
                 .containsExactly("985.00", "965.00", "960.00", "1060.00", "1049.50", "1039.00", "1034.00", "1029.00");
-        assertThat(dayRows()).as("only the day it ends on is left (#441 review)").filteredOn(d -> !d.endsWith(":true:false"))
-                .containsExactly("2026-09-15:false:true");
+        // #441 ruling A: the account has now shown a back-value, so every day the statement moved a
+        // balance on — and the day it ends on — is left to its paper totals.
+        assertThat(backValueSeen()).isTrue();
+        assertThat(dayRows()).filteredOn(d -> !d.endsWith(":true:false")).containsExactly("2026-08-31:false:true",
+                "2026-09-02:false:true", "2026-09-05:false:true", "2026-09-08:false:true", "2026-09-10:false:true",
+                "2026-09-12:false:true", "2026-09-15:false:true");
 
         book("BACK VALUED CHARGE", "CHARGE");
-        UUID aug2 = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(AUG_1, AUG_31, null, new BigDecimal("960.00"))).id();
-        r = recs.get(aug2);
+        UUID aug2 = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(AUG_1, AUG_31, new BigDecimal("1000.00"),
+                new BigDecimal("960.00"))).id();
+        r = paperDayTotalsExcept(aug2);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(aug2).statementClosing()).isEqualByComparingTo("960.00");
         UUID sep2 = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, null, new BigDecimal("1069.00"))).id();
-        r = paperDayTotals(sep2, LocalDate.of(2026, 9, 15));
+        r = paperDayTotalsExcept(sep2);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(sep2).statementClosing()).isEqualByComparingTo("1069.00");
     }
@@ -2122,7 +2158,14 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? "
                 + "and description = 'SMS CHARGE'", Integer.class, ei.getId())).as("the inserted SMS charge is stored").isEqualTo(2);
-        assertThat(dayRows()).contains("2026-09-10:true:false");
+        // #441 ruling A: the statement moved FEE C's balance — the account back-values — so 10/09, held
+        // whole, is left to its paper totals: debits 5 + 5 + 10, credits 10, which now agree.
+        assertThat(backValueSeen()).isTrue();
+        assertThat(dayRows()).contains("2026-09-10:false:true");
+        r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 10),
+                new BigDecimal("20.00"), new BigDecimal("10.00")))));
+        assertThat(r.unprovenDays()).filteredOn(d -> d.date().equals(LocalDate.of(2026, 9, 10)))
+                .singleElement().extracting(BankRecDTOs.UnprovenDay::status).isEqualTo("ENTERED");
     }
 
     /**
@@ -2150,8 +2193,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(check(r, "CONTINUITY").message())
-                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them; it leaves only 10/09/2026,"
-                        + " the day it ends on, to settle");
+                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them; it leaves 10/09/2026,"
+                        + " the day it ends on, and any day it holds that is already unproven, to their paper totals");
         importText("""
                 07/09/2026,07/09/2026,FEE A,,5.00,,"1,005.00"
                 08/09/2026,08/09/2026,FEE B,,5.00,,"1,000.00"
@@ -2162,10 +2205,11 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         book("FEE C", "CHARGE");
         assertThat(dayRows()).as("every day but the one named settled").filteredOn(d -> !d.endsWith(":true:false"))
-                .containsExactly("2026-09-10:false:true");
+                .contains("2026-09-10:false:true");
         r = recs.get(id);
-        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 10));
-        paperDayTotals(id, LocalDate.of(2026, 9, 10));
+        // #441 r4: 10/09, and any half-held day already unproven that the statement held whole, go to their totals.
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(LocalDate.of(2026, 9, 10));
+        paperDayTotalsExcept(id);
         r = paperBalances(id, "1000.00");
         assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
@@ -2207,16 +2251,15 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
     }
 
     /**
-
-    /**
      * #441 review (changeset 183): a copy kept beside a look-alike never balances a lost line in
      * the paper's day totals. 11/09 was imported whole; the bank adds a −10 FEE TWO after the
      * credit. A cut of 11/09 then takes the added FEE TWO for the stored one (same balance) and
      * keeps the two −5 FEEs at their moved balances beside the stored ones (it cannot tell moved
      * lines from new ones). The paper's totals for 11/09 agree with the stored lines — the copies
      * stand in for the lost FEE TWO — so they no longer prove the day. The check names what does:
-     * a statement holding 11/09 whole brings FEE TWO; the copies it shows up are deleted with the
-     * import that brought them; then the totals settle the day and the month finalizes.
+     * a statement holding 11/09 whole, exported now, brings FEE TWO and shows the copies; deleting
+     * the import that brought them removes them (with an audit record naming the proving
+     * import); the day's totals then settle it and the month finalizes.
      */
     @Test
     void aKeptCopyNeverBalancesALostLineInThePaperDayTotals() {
@@ -2248,12 +2291,16 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(r.dayTotalsVerdict()).as("agreeing totals prove nothing beside a kept copy").isEqualTo("PENDING");
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         assertThat(check(r, "LINE_ORDER").message()).contains("On 11/09/2026 an import kept a line")
-                .contains("Import a statement that holds 11/09/2026 whole").contains("delete cut.csv (11/09/2026–11/09/2026)");
+                .contains("Import a statement that holds 11/09/2026 whole, exported now from the bank")
+                .contains("this check then names the imports to delete on its word");
         assertThatThrownBy(() -> recs.finalizeRec(id)).isInstanceOf(RuntimeException.class);
         assertThat(reconciledThrough()).isNull();
 
-        // The statement holding 11/09 whole (its Closing row, dated after it, proves 12/09 whole too).
-        importText("""
+        // The statement holding 11/09 whole, exported now (its Closing row, dated after it, proves
+        // 12/09 whole too): it brings the lost FEE TWO, and shows the two kept FEEs as copies — the
+        // bank's 11/09 has two −5 FEEs, not four. A file cannot show it is current (#441 review r3),
+        // so nothing is removed yet; the check names the import to delete.
+        imports.importFile(ei.getId(), "whole.csv", (HEAD + """
                 09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
                 10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
                 11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
@@ -2263,25 +2310,688 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 11/09/2026,11/09/2026,FEE,,5.00,,990.00
                 12/09/2026,12/09/2026,CREDIT Y,,,5.00,995.00
                 13/09/2026,13/09/2026,Closing balance,,,,995.00
-                """);
+                """).getBytes(StandardCharsets.UTF_8), null, false);
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and description = 'FEE TWO'",
                 Integer.class, ei.getId())).as("the lost FEE TWO is stored").isEqualTo(2);
-        r = recs.get(id);
-        assertThat(check(r, "LINE_ORDER").message()).as("the copies are still there").contains("delete cut.csv");
-        imports.delete(cut.importId());
-        for (String d : List.of("FEE TWO", "FEE")) {
-            for (BankRecDTOs.StatementLine l : ws().statementLines()) {
-                if (l.description().equals(d)) {
-                    actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), "CHARGE", false, null, null, marinaBank.getId(), true, null));
-                }
-            }
-        }
-        for (String d : List.of("CREDIT X", "CREDIT R", "CREDIT Y")) book(d, "INTEREST");
-        r = recs.get(id);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+        r = paperDayTotalsExcept(id, sep11);
+        assertThat(check(r, "LINE_ORDER").message()).contains("the statement whole.csv held the day whole")
+                .contains("If whole.csv was exported from the bank after the import that brought them")
+                .contains("delete cut.csv (11/09/2026–11/09/2026)").doesNotContain("undo the match");
+        deleteAsOffered(cut.importId(), id);
+        assertThat(jdbc.queryForList("select running_balance || ' ' || file_name || ' ' || proof_file_name from bank_statement_removed_lines "
+                + "where bank_account_id = ? order by running_balance", String.class, ei.getId()))
+                .containsExactly("990.00 cut.csv whole.csv", "995.00 cut.csv whole.csv");
+        r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(sep11, new BigDecimal("30.00"), new BigDecimal("10.00")))));
         assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
+        for (BankRecDTOs.StatementLine l : ws().statementLines()) {
+            String kind = l.description().startsWith("CREDIT") ? "INTEREST" : "CHARGE";
+            actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), kind, false, null, null, marinaBank.getId(), true, null));
+        }
+        r = recs.get(id);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
+
+    /**
+     * #441 review r2: the kept copies were booked before the check was read. A day must never be
+     * stuck: the whole-day statement proves them copies but cannot remove booked lines, so the
+     * check names the steps in order — undo their matches, delete the import holding them (the
+     * copies go with an audit record, the undone matches stay), type the day's totals — and
+     * following them literally finalizes.
+     */
+    @Test
+    void reviewProbeABookedKeptCopyCanStillBeCleared() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,005.00"
+                """);
+        BankRecDTOs.ImportResult cut = imports.importFile(ei.getId(), "cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,995.00
+                11/09/2026,11/09/2026,FEE,,5.00,,990.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        assertThat(cut.linesNew()).isEqualTo(2);
+        // The user books every line first (UNRECORDED asks for it), copies included.
+        java.util.Map<UUID, UUID> matchOf = new java.util.HashMap<>();
+        for (BankRecDTOs.StatementLine l : ws().statementLines()) {
+            String kind = l.description().startsWith("CREDIT") ? "INTEREST" : "CHARGE";
+            matchOf.put(l.id(), actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), kind, false, null, null,
+                    marinaBank.getId(), true, null)).matchId());
+        }
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("995.00"))).id();
+        imports.importFile(ei.getId(), "whole.csv", (HEAD + """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,995.00
+                11/09/2026,11/09/2026,FEE,,5.00,,990.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,995.00
+                13/09/2026,13/09/2026,Closing balance,,,,995.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        BankRecDTOs.Reconciliation r = paperDayTotalsExcept(id, LocalDate.of(2026, 9, 11));
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 11/09/2026 the statement whole.csv held the day whole")
+                .contains("FEE 5.00 at 995.00").contains("FEE 5.00 at 990.00").contains("undo the matches of")
+                .contains("reversing the entries the booking created")
+                .contains("then delete cut.csv (11/09/2026–11/09/2026)").contains("then type 11/09/2026's total debits");
+        // Follow the remedy: delete cut.csv. Its copies are in confirmed matches, so undo them first.
+        List<UUID> copies = jdbc.queryForList("select id from bank_statement_lines where bank_account_id = ? and import_id = ?",
+                UUID.class, ei.getId(), cut.importId());
+        String refusal1 = null;
+        try { deleteAsOffered(cut.importId(), id); } catch (RuntimeException e) { refusal1 = e.getMessage(); }
+        assertThat(refusal1).contains("undo those matches first");
+        for (UUID c : copies) if (matchOf.get(c) != null) matches.undo(matchOf.get(c), true, SEP_30, "copy");
+        String refusal2 = null;
+        try { deleteAsOffered(cut.importId(), id); } catch (RuntimeException e) { refusal2 = e.getMessage(); }
+        assertThat(refusal2).as("the remedy the check names can be carried out").isNull();
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ? "
+                + "and match_ids is not null and proof_file_name = 'whole.csv'", Integer.class, ei.getId())).isEqualTo(2);
+        // The paper's 11/09: debits 10 + 10 + 5 + 5, credits 10.
+        r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 11), new BigDecimal("30.00"), new BigDecimal("10.00")))));
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
+        for (BankRecDTOs.StatementLine l : ws().statementLines()) {
+            if (l.matchId() != null) continue;
+            String kind = l.description().startsWith("CREDIT") ? "INTEREST" : "CHARGE";
+            actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), kind, false, null, null, marinaBank.getId(), true, null));
+        }
+        r = recs.get(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * #441 review r3: an older whole-day export of the day (other bytes: the same download
+     * re-saved) shows the day as it was before the bank added a line. It does not show the kept
+     * look-alike's original at a moved balance, so it proves nothing: the genuine added FEE
+     * stays, the day stays unproven, and the check asks for a fresh whole-day export.
+     */
+    @Test
+    void reviewProbeAnOlderWholeDayExportNeverRemovesAGenuineKeptLine() {
+        jv(AUG_31, marinaBank, "1000.00");
+        String old = """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,015.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,020.00"
+                """;
+        imports.importFile(ei.getId(), "sep.csv", (HEAD + old).getBytes(StandardCharsets.UTF_8), null, false);
+        // The bank back-values a second FEE on 11/09 after CREDIT R: 11/09 FEE 1,005, CREDIT R 1,015, FEE 1,010; 12/09 CREDIT Y 1,015.
+        BankRecDTOs.ImportResult cut = imports.importFile(ei.getId(), "cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        assertThat(cut.linesNew()).isEqualTo(1);
+        // The user later imports the same old September download re-saved (other bytes, same rows).
+        imports.importFile(ei.getId(), "sep-resaved.csv", (HEAD + old + "\n").getBytes(StandardCharsets.UTF_8), null, false);
+        Integer fees = jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? "
+                + "and txn_date = '2026-09-11' and description = 'FEE'", Integer.class, ei.getId());
+        assertThat(fees).as("the bank's 11/09 has two FEEs; both stay").isEqualTo(2);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+        assertThat(dayRows()).contains("2026-09-11:false:true");
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        assertThat(recs.get(id).unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(LocalDate.of(2026, 9, 11));
+        paperDayTotals(id, LocalDate.of(2026, 9, 12));
+        assertThat(check(recs.get(id), "LINE_ORDER").message())
+                .contains("If sep-resaved.csv was exported from the bank after the import that brought it")
+                .contains("If it is an older download, import a statement that holds 11/09/2026 whole, exported now from the bank");
+        // Following that: the current export holds both FEEs, and the day settles with both.
+        imports.importFile(ei.getId(), "sep-now.csv", (HEAD + """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,015.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,015.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? "
+                + "and txn_date = '2026-09-11' and description = 'FEE'", Integer.class, ei.getId())).isEqualTo(2);
+        // #441 ruling A: it moved CREDIT Y's balance, so the account back-values and 11/09 is left to
+        // its totals (both FEEs are its own lines now: no kept look-alike is left).
+        assertThat(backValueSeen()).isTrue();
+        assertThat(dayRows()).contains("2026-09-11:false:true");
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and lookalike_kept",
+                Integer.class, ei.getId())).isZero();
+    }
+
+    /**
+     * #441 review r3, the last step: a statement holding 11/09 whole, exported now, settles nothing
+     * and shows no copy — it holds the kept FEE (a separate line the bank added), but 11/09 also
+     * holds a cheque the bank has since re-dated to 12/09, which only the old export holds, and
+     * that cheque is booked. The check orders the steps: undo the cheque's match (only the other
+     * imports hold it), then delete those imports; the whole statement keeps every line it holds,
+     * the stale cheque goes with an audit record, 11/09 is that statement's alone and confirmed,
+     * every genuine line is stored, and the month finalizes.
+     */
+    @Test
+    void theDeleteTheOtherImportsStepSettlesTheDayAndKeepsEveryGenuineLine() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult a = imports.importFile(ei.getId(), "sep-old.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,CHQ 000123,,20.00,,"1,000.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,005.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        // The bank adds a second FEE after CREDIT R and re-dates the cheque to 12/09. A cut of 11/09:
+        BankRecDTOs.ImportResult b = imports.importFile(ei.getId(), "cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        assertThat(b.linesNew()).isEqualTo(1);
+        UUID chqMatch = book("CHQ 000123", "CHARGE").matchId();
+        // The statement holding 11/09 whole, exported now.
+        imports.importFile(ei.getId(), "sep-now.csv", (HEAD + """
+                09/09/2026,09/09/2026,CREDIT V,,,5.00,"1,005.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                12/09/2026,12/09/2026,CHQ 000123,,20.00,,995.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,000.00"
+                13/09/2026,13/09/2026,CREDIT Z,,,5.00,"1,005.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        assertThat(dayRows()).contains("2026-09-11:false:true");
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1005.00"))).id();
+        // #441 ruling A: sep-now moved CREDIT Y's balance, so the account back-values: 12/09 is left to its totals.
+        assertThat(backValueSeen()).isTrue();
+        LocalDate sep11 = LocalDate.of(2026, 9, 11);
+        paperDayTotalsExcept(id, sep11);
+        String msg = check(recs.get(id), "LINE_ORDER").message();
+        assertThat(msg).contains("the statement sep-now.csv, which holds the day whole, does not settle it")
+                .contains("undo the match of CHQ 000123 20.00 at 1,000.00 on 11/09/2026 first, reversing the entry")
+                .contains("then delete sep-old.csv (10/09/2026–12/09/2026), cut.csv (11/09/2026–11/09/2026)")
+                .contains("then type 11/09/2026's total debits and total credits");
+        assertThat(msg.indexOf("undo the match")).isLessThan(msg.indexOf("then delete"));
+        // In that order: delete first is refused, undo then delete goes through.
+        assertThatThrownBy(() -> imports.delete(a.importId())).hasMessageContaining("undo those matches first");
+        matches.undo(chqMatch, true, SEP_30, "re-dated by the bank");
+        deleteAsOffered(a.importId(), id);
+        deleteAsOffered(b.importId(), id);
+        // #441 r4: on an account that back-values, the statement no longer confirms 10/09 either.
+        assertThat(dayRows()).filteredOn(d -> !d.endsWith(":true:false")).containsExactly("2026-09-10:false:true",
+                "2026-09-11:false:true", "2026-09-12:false:true");
+        paperDayTotalsExcept(id, sep11);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and lookalike_kept",
+                Integer.class, ei.getId())).isZero();
+        assertThat(jdbc.queryForList("select txn_date || ' ' || description || ' ' || running_balance from bank_statement_lines "
+                + "where bank_account_id = ? order by txn_date, seq", String.class, ei.getId()))
+                .as("every line of the bank's statement, once").containsExactly(
+                        "2026-09-09 CREDIT V 1005.00", "2026-09-10 CREDIT X 1015.00", "2026-09-11 FEE 1010.00",
+                        "2026-09-11 CREDIT R 1020.00", "2026-09-11 FEE 1015.00", "2026-09-12 CHQ 000123 995.00",
+                        "2026-09-12 CREDIT Y 1000.00", "2026-09-13 CREDIT Z 1005.00");
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ? "
+                + "and description = 'CHQ 000123' and proof_file_name = 'sep-now.csv' and match_ids is not null",
+                Integer.class, ei.getId())).isEqualTo(1);
+        // The paper's 11/09: debits 5 + 5, credits 10 — every genuine line is there, so they agree.
+        recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(new BankRecDTOs.DayTotalInput(sep11, new BigDecimal("10.00"),
+                new BigDecimal("10.00")))));
+        for (BankRecDTOs.StatementLine l : ws().statementLines()) {
+            if (l.matchId() != null) continue;
+            String kind = l.description().startsWith("CREDIT") ? "INTEREST" : "CHARGE";
+            actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), kind, false, null, null, marinaBank.getId(), true, null));
+        }
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * #441 ruling A, one of the property model's silent losses (trial 413 of the stale-export run):
+     * September 9 is cut after the bank back-valued a credit at its start and a fee in its middle;
+     * then the September download made before that is imported again (re-saved). Holding 09/09
+     * whole, it takes the stored back-valued fee for its own fee at a moved balance and used to
+     * confirm the day: the fee was gone, the lines still chained, and the month finalized on the
+     * lines alone. The account has now shown a back-value, so the older file does not confirm
+     * 09/09: the paper's day totals decide, and the true ones refuse it.
+     */
+    @Test
+    void anOlderWholeExportNoLongerConfirmsADayOnAnAccountThatBackValues() {
+        jv(AUG_31, marinaBank, "1000.00");
+        String old = """
+                09/09/2026,09/09/2026,FEE A,,10.00,,990.00
+                09/09/2026,09/09/2026,FEE B,,5.00,,985.00
+                09/09/2026,09/09/2026,CREDIT C,,,10.00,995.00
+                09/09/2026,09/09/2026,CREDIT D,,,10.00,"1,005.00"
+                10/09/2026,10/09/2026,FEE E,,10.00,,995.00
+                10/09/2026,10/09/2026,FEE F,,5.00,,990.00
+                10/09/2026,10/09/2026,FEE G,,10.00,,980.00
+                10/09/2026,10/09/2026,FEE H,,10.00,,970.00
+                10/09/2026,10/09/2026,FEE I,,10.00,,960.00
+                11/09/2026,11/09/2026,CREDIT J,,,10.00,970.00
+                """;
+        importText("""
+                10/09/2026,10/09/2026,FEE E,,10.00,,995.00
+                10/09/2026,10/09/2026,FEE F,,5.00,,990.00
+                10/09/2026,10/09/2026,FEE G,,10.00,,980.00
+                10/09/2026,10/09/2026,FEE H,,10.00,,970.00
+                10/09/2026,10/09/2026,FEE I,,10.00,,960.00
+                """);
+        // The bank adds CREDIT P +5 at the start of 09/09 and a FEE B −5 after CREDIT C; a later export
+        // from CREDIT C on (its 09/09 balances moved by +5, then back):
+        importText("""
+                09/09/2026,09/09/2026,CREDIT C,,,10.00,"1,000.00"
+                09/09/2026,09/09/2026,FEE B,,5.00,,995.00
+                09/09/2026,09/09/2026,CREDIT D,,,10.00,"1,005.00"
+                10/09/2026,10/09/2026,FEE E,,10.00,,995.00
+                10/09/2026,10/09/2026,FEE F,,5.00,,990.00
+                10/09/2026,10/09/2026,FEE G,,10.00,,980.00
+                10/09/2026,10/09/2026,FEE H,,10.00,,970.00
+                10/09/2026,10/09/2026,FEE I,,10.00,,960.00
+                11/09/2026,11/09/2026,CREDIT J,,,10.00,970.00
+                """);
+        assertThat(backValueSeen()).as("nothing has moved yet").isFalse();
+        // The old September download, re-saved, with its boundary rows.
+        imports.importFile(ei.getId(), "sep-resaved.csv", (HEAD + "31/08/2026,31/08/2026,Opening balance,,,,\"1,000.00\"\n" + old
+                + "12/09/2026,12/09/2026,Closing balance,,,,970.00\n").getBytes(StandardCharsets.UTF_8), null, false);
+        assertThat(backValueSeen()).as("it took a line at a moved balance").isTrue();
+        assertThat(dayRows()).as("not confirmed by the older file").contains("2026-09-09:false:true");
+        for (BankRecDTOs.StatementLine l : ws().statementLines()) {
+            String kind = l.description().startsWith("CREDIT") ? "INTEREST" : "CHARGE";
+            actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), kind, false, null, null, marinaBank.getId(), true, null));
+        }
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("970.00"))).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 09/09/2026").contains("no longer settles an unproven day by itself");
+        // The account back-values: 10/09 and 11/09, held whole, are left to their totals too (nothing is
+        // missing there). The paper's 09/09: CREDIT P 5, FEE A 10, FEE B 5, CREDIT C 10, FEE B 5, CREDIT D 10.
+        paperDayTotalsExcept(id, LocalDate.of(2026, 9, 9));
+        r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 9),
+                new BigDecimal("20.00"), new BigDecimal("25.00")))));
+        assertThat(r.dayTotalsVerdict()).isEqualTo("DISAGREE");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
+        assertThat(reconciledThrough()).isNull();
+    }
+
+    /**
+     * #441 rulings: a day that was never unproven keeps the whole-day rule on an account that never
+     * back-valued. 10/09 came in two exports sharing no line (unconfirmed, not unproven); the
+     * statement holding it whole confirms it with no typing, and the flag stays false.
+     */
+    @Test
+    void aDayNeverUnprovenIsStillConfirmedByAWholeDayStatement() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                10/09/2026,10/09/2026,FEE A,,5.00,,995.00
+                """);
+        importText("""
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,005.00"
+                """);
+        assertThat(dayRows()).contains("2026-09-10:false:false");
+        importText("""
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,FEE A,,5.00,,995.00
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,005.00"
+                11/09/2026,11/09/2026,Closing balance,,,,"1,005.00"
+                """);
+        assertThat(backValueSeen()).isFalse();
+        assertThat(dayRows()).as("confirmed by the statement alone, as before").contains("2026-09-10:true:false");
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        assertThat(recs.get(id).checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+    }
+
+    /**
+     * #441 review r4 (P2): an older cut imported after the whole statement brings a line the bank
+     * later dropped, and it is booked. Following the text literally — undo its match, delete every
+     * import it names — never dead-ends: the line is left out by the statement holding the day
+     * whole (worked out at delete time), so it goes with an audit record despite its undone match.
+     */
+    @Test
+    void reviewProbeDeleteTheOthersWithALaterImportedStaleBookedLine() {
+        jv(AUG_31, marinaBank, "1000.00");
+        imports.importFile(ei.getId(), "sep-old.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,CHQ 000123,,20.00,,"1,000.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,005.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        imports.importFile(ei.getId(), "cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        imports.importFile(ei.getId(), "sep-now.csv", (HEAD + """
+                09/09/2026,09/09/2026,CREDIT V,,,5.00,"1,005.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                12/09/2026,12/09/2026,CHQ 000123,,20.00,,995.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,000.00"
+                13/09/2026,13/09/2026,CREDIT Z,,,5.00,"1,005.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        // An older download (made before sep-now), imported only now: a MISC line the bank later dropped.
+        BankRecDTOs.ImportResult c2 = imports.importFile(ei.getId(), "old-cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,MISC,,7.00,,"1,013.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        UUID misc = book("MISC", "CHARGE").matchId();
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1005.00"))).id();
+        paperDayTotalsExcept(id, LocalDate.of(2026, 9, 11));
+        String msg = check(recs.get(id), "LINE_ORDER").message();
+        // Literally: undo the booked line's match, then delete the imports named.
+        matches.undo(misc, true, SEP_30, "dropped by the bank");
+        msg = check(recs.get(id), "LINE_ORDER").message();
+        List<String> refusals = new ArrayList<>();
+        for (BankRecDTOs.ImportRow row : imports.history(ei.getId())) {
+            if (row.fileName().equals("sep-now.csv")) continue;
+            if (!msg.contains(row.fileName())) continue;
+            try { deleteAsOffered(row.id(), id); } catch (RuntimeException e) { refusals.add(row.fileName() + ": " + e.getMessage()); }
+        }
+        assertThat(refusals).as("every import the text names can be deleted").isEmpty();
+        // #441 r5: old-cut.csv came after sep-now.csv, which cannot override it; the check asks for a newer
+        // whole-day export. Importing one, then following the text again, finalizes.
+        assertThat(msg).doesNotContain("old-cut.csv");
+        imports.importFile(ei.getId(), "sep-now-2.csv", (HEAD + """
+                09/09/2026,09/09/2026,CREDIT V,,,5.00,"1,005.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                12/09/2026,12/09/2026,CHQ 000123,,20.00,,995.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,000.00"
+                13/09/2026,13/09/2026,CREDIT Z,,,5.00,"1,005.00"
+                """ + "\n").getBytes(StandardCharsets.UTF_8), null, false);
+        paperDayTotalsExcept(id, LocalDate.of(2026, 9, 11));
+        msg = check(recs.get(id), "LINE_ORDER").message();
+        assertThat(msg).contains("the statement sep-now-2.csv, which holds the day whole").contains("old-cut.csv");
+        for (BankRecDTOs.ImportRow row : imports.history(ei.getId())) {
+            if (row.fileName().equals("sep-now-2.csv") || !msg.contains(row.fileName())) continue;
+            deleteAsOffered(row.id(), id);
+        }
+        // Then the check names sep-now.csv too (it holds the day's lines, imported before sep-now-2.csv).
+        msg = check(recs.get(id), "LINE_ORDER").message();
+        for (BankRecDTOs.ImportRow row : imports.history(ei.getId())) {
+            if (row.fileName().equals("sep-now-2.csv") || !msg.contains(row.fileName())) continue;
+            deleteAsOffered(row.id(), id);
+        }
+        assertThat(jdbc.queryForObject("select proof_file_name from bank_statement_removed_lines where bank_account_id = ? "
+                + "and description = 'MISC'", String.class, ei.getId())).isEqualTo("sep-now-2.csv");
+        recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 11),
+                new BigDecimal("10.00"), new BigDecimal("10.00")))));
+        paperDayTotalsExcept(id, LocalDate.of(2026, 9, 11));
+        for (BankRecDTOs.StatementLine l : ws().statementLines()) {
+            if (l.matchId() != null) continue;
+            String kind = l.description().startsWith("CREDIT") ? "INTEREST" : "CHARGE";
+            actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), kind, false, null, null, marinaBank.getId(), true, null));
+        }
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+
+    /**
+     * #441 review r5: an older import spanning the day without holding a line proves nothing about
+     * that newer line. Deleting the later one-day import that brought it, with its undone match, is
+     * refused as before (the match history is the audit trail), and nothing is removed.
+     */
+    @Test
+    void reviewProbeDeleteTimeProofNeedsANewerWholeStatement() {
+        jv(AUG_31, marinaBank, "1000.00");
+        imports.importFile(ei.getId(), "sep-old.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,025.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        // Later, the bank posts a genuine NEW FEE on 11/09 after CREDIT R; a one-day export brings it.
+        BankRecDTOs.ImportResult d = imports.importFile(ei.getId(), "day.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,NEW FEE,,7.00,,"1,013.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        UUID m = book("NEW FEE", "CHARGE").matchId();
+        matches.undo(m, true, SEP_30, "rebook");
+        String refusal = null;
+        try { imports.delete(d.importId()); } catch (RuntimeException e) { refusal = e.getMessage(); }
+        assertThat(refusal).as("an older statement proves nothing about a newer line: the history guard stands").isNotNull()
+                .contains("match history");
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+    }
+
+
+    /**
+     * #441 review r5: the named statement deleted before the other imports. The check had named
+     * sep-now.csv as the statement holding 11/09 whole; the user deletes it first. Nothing proves
+     * the cheque left out any more, so deleting the old export (its cheque with an undone match)
+     * is refused, the check names a current whole-day export again, and importing it then
+     * following the steps finalizes: no dead end.
+     */
+    @Test
+    void deletingTheNamedStatementFirstLeavesAWayOut() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult a = imports.importFile(ei.getId(), "sep-old.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,CHQ 000123,,20.00,,"1,000.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,005.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        BankRecDTOs.ImportResult b = imports.importFile(ei.getId(), "cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        UUID chq = book("CHQ 000123", "CHARGE").matchId();
+        byte[] now = (HEAD + """
+                09/09/2026,09/09/2026,CREDIT V,,,5.00,"1,005.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                12/09/2026,12/09/2026,CHQ 000123,,20.00,,995.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,000.00"
+                13/09/2026,13/09/2026,CREDIT Z,,,5.00,"1,005.00"
+                """).getBytes(StandardCharsets.UTF_8);
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "sep-now.csv", now, null, false);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1005.00"))).id();
+        LocalDate sep11 = LocalDate.of(2026, 9, 11);
+        paperDayTotalsExcept(id, sep11);
+        assertThat(check(recs.get(id), "LINE_ORDER").message()).contains("the statement sep-now.csv, which holds the day whole");
+        // The user deletes the named statement first, then follows the rest.
+        imports.delete(w.importId());
+        matches.undo(chq, true, SEP_30, "re-dated by the bank");
+        assertThatThrownBy(() -> imports.delete(a.importId())).hasMessageContaining("match history");
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+        assertThat(check(recs.get(id), "LINE_ORDER").message()).contains("import one statement that runs from");
+        // The way out it names: a current whole-day export, then the steps.
+        imports.importFile(ei.getId(), "sep-now-again.csv", now, null, false);
+        paperDayTotalsExcept(id, sep11);
+        String msg = check(recs.get(id), "LINE_ORDER").message();
+        assertThat(msg).contains("the statement sep-now-again.csv, which holds the day whole")
+                .contains("make the day its alone: delete sep-old.csv (10/09/2026–12/09/2026), cut.csv (11/09/2026–11/09/2026)");
+        deleteAsOffered(a.importId(), id);
+        deleteAsOffered(b.importId(), id);
+        assertThat(jdbc.queryForObject("select proof_file_name from bank_statement_removed_lines where bank_account_id = ? "
+                + "and description = 'CHQ 000123'", String.class, ei.getId())).isEqualTo("sep-now-again.csv");
+        recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(new BankRecDTOs.DayTotalInput(sep11, new BigDecimal("10.00"),
+                new BigDecimal("10.00")))));
+        paperDayTotalsExcept(id, sep11);
+        for (BankRecDTOs.StatementLine l : ws().statementLines()) {
+            if (l.matchId() != null) continue;
+            String kind = l.description().startsWith("CREDIT") ? "INTEREST" : "CHARGE";
+            actions.post(new BankRecDTOs.PostLinesInput(List.of(l.id()), kind, false, null, null, marinaBank.getId(), true, null));
+        }
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+
+    private UUID r6Setup() {
+        jv(AUG_31, marinaBank, "1000.00");
+        imports.importFile(ei.getId(), "sep-old.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,025.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        BankRecDTOs.ImportResult d = imports.importFile(ei.getId(), "day.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,NEW FEE,,7.00,,"1,013.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        UUID m = book("NEW FEE", "CHARGE").matchId();
+        matches.undo(m, true, SEP_30, "rebook");
+        return d.importId();
+    }
+
+    private String r6Delete(UUID imp) {
+        try { imports.delete(imp); return null; } catch (RuntimeException e) { return e.getMessage(); }
+    }
+
+    private int newFees() {
+        return jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and description = 'NEW FEE'",
+                Integer.class, ei.getId());
+    }
+
+    private static final String STALE_WHOLE = """
+            10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+            11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+            12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,025.00"
+
+            """;
+
+    /** REVIEW PROBE r6a: a newer statement spanning 11/09 with no line on it proves nothing. */
+    @Test
+    void reviewProbeR6aNewerSpanWithoutTheDay() {
+        UUID d = r6Setup();
+        imports.importFile(ei.getId(), "span.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,025.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        String r = r6Delete(d);
+        assertThat(r).isNotNull();
+        assertThat(newFees()).isEqualTo(1);
+    }
+
+    /** REVIEW PROBE r6b: two later whole statements, the newest holding the line: it stays. */
+    @Test
+    void reviewProbeR6bTwoWholeStatements() {
+        UUID d = r6Setup();
+        imports.importFile(ei.getId(), "stale-whole.csv", (HEAD + STALE_WHOLE).getBytes(StandardCharsets.UTF_8), null, false);
+        imports.importFile(ei.getId(), "now-whole.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,NEW FEE,,7.00,,"1,013.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,018.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        String r = r6Delete(d);
+        assertThat(newFees()).isEqualTo(1);
+    }
+
+    /** REVIEW PROBE r6c: the proof statement deleted first: the history refusal stands again. */
+    @Test
+    void reviewProbeR6cProofDeletedFirst() {
+        UUID d = r6Setup();
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "stale-whole.csv", (HEAD + STALE_WHOLE).getBytes(StandardCharsets.UTF_8), null, false);
+        String rw = r6Delete(w.importId());
+        String r = r6Delete(d);
+        assertThat(rw).isNull();
+        assertThat(r).isNotNull();
+        assertThat(newFees()).isEqualTo(1);
+    }
+
+    /**
+     * #441 review r6 (r6d): a later stale whole download, then an ordinary delete (no proof sent): it is
+     * refused for the undone match history exactly as on main, and nothing is removed.
+     */
+    @Test
+    void reviewProbeR6dLaterStaleWholeOrdinaryDelete() {
+        UUID d = r6Setup();
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "stale-whole.csv", (HEAD + STALE_WHOLE).getBytes(StandardCharsets.UTF_8), null, false);
+        String r = r6Delete(d);
+        assertThat(w.status()).isEqualTo("IMPORTED");
+        assertThat(r).contains("match history");
+        assertThat(newFees()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+    }
+
+    /**
+     * #441 r6: a forged proof — a statement the check does not name for this import — is refused, and
+     * nothing is removed; the plain delete keeps main's refusal.
+     */
+    @Test
+    void aDeleteWithAProofTheCheckDoesNotNameIsRefused() {
+        UUID d = r6Setup();
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "stale-whole.csv", (HEAD + STALE_WHOLE).getBytes(StandardCharsets.UTF_8), null, false);
+        assertThatThrownBy(() -> imports.delete(d, w.importId())).hasMessageContaining("does not offer deleting this import");
+        assertThatThrownBy(() -> imports.delete(d, d)).hasMessageContaining("does not offer deleting this import");
+        assertThat(newFees()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ?",
+                Integer.class, ei.getId())).isZero();
+    }
+
+
+
+    /**
+     * #441 review r7: after the statement that marked the copies, a later import brings a genuine FEE the
+     * bank added since. The copy offer names only imports made before that statement, so a delete of the
+     * later import on its word is refused and the FEE stays.
+     */
+    @Test
+    void reviewProbeR7ProofOfferNamesALaterHolder() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,000.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,005.00"
+                """);
+        imports.importFile(ei.getId(), "cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,995.00
+                11/09/2026,11/09/2026,FEE,,5.00,,990.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        BankRecDTOs.ImportResult w = imports.importFile(ei.getId(), "whole.csv", (HEAD + """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE TWO,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,995.00
+                11/09/2026,11/09/2026,FEE,,5.00,,990.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,995.00
+                13/09/2026,13/09/2026,Closing balance,,,,995.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        // After whole.csv was exported, the bank adds yet another FEE at the end of 11/09; a later one-line export brings it.
+        BankRecDTOs.ImportResult h2 = imports.importFile(ei.getId(), "later.csv", (HEAD + """
+                11/09/2026,11/09/2026,FEE,,5.00,,985.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        UUID line = jdbc.queryForObject("select id from bank_statement_lines where bank_account_id = ? and import_id = ?",
+                UUID.class, ei.getId(), h2.importId());
+        UUID m = actions.post(new BankRecDTOs.PostLinesInput(List.of(line), "CHARGE", false, null, null, marinaBank.getId(), true, null)).matchId();
+        matches.undo(m, true, SEP_30, "rebook");
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("990.00"))).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        String refusal = null;
+        try { imports.delete(h2.importId(), w.importId()); } catch (RuntimeException e) { refusal = e.getMessage(); }
+        Integer left = jdbc.queryForObject("select count(*) from bank_statement_lines where id = ?", Integer.class, line);
+        assertThat(left).as("a genuine line newer than the proof stays").isEqualTo(1);
+        assertThat(refusal).contains("does not offer deleting this import");
+        assertThat(r.deleteOffers()).allSatisfy(o -> assertThat(o.imports()).noneMatch(i -> i.id().equals(h2.importId())));
+    }
+
 
     /**
      * #438 review: the whole-then-delete remedy never tells the user to delete an import that
@@ -2331,8 +3041,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         imports.delete(b.importId());
         assertThatThrownBy(() -> imports.delete(boundary.importId())).hasMessageContaining("cannot be deleted");
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(r.unprovenDays()).isEmpty();
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        r = paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
     }
 
     /**
@@ -2380,8 +3090,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         imports.delete(a.importId());
         imports.delete(b.importId());
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(r.unprovenDays()).isEmpty();
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
         r = paperClosing(id);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).statementClosing()).isEqualByComparingTo("970.00");

@@ -273,6 +273,15 @@ export type Reconciliation = {
     dayTotalsVerdict?: "AGREE" | "DISAGREE" | "PENDING" | null;
     /** Sim r22 S22-04: a statement a check names starts inside the reconciliation finalized through this date. */
     remedyReopenThrough?: string | null;
+    /** #441 r6: the deletes the LINE_ORDER check offers, each on the word of the statement it names. */
+    deleteOffers?: DeleteOffer[];
+};
+
+export type DeleteOffer = {
+    day: string;
+    proofImportId: string;
+    proofFileName: string | null;
+    imports: { id: string; fileName: string | null }[];
 };
 
 /** A day to prove with its paper-statement totals. The lines' own totals are never sent, so they cannot be copied. */
@@ -367,7 +376,12 @@ export const bankRecApi = {
         return res.json() as Promise<ImportResult>;
     },
     imports: (id: string) => apiGet<ImportRow[]>(`${ROOT}/bank-accounts/${id}/imports`),
-    deleteImport: (importId: string) => apiSend<void>("DELETE", `${ROOT}/imports/${importId}`),
+    /**
+     * #441 r6: {@code proofImportId} only from the reconciliation check's own delete step (DeleteOffer):
+     * the server re-runs the check and refuses a proof it does not name.
+     */
+    deleteImport: (importId: string, proofImportId?: string) => apiSend<void>("DELETE",
+        `${ROOT}/imports/${importId}${proofImportId ? `?proofImportId=${encodeURIComponent(proofImportId)}` : ""}`),
     workspace: (id: string, q: { from?: string; to?: string; state?: "UNMATCHED" | "SUGGESTED" | "ALL" }) =>
         apiGet<Workspace>(`${ROOT}/bank-accounts/${id}/workspace${qs(q)}`),
     /** F14-48: `lang` (the current locale) so the export's column headers and text come back in it, same as the PDF. */
