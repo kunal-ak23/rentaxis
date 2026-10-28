@@ -4896,6 +4896,7 @@
         "fileTooLarge": "A statement file is at most 5 MB",
         "oldXls": "Save the statement as .xlsx or .csv; the old .xls format is not read",
         "notCsvOrXlsx": "This file is neither a CSV nor an .xlsx workbook",
+        "copiesBooked": "{count} line(s) the statement shows as copies are in confirmed matches; undo those matches first, reversing the entries the booking created, then use this step again",
         "importLinesConfirmed": "{count} line(s) only this import brought are in confirmed matches; undo those matches first. Lines another import also holds are kept with their matches, so importing a statement that holds these lines too, before deleting, also works.",
         "importHasHistory": "Lines of this import have match history (undone matches), which is kept as the audit trail; the import cannot be deleted",
         "unknownValue": "Unknown {what} {value}",
