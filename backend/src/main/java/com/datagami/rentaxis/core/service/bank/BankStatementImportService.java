@@ -1524,21 +1524,27 @@ public class BankStatementImportService {
      * holding a copy was made before that statement (#441 r7: a later one may hold a line the bank added
      * after it was exported). The import named, and every other line it holds, stay: deleting it could
      * take genuine lines no statement holds (on other days, or in a finalized period). It goes too only
-     * when it then holds nothing at all. Refused while a copy is in a confirmed match (undo it first).
+     * when it then holds nothing at all. A copy in a confirmed match stays until that match is undone; refused
+     * only when every copy shown is (undo them first).
      */
     private void removeShownCopies(UUID t, BankStatementImport imp, UUID proof,
                                    List<BankReconciliationService.DeleteOffer> offers, LocalDate locked) {
         List<LocalDate> days = offers.stream().map(BankReconciliationService.DeleteOffer::day).distinct().toList();
+        // The lines the check (re-run now) shows as copies on the statement's word: marked by it at import
+        // (copy_proven_by), or — S26-01, pre-#441 twins — shown by it now on the same rules.
+        List<UUID> ids = offers.stream().flatMap(o -> o.shown().stream()).distinct().toList();
         MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("b", imp.getBankAccountId())
-                .addValue("w", proof).addValue("d", days).addValue("i", imp.getId());
+                .addValue("w", proof).addValue("d", days).addValue("i", imp.getId())
+                .addValue("ids", ids.isEmpty() ? List.of(new UUID(0, 0)) : ids);
         List<Map<String, Object>> shown = jdbc.queryForList("""
                 select l.id, l.line_hash, l.txn_date,
                        exists (select 1 from bank_match_statement_lines ml
                                  join bank_matches m on m.id = ml.match_id and m.tenant_id = ml.tenant_id and m.status = 'CONFIRMED'
                                 where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id and not ml.released) as booked
                 from bank_statement_lines l
-                where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date in (:d) and l.copy_proven_by = :w
-                  and l.lookalike_kept
+                where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date in (:d) and l.id in (:ids)
+                  and not exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                    and s.import_id = :w)
                   and not exists (select 1 from bank_statement_line_sources s
                                     join bank_statement_imports x on x.id = s.import_id and x.tenant_id = s.tenant_id
                                    where s.line_id = l.id and s.tenant_id = l.tenant_id
@@ -1550,8 +1556,12 @@ public class BankStatementImportService {
             throw BankRecRefusal.refuse("deleteNotOffered", "The reconciliation check does not offer deleting this import "
                     + "on the word of that statement; delete it without it, or follow the check as it reads now");
         }
+        // A copy in a confirmed match stays until its match is undone (the check's text for its day says so
+        // first); the others go now. The button is pressed for one day's step, and the server finds every
+        // offer naming this import on the statement's word, so another day's booked copy must not block it.
         long booked = shown.stream().filter(m -> Boolean.TRUE.equals(m.get("booked"))).count();
-        if (booked > 0) {
+        shown = shown.stream().filter(m -> !Boolean.TRUE.equals(m.get("booked"))).toList();
+        if (shown.isEmpty()) {
             throw BankRecRefusal.refuse("copiesBooked", booked + " line(s) the statement shows as copies are in confirmed "
                     + "matches; undo those matches first, reversing the entries the booking created, then use this step again",
                     "count", booked);
@@ -1562,6 +1572,10 @@ public class BankStatementImportService {
         }
         String text = offers.stream().map(BankReconciliationService.DeleteOffer::text)
                 .collect(java.util.stream.Collectors.joining(" | "));
+        jdbc.update("""
+                update bank_statement_lines set copy_proven_by = :w, lookalike_kept = true
+                where tenant_id = :t and bank_account_id = :b and id in (:shown)""",
+                new MapSqlParameterSource(p.getValues()).addValue("shown", shown.stream().map(m -> (UUID) m.get("id")).toList()));
         removeCopies(t, imp.getBankAccountId(), shown.stream().map(m -> (String) m.get("line_hash")).toList(),
                 "shown as a copy by the statement named as proof and removed on the user's word, from the reconciliation "
                         + "check's own step (pressed for " + imp.getFileName() + "), that it is the bank's current one; "

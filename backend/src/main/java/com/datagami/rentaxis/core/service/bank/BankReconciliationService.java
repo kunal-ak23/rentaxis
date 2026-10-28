@@ -1148,7 +1148,7 @@ public class BankReconciliationService {
      */
     record KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked, String whole,
                       List<String> others, List<String> othersBooked, List<UUID> holderIds, UUID proofId, UUID wholeId,
-                      List<UUID> otherIds, boolean legacy, LocalDate lockedThrough) {
+                      List<UUID> otherIds, boolean legacy, LocalDate lockedThrough, List<UUID> shownIds) {
         KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked) {
             this(holders, proof, proven, booked, null, List.of(), List.of(), new ArrayList<>(), null, null, List.of());
         }
@@ -1156,7 +1156,8 @@ public class BankReconciliationService {
         KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked, String whole,
                    List<String> others, List<String> othersBooked, List<UUID> holderIds, UUID proofId, UUID wholeId,
                    List<UUID> otherIds) {
-            this(holders, proof, proven, booked, whole, others, othersBooked, holderIds, proofId, wholeId, otherIds, false, null);
+            this(holders, proof, proven, booked, whole, others, othersBooked, holderIds, proofId, wholeId, otherIds, false, null,
+                    List.of());
         }
 
         /**
@@ -1165,7 +1166,7 @@ public class BankReconciliationService {
          */
         static KeptCopies legacyDay() {
             return new KeptCopies(List.of(), null, List.of(), List.of(), null, List.of(), List.of(), List.of(), null, null,
-                    List.of(), true, null);
+                    List.of(), true, null, List.of());
         }
 
         /** #441 r6: the statement the check names as proof for deleting imports, and the imports it names. */
@@ -1237,21 +1238,22 @@ public class BankReconciliationService {
                     order by i.imported_at, i.id""", q, UUID.class);
             // Sim r26 S26-03: the step removes the copies every holder of which predates the statement; with
             // none such (a later import holds them too), it is no step: a newer whole-day export decides.
-            Integer removable = jdbc.queryForObject("""
-                    select count(*) from bank_statement_lines l
+            List<UUID> removable = jdbc.queryForList("""
+                    select l.id from bank_statement_lines l
                     where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d and l.lookalike_kept and l.copy_proven_by = :w
                       and not exists (select 1 from bank_statement_line_sources s
                                         join bank_statement_imports x on x.id = s.import_id and x.tenant_id = s.tenant_id
                                        where s.line_id = l.id and s.tenant_id = l.tenant_id
                                          and x.imported_at >= (select w.imported_at from bank_statement_imports w
-                                                                where w.id = :w and w.tenant_id = :t))""", q, Integer.class);
-            if (removable == null || removable == 0 || before.isEmpty()) {
+                                                                where w.id = :w and w.tenant_id = :t))
+                    order by l.seq""", q, UUID.class);
+            if (removable.isEmpty() || before.isEmpty()) {
                 out.put(e.getKey(), new KeptCopies(k.holders(), null, List.of(), List.of()));
                 continue;
             }
             List<String> names = before.stream().map(holderNames::get).toList();
             out.put(e.getKey(), new KeptCopies(new ArrayList<>(names), k.proof(), k.proven(), k.booked(), null, List.of(), List.of(),
-                    new ArrayList<>(before), k.proofId(), null, List.of()));
+                    new ArrayList<>(before), k.proofId(), null, List.of(), false, null, removable));
         }
         // Sim r26 S26-01: an unproven day holding twins code from before #441 kept with no marker (changeset
         // 183 set lookalike_kept = false on every existing row): two lines of the day with the same amount and
@@ -1270,7 +1272,7 @@ public class BankReconciliationService {
                                         join bank_statement_line_sources c on c.import_id = a.import_id and c.tenant_id = a.tenant_id
                                        where a.line_id = u.id and a.tenant_id = u.tenant_id and c.line_id = s.id)""",
                     new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", rest), LocalDate.class)
-                    .forEach(d -> out.put(d, KeptCopies.legacyDay()));
+                    .forEach(d -> out.put(d, legacyProof(t, b, d).orElseGet(KeptCopies::legacyDay)));
         }
         // #441 review r3: a statement holding the day whole imported after the kept lines, which
         // showed none of them as a copy (it holds them, or the day differs elsewhere): the day is
@@ -1352,9 +1354,88 @@ public class BankReconciliationService {
                     .stream().findFirst().orElse(null);
             KeptCopies k = e.getValue();
             out.put(e.getKey(), new KeptCopies(k.holders(), null, k.proven(), k.booked(), (String) whole.get(0).get("file_name"),
-                    others, othersBooked, k.holderIds(), null, w, otherIds, false, lockedThrough));
+                    others, othersBooked, k.holderIds(), null, w, otherIds, false, lockedThrough, List.of()));
         }
         return out;
+    }
+
+    /**
+     * Sim r26 S26-01: on a day holding unmarked (pre-#441) twins, the copies a statement already imported shows
+     * — the latest import holding the day whole — on exactly the rules an import uses
+     * ({@link BankStatementImportService#legacyLookalikes}): every other line of the day is one of its lines,
+     * and each line it does not hold has one it does hold of the same amount and narration at another balance,
+     * no import holding both. Needed where that statement was imported before this check could read it (an
+     * import refuses the same file twice). Every import holding such a copy must predate the statement (#441 r7).
+     */
+    private Optional<KeptCopies> legacyProof(UUID t, UUID b, LocalDate d) {
+        MapSqlParameterSource q = new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", d);
+        List<Map<String, Object>> whole = jdbc.queryForList("""
+                select w.id, w.file_name, w.imported_at from bank_statement_imports w
+                where w.tenant_id = :t and w.bank_account_id = :b and w.first_date < :d and w.last_date > :d
+                order by w.imported_at desc, w.id limit 1""", q);
+        if (whole.isEmpty()) return Optional.empty();
+        UUID w = (UUID) whole.get(0).get("id");
+        q.addValue("w", w);
+        Map<UUID, BankStatementImportService.StoredLine> lines = new LinkedHashMap<>();
+        Map<UUID, String> label = new HashMap<>();
+        Map<UUID, Boolean> booked = new HashMap<>();
+        jdbc.query("""
+                select l.id, l.line_hash, l.description, l.amount, l.running_balance, l.lookalike_kept,
+                       exists (select 1 from bank_match_statement_lines ml
+                                 join bank_matches m on m.id = ml.match_id and m.tenant_id = ml.tenant_id
+                                where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id and not ml.released
+                                  and m.status = 'CONFIRMED') as booked
+                from bank_statement_lines l
+                where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d order by l.seq""", q, rs -> {
+            UUID id = rs.getObject("id", UUID.class);
+            lines.put(id, new BankStatementImportService.StoredLine(rs.getString("line_hash"), rs.getBigDecimal("amount"),
+                    rs.getString("description"), rs.getBigDecimal("running_balance"), null, null, rs.getBoolean("lookalike_kept")));
+            label.put(id, rs.getString("description") + " " + StatementValues.money(rs.getBigDecimal("amount").abs()) + " at "
+                    + StatementValues.money(rs.getBigDecimal("running_balance")));
+            booked.put(id, rs.getBoolean("booked"));
+        });
+        Map<String, Set<UUID>> sources = new HashMap<>();
+        Map<UUID, String> holderName = new LinkedHashMap<>();
+        Map<UUID, Boolean> beforeW = new HashMap<>();
+        jdbc.query("""
+                select l.line_hash, i.id, i.file_name, i.first_date, i.last_date,
+                       i.imported_at < (select x.imported_at from bank_statement_imports x where x.id = :w and x.tenant_id = :t) as before_w
+                from bank_statement_lines l
+                join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
+                join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
+                where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d
+                order by i.imported_at, i.id""", q, rs -> {
+            UUID i = rs.getObject("id", UUID.class);
+            sources.computeIfAbsent(rs.getString("line_hash"), k -> new HashSet<>()).add(i);
+            holderName.putIfAbsent(i, rs.getString("file_name") + " (" + rs.getObject("first_date", LocalDate.class).format(DMY)
+                    + "–" + rs.getObject("last_date", LocalDate.class).format(DMY) + ")");
+            beforeW.put(i, rs.getBoolean("before_w"));
+        });
+        Set<String> held = new HashSet<>();
+        sources.forEach((h, src) -> { if (src.contains(w)) held.add(h); });
+        // Sources before W: W itself is not one of a copy's (it does not hold it).
+        Map<String, Set<UUID>> others = new HashMap<>();
+        sources.forEach((h, src) -> { Set<UUID> o = new HashSet<>(src); o.remove(w); others.put(h, o); });
+        List<BankStatementImportService.StoredLine> have = new ArrayList<>(lines.values());
+        Set<String> copies = BankStatementImportService.legacyLookalikes(have, held, others);
+        if (copies.isEmpty()) return Optional.empty();
+        boolean othersHeld = have.stream().filter(l -> !copies.contains(l.hash())).allMatch(l -> held.contains(l.hash()));
+        if (!othersHeld) return Optional.empty();
+        List<UUID> shown = new ArrayList<>();
+        List<String> proven = new ArrayList<>(), bookedLines = new ArrayList<>();
+        List<UUID> holderIds = new ArrayList<>();
+        for (Map.Entry<UUID, BankStatementImportService.StoredLine> e : lines.entrySet()) {
+            if (!copies.contains(e.getValue().hash())) continue;
+            Set<UUID> src = sources.getOrDefault(e.getValue().hash(), Set.of());
+            if (src.isEmpty() || !src.stream().allMatch(i -> Boolean.TRUE.equals(beforeW.get(i)))) return Optional.empty();
+            shown.add(e.getKey());
+            proven.add(label.get(e.getKey()));
+            if (Boolean.TRUE.equals(booked.get(e.getKey()))) bookedLines.add(label.get(e.getKey()));
+            holderName.keySet().stream().filter(src::contains).filter(i -> !holderIds.contains(i)).forEach(holderIds::add);
+        }
+        List<String> holders = holderIds.stream().map(holderName::get).toList();
+        return Optional.of(new KeptCopies(new ArrayList<>(holders), (String) whole.get(0).get("file_name"), proven, bookedLines,
+                null, List.of(), List.of(), holderIds, w, null, List.of(), true, null, shown));
     }
 
     /** #441 r6: the page's view of the deletes the check offers this period (file names for the buttons). */
@@ -1376,7 +1457,7 @@ public class BankReconciliationService {
     }
 
     /** #441 r6: a delete the check offers: on {@code day}, deleting {@code imports} on the word of {@code proof}. */
-    public record DeleteOffer(LocalDate day, UUID proof, List<UUID> imports, String text, boolean copies) { }
+    public record DeleteOffer(LocalDate day, UUID proof, List<UUID> imports, String text, boolean copies, List<UUID> shown) { }
 
     /**
      * #441 r6: the deletes the check currently offers for the account's unproven days that hold a kept
@@ -1396,7 +1477,7 @@ public class BankReconciliationService {
         keptLookalikes(t, bankAccountId, unproven).forEach((d, k) -> {
             if (k.offerProof() == null || k.offerImports().isEmpty()) return;
             out.add(new DeleteOffer(d, k.offerProof(), List.copyOf(k.offerImports()),
-                    copySteps(d, k, remedy(t, bankAccountId, d, d)), k.proofId() != null));
+                    copySteps(d, k, remedy(t, bankAccountId, d, d)), k.proofId() != null, List.copyOf(k.shownIds())));
         });
         return out;
     }

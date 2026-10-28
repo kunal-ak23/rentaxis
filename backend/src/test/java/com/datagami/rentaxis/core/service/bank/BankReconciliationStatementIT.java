@@ -3235,6 +3235,63 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
     }
 
     /**
+     * Sim r26 S26-01, the upgrade path: the whole-day statement exported now was already imported on main
+     * (which showed nothing), and importing the same file again is refused. The check now shows the copies
+     * that statement shows, read from what it holds, on the same rules; the step removes them.
+     */
+    @Test
+    void s2601aWholeDayStatementImportedBeforeTheFixStillShowsTheLegacyCopies() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult orig = importNamed("orig.csv", """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,005.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,015.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,020.00"
+                """);
+        importNamed("cut.csv", """
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,003.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,013.00"
+                """);
+        String now = HEAD + """
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,010.00"
+                10/09/2026,10/09/2026,CHARGE,,2.00,,"1,008.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,003.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,013.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,018.00"
+                13/09/2026,13/09/2026,Closing balance,,,,"1,018.00"
+                """;
+        // The twins as the pre-#441 code left them (183's backfill), then now.csv imported by main.
+        jdbc.update("update bank_statement_lines set lookalike_kept = false where bank_account_id = ?", ei.getId());
+        imports.importFile(ei.getId(), "now.csv", now.getBytes(StandardCharsets.UTF_8), null, false);
+        // As main left it: main's import of now.csv marked nothing.
+        jdbc.update("update bank_statement_lines set lookalike_kept = false, copy_proven_by = null where bank_account_id = ?", ei.getId());
+        assertThat(imports.importFile(ei.getId(), "now-again.csv", now.getBytes(StandardCharsets.UTF_8), null, false).status())
+                .isEqualTo("ALREADY_IMPORTED");
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1018.00"))).id();
+        LocalDate sep11 = LocalDate.of(2026, 9, 11);
+        paperDayTotalsExcept(id, sep11);
+        BankRecDTOs.Reconciliation r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(sep11, new BigDecimal("5.00"), new BigDecimal("10.00")))));
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 11/09/2026 the statement now.csv held the day whole and shows")
+                .contains("FEE 5.00 at 1,005.00").contains("CREDIT R 10.00 at 1,015.00")
+                .contains("remove them with this step's button for orig.csv");
+        assertThat(r.deleteOffers()).singleElement().satisfies(o -> assertThat(o.copies()).isTrue());
+        deleteAsOffered(orig.importId(), id);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_removed_lines where bank_account_id = ? "
+                + "and proof_file_name = 'now.csv'", Integer.class, ei.getId())).isEqualTo(2);
+        assertThat(storedLines()).containsExactly("2026-09-10 CREDIT X 1010.00", "2026-09-10 CHARGE 1008.00",
+                "2026-09-11 FEE 1003.00", "2026-09-11 CREDIT R 1013.00", "2026-09-12 CREDIT Y 1018.00");
+        r = paperDayTotalsExcept(id);
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
+        bookEveryLine();
+        r = recs.get(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
      * Sim r26 S26-02 (P2) and S26-03: the copy step names an import that also brought a line of the
      * finalized August (and other booked genuine lines). Deleting it was refused for the finalized
      * period and nothing said to reopen. The step now removes only the copies the statement shows —
