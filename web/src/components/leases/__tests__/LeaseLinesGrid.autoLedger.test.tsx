@@ -4,7 +4,8 @@ import { useState } from "react";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 import LeaseLinesGrid from "../LeaseLinesGrid";
-import { blankLine, type LineRow } from "../leaseMath";
+import { blankLine, toRow, type LineRow } from "../leaseMath";
+import type { LeaseLine } from "@/lib/api/leasing";
 import type { ChargeType } from "@/lib/api/leasing";
 
 /**
@@ -103,6 +104,33 @@ describe("the Ledger column fills itself in", () => {
         fireEvent.change(screen.getByTestId("lease-line-type-0"), { target: { value: "ct-dep" } });
         expect(ledger(0)).toBe("acc-by-hand");
         expect(latest()[0].creditAccountId).toBe("acc-by-hand");
+    });
+
+    // Review of #452, I3: amending a posted contract — a line's own account is not lost by
+    // changing its Particulars and changing it back.
+    it("gives a saved line its own account back when its Particulars returns to the saved one", async () => {
+        api.lineAccounts.mockResolvedValue(SUGGESTED);
+        const saved = toRow({ id: "l1", seqNo: 1, chargeTypeId: "ct-rent", grossAmount: 60000, discountAmount: 0,
+            vatApplicable: false, narration: null, creditAccountId: "acc-custom", creditAccountCode: "210199",
+            creditAccountName: "Advance Rent - legacy" } as unknown as LeaseLine, 0);
+        render(<Harness initial={[saved]} />);
+        await waitFor(() => expect(api.lineAccounts).toHaveBeenCalled());
+        fireEvent.change(screen.getByTestId("lease-line-type-0"), { target: { value: "ct-dep" } });
+        await waitFor(() => expect(ledger(0)).toBe("acc-sd"));
+        fireEvent.change(screen.getByTestId("lease-line-type-0"), { target: { value: "ct-rent" } });
+        expect(ledger(0)).toBe("acc-custom");
+        expect(latest()[0]).toMatchObject({ creditAccountId: "acc-custom", creditAccountName: "Advance Rent - legacy" });
+    });
+
+    it("drops a hand-picked account the new Particulars cannot take", async () => {
+        api.lineAccounts.mockResolvedValue(SUGGESTED);
+        render(<Harness initial={[{ ...blankLine(0), chargeTypeId: "ct-rent" }]} />);
+        await waitFor(() => expect(ledger(0)).toBe("acc-rent-income"));
+        fireEvent.click(screen.getByTestId("pick-by-hand"));
+        // Rent credits a liability, a fee an income account.
+        fireEvent.change(screen.getByTestId("lease-line-type-0"), { target: { value: "ct-fee" } });
+        expect(latest()[0].creditAccountId).toBeNull();
+        expect(ledger(0)).toBe("");
     });
 
     it("leaves a type with nothing mapped empty, and still works when the lookup fails", async () => {

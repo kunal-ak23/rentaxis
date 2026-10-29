@@ -147,9 +147,18 @@ type Props = {
  * The kept row's kind is what the rows were when they agree, else MIXED, which
  * `InstalmentVat` already reads as "carries the deposit and fee money no row of
  * its own collects" — exactly what a rent cheque with the deposit merged in is.
- * A row that never said what it was leaves the merged one unsaid too. VAT the
- * server has still to work out on any of them leaves the sum to the server.
+ * A kind-less row in the merge makes it MIXED too, since the server reads a null
+ * kind as "keep the row's own"; only rows that all never said stay unsaid. VAT
+ * the server has still to work out on any of them leaves the sum to the server.
+ * The joined narration is cut to the 255 characters a cheque holds.
  */
+/** `cheques.narration` is varchar(255): a longer join would be refused by the save. */
+const NARRATION_MAX = 255;
+function fitNarration(text: string): string | null {
+    if (!text) return null;
+    return text.length <= NARRATION_MAX ? text : `${text.slice(0, NARRATION_MAX - 1)}…`;
+}
+
 export function mergeCheques(cheques: Cheque[], ids: ReadonlySet<string>): Cheque[] {
     const picked = cheques.filter(c => ids.has(c.id));
     if (picked.length < 2) return cheques;
@@ -162,8 +171,8 @@ export function mergeCheques(cheques: Cheque[], ids: ReadonlySet<string>): Chequ
         amount: picked.reduce((t, c) => round2(t + (c.amount || 0)), 0),
         vatAmount: sum(c => c.vatAmount),
         vatTaxableAmount: sum(c => c.vatTaxableAmount),
-        narration: picked.map(c => c.narration?.trim()).filter(Boolean).join(" | ") || null,
-        rowKind: kinds.has(null) ? null : kinds.size === 1 ? keep.rowKind : "MIXED",
+        narration: fitNarration(picked.map(c => c.narration?.trim()).filter(Boolean).join(" | ")),
+        rowKind: kinds.size === 1 ? keep.rowKind ?? null : "MIXED",
     };
     const dropped = new Set(rest.map(c => c.id));
     return cheques
@@ -241,21 +250,6 @@ export default function ChequeGrid({
         : defaultDistribution ?? "LAST_LARGER";
     const [numbersOpen, setNumbersOpen] = useState(false);
     const [startingNumber, setStartingNumber] = useState("");
-    // The draft rows ticked for "Merge"; ids no longer on the grid (a regenerate) drop out.
-    const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-    const mergeable = (c: Cheque) => c.status === "DRAFT";
-    const ticked = cheques.filter(c => selected.has(c.id) && mergeable(c));
-    const toggle = (id: string) =>
-        setSelected(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-        });
-    const mergeTicked = () => {
-        onChange?.(mergeCheques(cheques, new Set(ticked.map(c => c.id))));
-        setSelected(new Set());
-    };
 
     // Tutorial 40: the footer compares the contract's own instalments with the contract
     // value — a replaced or cancelled row was superseded (its replacement is the live
@@ -287,6 +281,23 @@ export default function ChequeGrid({
     const gridFields: GridField[] = ["postingDate", "chequeNumber", "chequeDate", "payeeBank", "debitAccountId", "amount",
         ...(showVat ? (["vatAmount"] as GridField[]) : []), "narration", "mode"];
     const paste = usePasteReport();
+    // The draft rows ticked for "Merge"; ids no longer on the grid (a regenerate) drop out.
+    const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+    const mergeable = (c: Cheque) => c.status === "DRAFT";
+    const ticked = cheques.filter(c => selected.has(c.id) && mergeable(c));
+    const toggle = (id: string) =>
+        setSelected(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    const mergeTicked = () => {
+        onChange?.(mergeCheques(cheques, new Set(ticked.map(c => c.id))));
+        setSelected(new Set());
+        // The paste report names rows by position, which the merge just moved.
+        paste.dismiss();
+    };
     const modeLabel = (m: ChequeMode) => t(`mode.${m}`);
     // A new amount clears the row's VAT, so the server re-spreads it pro rata on save.
     const withValue = (row: Cheque, field: GridField, value: unknown): Cheque =>
@@ -534,7 +545,7 @@ export default function ChequeGrid({
 
             {gridKeys && <PasteReport report={paste.report} onDismiss={paste.dismiss} onAddRows={addPastedRows} testId="cheque-grid-paste-report" />}
             {gridKeys && cheques.length > 0 && (
-                <p className="px-4 py-1.5 text-[10.5px] text-muted border-b border-border" data-testid="cheque-grid-keys-hint">{tc("gridKeysHint")}</p>
+                <p className="px-4 py-1.5 text-[10.5px] text-muted border-b border-border" data-testid="cheque-grid-keys-hint">{tc("gridKeysHint")} · {t("mergeChequesHint")}</p>
             )}
             <div className="overflow-x-auto">
                 <table className="w-full min-w-[960px]" onKeyDown={gridKeys?.onKeyDown} onPaste={gridKeys?.onPaste}

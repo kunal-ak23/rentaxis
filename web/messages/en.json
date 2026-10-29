@@ -2501,7 +2501,7 @@
     "generateCheques": "Generate Cheques",
     "generateChequeNumbers": "Generate Cheque Numbers",
     "mergeCheques": "{count, plural, =0 {Merge cheques} =1 {Merge cheques} other {Merge # cheques}}",
-    "mergeChequesHint": "Tick two or more cheques to put them on one cheque. The top one keeps its date and number; the amounts are added together.",
+    "mergeChequesHint": "Tick two or more cheques and press Merge to put them on one cheque. The top one keeps its date and number; the amounts are added together.",
     "selectChequeToMerge": "Select cheque {row} to merge",
     "installments": "Installments",
     "firstDueDate": "First Due Date",

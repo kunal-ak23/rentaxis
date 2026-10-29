@@ -140,10 +140,12 @@ export default function LeaseLinesGrid({
     /**
      * Choosing a charge type carries its defaults onto the row: VAT from the
      * catalogue's `vatApplicableDefault` (for a RENT type, from the lease's
-     * `rentVat` flag when the caller passes one), and the account the server
-     * picks for the new type (`ledgerOf`) — so an account that came with the old
-     * type (a saved line's) is dropped. One the user chose by hand stays:
-     * overwriting it would silently undo a deliberate override.
+     * `rentVat` flag when the caller passes one), and its account:
+     * - one the user chose by hand stays while the new type can still take it
+     *   (overwriting it would silently undo a deliberate override);
+     * - back on a saved line's own type, the line's own account returns (review
+     *   of #452, I3 — an amendment must not move a posted line off it);
+     * - otherwise none, so the cell shows the server's pick for the new type (`ledgerOf`).
      */
     const pickType = (row: LineRow, chargeTypeId: string) => {
         const type = chargeTypes.find(c => c.id === chargeTypeId);
@@ -152,10 +154,18 @@ export default function LeaseLinesGrid({
             : type.behaviour === "RENT" && rentVat !== undefined
               ? rentVat
               : type.vatApplicableDefault;
-        patch(row.key, {
-            chargeTypeId, vatApplicable, vatTouched: false,
-            ...(row.accountTouched ? {} : { creditAccountId: null, creditAccountCode: null, creditAccountName: null, creditAccountNameAr: null }),
-        });
+        const fits = accountTypeFor(behaviourOf(row, chargeTypes)) === accountTypeFor(type?.behaviour ?? null);
+        const own = row.saved?.chargeTypeId === chargeTypeId ? row.saved : null;
+        const account: Partial<LineRow> = row.accountTouched && fits
+            ? {}
+            : {
+                creditAccountId: own?.creditAccountId ?? null,
+                creditAccountCode: own?.creditAccountCode ?? null,
+                creditAccountName: own?.creditAccountName ?? null,
+                creditAccountNameAr: own?.creditAccountNameAr ?? null,
+                accountTouched: false,
+            };
+        patch(row.key, { chargeTypeId, vatApplicable, vatTouched: false, ...account });
     };
 
     const addRow = () => {

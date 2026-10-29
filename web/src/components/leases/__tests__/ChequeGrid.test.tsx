@@ -393,9 +393,26 @@ describe("merging draft cheques", () => {
         expect(out[0].rowKind).toBe("MIXED");
     });
 
-    it("leaves the kind unsaid when a merged row has none", () => {
+    // Review of #452: the server reads a null kind as "keep the row's kind", so a rent row
+    // that took in a kind-less row would stay RENT and its VAT be spread as rent.
+    it("calls a merge that takes in a kind-less row MIXED", () => {
         const out = mergeCheques([rent1, { ...deposit, rowKind: null }], new Set(["c1", "c3"]));
+        expect(out[0].rowKind).toBe("MIXED");
+    });
+
+    it("leaves the kind unsaid when no merged row says it", () => {
+        const out = mergeCheques([{ ...rent1, rowKind: null }, { ...rent2, rowKind: null }], new Set(["c1", "c2"]));
         expect(out[0].rowKind).toBeNull();
+    });
+
+    it("keeps the merged narration within the 255 characters a cheque holds", () => {
+        const rows = Array.from({ length: 12 }, (_, i) =>
+            draft({ id: `m${i}`, seqNo: i + 1, amount: 5000, rowKind: "RENT", narration: `Rent - ${i + 1}th Installment of the term` }));
+        const out = mergeCheques(rows, new Set(rows.map(r => r.id)));
+        expect(out).toHaveLength(1);
+        expect(out[0].narration!.length).toBeLessThanOrEqual(255);
+        expect(out[0].narration).toMatch(/^Rent - 1th Installment of the term \| Rent - 2th/);
+        expect(out[0].narration!.endsWith("…")).toBe(true);
     });
 
     it("does nothing for fewer than two rows", () => {

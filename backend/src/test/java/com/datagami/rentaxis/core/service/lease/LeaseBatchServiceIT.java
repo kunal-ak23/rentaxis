@@ -204,9 +204,10 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
 
         for (int i = 0; i < viaBatch.size(); i++) {
             LeaseDTO hand = renewal.renew(byHand.get(i), single(singleChange, singleExtra));
-            // "Generate cheques" on the draft, four instalments as now (the fixtures carry no payment terms).
+            // "Generate cheques" on the draft, four instalments as now (the fixtures carry no payment terms),
+            // one-time charges on cheques of their own — the button's default since 2026-10-28.
             chequeGeneration.generate(hand.getId(), new com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest(
-                    4, null, null, null, null, null, null));
+                    4, null, null, null, null, false, null));
 
             UUID fromBatch = rows.get(i).renewalLeaseId();
             assertThat(fromBatch).isEqualTo(renewalOf(viaBatch.get(i)));
@@ -257,6 +258,12 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
     void aRenewalFeeIsChargedOnEveryRenewalAsOnTheSingleRenew() {
         assertRenewParity(new LeaseBatch.RentRule(LeaseBatch.RentRule.Mode.NONE, null, null), null, false,
                 List.of(line("RENEWAL_FEE", "1050")), "80000");
+        // Client request 2026-10-28 (review of #452, I4): the fee is a cheque of its own on each
+        // of the four renewals — two in bulk, two by hand — not added onto rent cheque 1.
+        assertThat(jdbc.queryForObject("""
+                select count(*) from cheques c join leases l on l.id = c.lease_id
+                where l.tenant_id = ? and l.renewed_from_lease_id is not null
+                  and c.row_kind = 'FEE' and c.amount = 1050""", Integer.class, f.tenantId())).isEqualTo(4);
     }
 
     @Test

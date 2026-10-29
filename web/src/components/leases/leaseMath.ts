@@ -79,6 +79,13 @@ export type LineRow = {
      * keeps the pick when the charge type changes. Client-only: never sent.
      */
     accountTouched?: boolean;
+    /**
+     * A persisted line's charge type and account as saved (review of #452, I3). When an
+     * edit brings the row back to that charge type, its own account comes back with it
+     * — an amendment must not move a posted line off an account the user never touched.
+     * Client-only: never sent.
+     */
+    saved?: Pick<LineRow, "chargeTypeId" | "creditAccountId" | "creditAccountCode" | "creditAccountName" | "creditAccountNameAr">;
 };
 
 export function blankLine(key: number): LineRow {
@@ -115,6 +122,13 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         rentFreeAmount: line.rentFreeAmount ?? 0,
         recognition: line.recognition ?? null,
         postedRecognition: line.postedRecognition ?? null,
+        saved: {
+            chargeTypeId: line.chargeTypeId,
+            creditAccountId: line.creditAccountId,
+            creditAccountCode: line.creditAccountCode,
+            creditAccountName: line.creditAccountName,
+            creditAccountNameAr: line.creditAccountNameAr ?? null,
+        },
     };
 }
 

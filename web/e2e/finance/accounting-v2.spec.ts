@@ -167,15 +167,14 @@ test.describe('Accounting v2 — a contract from draft to a balanced trial balan
         await expect(page.getByTestId('lease-status')).toHaveText(/draft/i, { timeout: 20_000 });
 
         // ── cut the grid ───────────────────────────────────────────────────────
-        // `foldDepositsAndFeesIntoFirst` is on by default, which hides the deposit
-        // inside cheque 1. Unfolded, the deposit is an instrument of its own — a
-        // row the register can deposit and clear separately, which is what the
-        // scenario below needs.
+        // "Separate cheque for one-time charges" is ticked by default (client request
+        // 2026-10-28), so the deposit is an instrument of its own — a row the register
+        // can deposit and clear separately, which is what the scenario below needs.
         await page.getByTestId('lease-tab-payments').click(); // the cheque grid lives in the Cheques tab (spec §5)
         await page.getByTestId('cheque-grid-generate').click();
         const genForm = page.getByTestId('cheque-generate-form');
         await genForm.getByLabel('Installments', { exact: true }).fill('2');
-        await genForm.getByRole('checkbox').uncheck();
+        await expect(genForm.getByTestId('cheque-generate-separate-one-time')).toBeChecked();
         await genForm.getByTestId('cheque-generate-confirm').click();
 
         const rows = page.locator('[data-testid^="cheque-row-"]');
