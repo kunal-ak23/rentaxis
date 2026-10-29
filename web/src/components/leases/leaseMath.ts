@@ -73,6 +73,12 @@ export type LineRow = {
      * charge type clears it. Client-only: never sent, never read back.
      */
     vatTouched?: boolean;
+    /**
+     * The operator picked this row's Ledger by hand. An untouched row's account
+     * follows its charge type (the server's choice for the property); a touched one
+     * keeps the pick when the charge type changes. Client-only: never sent.
+     */
+    accountTouched?: boolean;
 };
 
 export function blankLine(key: number): LineRow {

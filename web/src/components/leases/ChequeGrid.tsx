@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Camera, CheckCircle2, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
+import { Camera, CheckCircle2, Combine, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
 import ChequeScanLink from "@/components/cheques/ChequeScanLink";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
@@ -78,7 +78,8 @@ export function blankGenerateForm(
         distribution,
         payeeBank: "",
         debitAccountId: null,
-        foldDepositsAndFeesIntoFirst: true,
+        // Client request (2026-10-28): the deposit and each fee on a cheque of their own.
+        foldDepositsAndFeesIntoFirst: false,
         mode: "PDC",
     };
 }
@@ -136,6 +137,39 @@ type Props = {
     /** Shown above the grid when the backend dropped the draft rows. */
     notice?: string | null;
 };
+
+/**
+ * Client request (2026-10-28): put the ticked draft rows on one cheque. The
+ * topmost ticked row stays — its dates, number, bank, account and mode — and
+ * takes the others' amount, VAT and narration; they leave the grid. Nothing is
+ * retyped, so the grid's total is unchanged.
+ *
+ * The kept row's kind is what the rows were when they agree, else MIXED, which
+ * `InstalmentVat` already reads as "carries the deposit and fee money no row of
+ * its own collects" — exactly what a rent cheque with the deposit merged in is.
+ * A row that never said what it was leaves the merged one unsaid too. VAT the
+ * server has still to work out on any of them leaves the sum to the server.
+ */
+export function mergeCheques(cheques: Cheque[], ids: ReadonlySet<string>): Cheque[] {
+    const picked = cheques.filter(c => ids.has(c.id));
+    if (picked.length < 2) return cheques;
+    const [keep, ...rest] = picked;
+    const sum = (f: (c: Cheque) => number | null | undefined) =>
+        picked.some(c => f(c) == null) ? null : picked.reduce((t, c) => round2(t + (f(c) ?? 0)), 0);
+    const kinds = new Set(picked.map(c => c.rowKind ?? null));
+    const merged: Cheque = {
+        ...keep,
+        amount: picked.reduce((t, c) => round2(t + (c.amount || 0)), 0),
+        vatAmount: sum(c => c.vatAmount),
+        vatTaxableAmount: sum(c => c.vatTaxableAmount),
+        narration: picked.map(c => c.narration?.trim()).filter(Boolean).join(" | ") || null,
+        rowKind: kinds.has(null) ? null : kinds.size === 1 ? keep.rowKind : "MIXED",
+    };
+    const dropped = new Set(rest.map(c => c.id));
+    return cheques
+        .filter(c => !dropped.has(c.id))
+        .map((c, i) => ({ ...(c.id === keep.id ? merged : c), seqNo: i + 1 }));
+}
 
 /** Ids of rows added on the grid before they are saved. */
 export const NEW_ROW_PREFIX = "new-";
@@ -207,6 +241,21 @@ export default function ChequeGrid({
         : defaultDistribution ?? "LAST_LARGER";
     const [numbersOpen, setNumbersOpen] = useState(false);
     const [startingNumber, setStartingNumber] = useState("");
+    // The draft rows ticked for "Merge"; ids no longer on the grid (a regenerate) drop out.
+    const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+    const mergeable = (c: Cheque) => c.status === "DRAFT";
+    const ticked = cheques.filter(c => selected.has(c.id) && mergeable(c));
+    const toggle = (id: string) =>
+        setSelected(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    const mergeTicked = () => {
+        onChange?.(mergeCheques(cheques, new Set(ticked.map(c => c.id))));
+        setSelected(new Set());
+    };
 
     // Tutorial 40: the footer compares the contract's own instalments with the contract
     // value — a replaced or cancelled row was superseded (its replacement is the live
@@ -313,6 +362,16 @@ export default function ChequeGrid({
                         >
                             <Hash size={12} /> {t("generateChequeNumbers")}
                         </button>
+                        <button
+                            type="button"
+                            data-testid="cheque-grid-merge"
+                            disabled={busy || ticked.length < 2}
+                            title={t("mergeChequesHint")}
+                            onClick={mergeTicked}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
+                        >
+                            <Combine size={12} /> {t("mergeCheques", { count: ticked.length })}
+                        </button>
                     </div>
                 )}
             </div>
@@ -410,9 +469,10 @@ export default function ChequeGrid({
                         </select>
                     </Labelled>
                     <label className="md:col-span-2 flex items-center gap-2 text-[11px] text-foreground">
-                        {/* Owner request (2026-09-29): one-time charges ride on cheque 1 by
-                            default; this opts out (the generator's one fold flag, which the
-                            deposit follows too, as it always has). */}
+                        {/* Client request (2026-10-28, reversing the owner's 2026-09-29 default):
+                            the deposit and each fee get a cheque of their own; unticking puts them
+                            on cheque 1 (the generator's one fold flag, which the deposit follows
+                            too, as it always has). */}
                         <input
                             type="checkbox"
                             data-testid="cheque-generate-separate-one-time"
@@ -498,7 +558,22 @@ export default function ChequeGrid({
                     <tbody>
                         {cheques.map((c, i) => (
                             <tr key={c.id} data-testid={`cheque-row-${i}`} data-grid-row={i} className="border-t border-border hover:bg-input/20">
-                                <td className={`${td} text-muted tabular-nums`}>{c.seqNo ?? i + 1}</td>
+                                <td className={`${td} text-muted tabular-nums`}>
+                                    {editable && mergeable(c) ? (
+                                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                data-testid={`cheque-select-${i}`}
+                                                aria-label={t("selectChequeToMerge", { row: i + 1 })}
+                                                checked={selected.has(c.id)}
+                                                onChange={() => toggle(c.id)}
+                                            />
+                                            {c.seqNo ?? i + 1}
+                                        </label>
+                                    ) : (
+                                        c.seqNo ?? i + 1
+                                    )}
+                                </td>
                                 <td className={`${td}${flag(i, "postingDate")}`} data-grid-field="postingDate" data-paste-invalid={paste.isBad(i, "postingDate") || undefined}>
                                     {editable ? (
                                         <input

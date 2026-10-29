@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseEventDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
+import com.datagami.rentaxis.api.dto.lease.LineAccountSuggestionDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.RowLockedException;
@@ -1559,20 +1560,44 @@ public class LeaseService {
             }
             return account;
         }
+        return defaultCreditAccount(type, propertyId);
+    }
+
+    /**
+     * The account a line of {@code type} is credited to on {@code propertyId} when the
+     * user picks none. A null account is deliberate: see applyLines' note. The line
+     * stays unmapped and the posting guard reports it.
+     */
+    private Account defaultCreditAccount(ChargeType type, UUID propertyId) {
         // resolveOrNull, not resolve-in-a-try/catch: AccountResolver is proxied, so
         // an UnmappedAccountRoleException thrown out of resolve() marks this
         // transaction rollback-only on its way through the interceptor, and the
         // catch block here would not undo that. The draft would then "succeed" and
         // the commit would fail with "Transaction silently rolled back".
-        //
-        // A null account is deliberate: see applyLines' note. The line stays
-        // unmapped and the posting guard reports it.
-        if (passThrough) {
+        if (type.getBehaviour() == ChargeBehaviour.FEE
+                && type.getRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.PASS_THROUGH) {
             // F14-18: the property's Utilities expense leaf — the same account a
             // settlement's utility arrears pass through (F14-37).
             return accountRepository.findUtilitiesLeaves(propertyId).stream().findFirst().orElse(null);
         }
         return accountResolver.resolveOrNull(type.getRole(), propertyId);
+    }
+
+    /**
+     * Client request (2026-10-28): per active charge type, the account
+     * {@link #defaultCreditAccount} gives a line on this property — so the New
+     * Contract grid fills its Ledger column as soon as the Particulars is chosen,
+     * rather than after the draft is saved. A type nothing is mapped for is left out.
+     * The caller checks the property is the tenant's and within the caller's scope.
+     */
+    @Transactional(readOnly = true)
+    public List<LineAccountSuggestionDTO> lineAccountSuggestions(UUID propertyId) {
+        List<LineAccountSuggestionDTO> out = new java.util.ArrayList<>();
+        for (ChargeType type : chargeTypeRepository.findByActiveTrueOrderByDisplayOrderAscCodeAsc()) {
+            Account account = defaultCreditAccount(type, propertyId);
+            if (account != null) out.add(new LineAccountSuggestionDTO(type.getId(), account.getId()));
+        }
+        return out;
     }
 
     /**

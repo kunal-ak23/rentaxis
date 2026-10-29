@@ -501,16 +501,15 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     /**
      * Review of R4-B M8: whether one-time charges ride on cheque 1 — the user's
      * "Separate cheque for one-time charges" choice on the last Generate; before one,
-     * what the saved rows show (a FEE or DEPOSIT row of its own means separate); else
-     * folded, the Cheques step's default.
+     * what the saved rows show (a MIXED row means they rode on a rent cheque); else
+     * separate, the Cheques step's default since the client's request of 2026-10-28.
      */
-    const foldOneTime = foldChoice
-        ?? !cheques.some(c => c.rowKind === "FEE" || c.rowKind === "DEPOSIT");
+    const foldOneTime = foldChoice ?? cheques.some(c => c.rowKind === "MIXED");
     /**
      * Owner requests (2026-09-29): what "Generate cheques" is asked for — the Terms
      * step's count (as the generator counts it), first due date (the start date when
-     * empty) and distribution, with one-time charges folded into cheque 1 unless the
-     * user chose a separate cheque. The Review step's suggestion and "Use this
+     * empty) and distribution, with one-time charges on cheques of their own unless
+     * the user asked for them on cheque 1. The Review step's suggestion and "Use this
      * schedule" use exactly this.
      */
     const chequeRequest = (): GenerateChequesRequest => ({

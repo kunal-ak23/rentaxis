@@ -1,12 +1,12 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Plus, Trash2 } from "lucide-react";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { fmtAmount } from "@/lib/api/ledger";
-import type { ChargeBehaviour, ChargeType } from "@/lib/api/leasing";
+import { leaseApi, type ChargeBehaviour, type ChargeType } from "@/lib/api/leasing";
 import {
     accountTypeFor,
     behaviourOf,
@@ -110,17 +110,40 @@ export default function LeaseLinesGrid({
 
     const emit = (rows: LineRow[]) => onChange?.(rows);
 
+    /**
+     * Client request (2026-10-28): per charge type, the account the server credits a
+     * line on this property to when none is picked. The Ledger cell shows it the
+     * moment the Particulars is chosen instead of an empty box that reads as one to
+     * type into. Shown, not written: the line still goes to the server without an
+     * account and the server resolves the same one. A failed lookup shows nothing,
+     * as before.
+     */
+    const [loaded, setLoaded] = useState<{ propertyId: string; byType: Record<string, string> } | null>(null);
+    useEffect(() => {
+        if (!editable || !propertyId) return;
+        let live = true;
+        leaseApi.lineAccounts(propertyId)
+            .then(rows => {
+                if (live) setLoaded({ propertyId, byType: Object.fromEntries(rows.map(r => [r.chargeTypeId, r.accountId])) });
+            })
+            .catch(() => { if (live) setLoaded(null); });
+        return () => { live = false; };
+    }, [editable, propertyId]);
+    // Only this property's answer: a unit picked from another building must not show the last one's.
+    const suggested: Record<string, string> = editable && loaded && loaded.propertyId === propertyId ? loaded.byType : {};
+    const ledgerOf = (row: LineRow) =>
+        row.creditAccountId ?? (row.chargeTypeId ? suggested[row.chargeTypeId] ?? null : null);
+
     const patch = (key: number, next: Partial<LineRow>) =>
         emit(lines.map(l => (l.key === key ? { ...l, ...next } : l)));
 
     /**
      * Choosing a charge type carries its defaults onto the row: VAT from the
      * catalogue's `vatApplicableDefault` (for a RENT type, from the lease's
-     * `rentVat` flag when the caller passes one), and — on a row that has not been
-     * pointed at an account yet — nothing, because the server fills the
-     * account in from the property's role mapping when the draft is saved and
-     * hands it back on the line. Overwriting an account the user chose by hand
-     * would silently undo a deliberate override.
+     * `rentVat` flag when the caller passes one), and the account the server
+     * picks for the new type (`ledgerOf`) — so an account that came with the old
+     * type (a saved line's) is dropped. One the user chose by hand stays:
+     * overwriting it would silently undo a deliberate override.
      */
     const pickType = (row: LineRow, chargeTypeId: string) => {
         const type = chargeTypes.find(c => c.id === chargeTypeId);
@@ -129,7 +152,10 @@ export default function LeaseLinesGrid({
             : type.behaviour === "RENT" && rentVat !== undefined
               ? rentVat
               : type.vatApplicableDefault;
-        patch(row.key, { chargeTypeId, vatApplicable, vatTouched: false });
+        patch(row.key, {
+            chargeTypeId, vatApplicable, vatTouched: false,
+            ...(row.accountTouched ? {} : { creditAccountId: null, creditAccountCode: null, creditAccountName: null, creditAccountNameAr: null }),
+        });
     };
 
     const addRow = () => {
@@ -204,11 +230,12 @@ export default function LeaseLinesGrid({
                                             </span>
                                         )}
                                     </td>
-                                    <td className={td}>
+                                    {/* Wide enough to read the account it fills in (client request 2026-10-28). */}
+                                    <td className={editable ? `${td} min-w-[12rem]` : td}>
                                         {editable ? (
                                             <AccountPicker
-                                                value={row.creditAccountId}
-                                                onChange={id => patch(row.key, { creditAccountId: id })}
+                                                value={ledgerOf(row)}
+                                                onChange={id => patch(row.key, { creditAccountId: id, accountTouched: true })}
                                                 accountType={accountTypeFor(behaviour)}
                                                 leafOnly
                                                 propertyId={propertyId}

@@ -128,7 +128,7 @@ describe("wizard Review: monthly rent and cheques", () => {
         expect(screen.getByTestId("review-suggested")).toHaveTextContent(en.Leasing.reviewFirstDueDefaulted);
         // Asked of the generator with the Terms step's count, the start date as first due date.
         expect(api.previewCheques).toHaveBeenCalledWith("L1", {
-            installments: 12, firstDueDate: "2026-09-09", distribution: "LAST_LARGER", foldDepositsAndFeesIntoFirst: true,
+            installments: 12, firstDueDate: "2026-09-09", distribution: "LAST_LARGER", foldDepositsAndFeesIntoFirst: false,
         });
 
         api.generateCheques.mockResolvedValue({ cheques: [cheque(1)], version: 2 });

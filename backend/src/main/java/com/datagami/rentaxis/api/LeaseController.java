@@ -83,6 +83,8 @@ public class LeaseController {
     private final com.datagami.rentaxis.core.service.lease.LeaseBatchService leaseBatchService;
     private final com.datagami.rentaxis.core.service.renewal.RenewalMarkService renewalMarkService;
     private final com.datagami.rentaxis.core.service.lease.LeaseChainService leaseChainService;
+    private final com.datagami.rentaxis.core.service.ledger.PropertyAccountService propertyAccountService;
+    private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
 
     /**
      * ACCOUNTANT on every read below.
@@ -242,6 +244,22 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseChainLinkDTO>> getLeaseChain(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseChainService.chain(id));
+    }
+
+    /**
+     * Client request (2026-10-28): the Ledger each charge type's line takes on this
+     * property when the user picks none, so the New Contract grid shows it as soon as
+     * the Particulars is chosen. The roles that edit a contract's lines somewhere
+     * (draft, amend, extend, addenda, renew); another tenant's property, or one a
+     * manager is not assigned to, is a 404.
+     */
+    @GetMapping("/line-accounts")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LineAccountSuggestionDTO>> lineAccounts(
+            @RequestParam UUID propertyId) {
+        propertyAccountService.requireOwnProperty(propertyId);
+        propertyScope.requireCanAccessProperty(propertyId);
+        return ResponseEntity.ok(leaseService.lineAccountSuggestions(propertyId));
     }
 
     @PostMapping

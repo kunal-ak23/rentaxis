@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
-import ChequeGrid, { draftRowsAreValid } from "../ChequeGrid";
+import ChequeGrid, { draftRowsAreValid, mergeCheques } from "../ChequeGrid";
 import { registerActionsFor } from "@/components/cheques/registerActions";
 import type { Cheque } from "@/lib/api/leasing";
 
@@ -102,23 +102,24 @@ describe("ChequeGrid editability", () => {
     });
 
     /**
-     * Owner request (2026-09-29): one-time charges ride on cheque 1 by default (4
-     * cheques + an admin fee = 4 cheques); "Separate cheque for one-time charges",
-     * off by default, gives them their own.
+     * Client request (2026-10-28, reversing the owner's 2026-09-29 default): the
+     * deposit and each fee get a cheque of their own by default (4 cheques + an
+     * admin fee = 5 cheques); unticking "Separate cheque for one-time charges"
+     * adds them to cheque 1.
      */
-    it("folds one-time charges into cheque 1 unless 'separate cheque' is ticked", () => {
+    it("keeps one-time charges on their own cheques unless 'separate cheque' is unticked", () => {
         const onGenerate = vi.fn();
         renderGrid({ cheques: [], editable: true, onGenerate, contractValueInclVat: 30000 });
         fireEvent.click(screen.getByTestId("cheque-grid-generate"));
         const separate = screen.getByTestId("cheque-generate-separate-one-time") as HTMLInputElement;
-        expect(separate.checked).toBe(false);
+        expect(separate.checked).toBe(true);
         fireEvent.click(screen.getByTestId("cheque-generate-confirm"));
-        expect(onGenerate).toHaveBeenLastCalledWith(expect.objectContaining({ foldDepositsAndFeesIntoFirst: true }));
+        expect(onGenerate).toHaveBeenLastCalledWith(expect.objectContaining({ foldDepositsAndFeesIntoFirst: false }));
 
         fireEvent.click(screen.getByTestId("cheque-grid-generate"));
         fireEvent.click(screen.getByTestId("cheque-generate-separate-one-time"));
         fireEvent.click(screen.getByTestId("cheque-generate-confirm"));
-        expect(onGenerate).toHaveBeenLastCalledWith(expect.objectContaining({ foldDepositsAndFeesIntoFirst: false }));
+        expect(onGenerate).toHaveBeenLastCalledWith(expect.objectContaining({ foldDepositsAndFeesIntoFirst: true }));
     });
 
     it("initializes the generate form's distribution from defaultDistribution, not a hardcoded LAST_LARGER (#46)", () => {
@@ -353,5 +354,74 @@ describe("F15-04: the instalment count on a term with a rent-free month", () => 
         expect((screen.getByLabelText("Installments") as HTMLInputElement).value).toBe("11");
         fireEvent.click(screen.getByTestId("cheque-generate-confirm"));
         expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({ installments: 11 }));
+    });
+});
+
+/**
+ * Client request (2026-10-28): the deposit and each fee are cheques of their own
+ * by default, and a user who wants two of them on one cheque merges them on the
+ * draft grid — nothing retyped, so the grid cannot drift from the contract total.
+ */
+describe("merging draft cheques", () => {
+    const draft = (over: Partial<Cheque> & { id: string; seqNo: number }) =>
+        cheque({ status: "DRAFT", chequeNumber: null, ...over });
+    const rent1 = draft({ id: "c1", seqNo: 1, amount: 15000, vatAmount: 0, rowKind: "RENT", chequeDate: "2026-01-01",
+        narration: "Rent - 1st Installment" });
+    const rent2 = draft({ id: "c2", seqNo: 2, amount: 15000, vatAmount: 0, rowKind: "RENT", chequeDate: "2026-04-01",
+        narration: "Rent - 2nd Installment" });
+    const deposit = draft({ id: "c3", seqNo: 3, amount: 5000, vatAmount: 0, rowKind: "DEPOSIT", chequeDate: "2025-12-20",
+        postingDate: "2025-12-20", narration: "SD" });
+    const fee = draft({ id: "c4", seqNo: 4, amount: 1050, vatAmount: 50, rowKind: "FEE", chequeDate: "2025-12-20",
+        postingDate: "2025-12-20", narration: "Admin" });
+
+    it("keeps the topmost row, adds the others' amount and VAT to it, and drops them", () => {
+        const out = mergeCheques([rent1, rent2, deposit, fee], new Set(["c3", "c1"]));
+        expect(out.map(c => c.id)).toEqual(["c1", "c2", "c4"]);
+        expect(out.map(c => c.seqNo)).toEqual([1, 2, 3]);
+        expect(out[0]).toMatchObject({ amount: 20000, vatAmount: 0, chequeDate: "2026-01-01",
+            narration: "Rent - 1st Installment | SD", rowKind: "MIXED" });
+    });
+
+    it("keeps the kind when every merged row is the same kind", () => {
+        const out = mergeCheques([rent1, rent2, deposit], new Set(["c1", "c2"]));
+        expect(out[0]).toMatchObject({ amount: 30000, rowKind: "RENT" });
+    });
+
+    it("leaves VAT for the server to work out when a merged row has none yet", () => {
+        const out = mergeCheques([rent1, { ...fee, vatAmount: null }], new Set(["c1", "c4"]));
+        expect(out[0].vatAmount).toBeNull();
+        expect(out[0].rowKind).toBe("MIXED");
+    });
+
+    it("leaves the kind unsaid when a merged row has none", () => {
+        const out = mergeCheques([rent1, { ...deposit, rowKind: null }], new Set(["c1", "c3"]));
+        expect(out[0].rowKind).toBeNull();
+    });
+
+    it("does nothing for fewer than two rows", () => {
+        const rows = [rent1, rent2];
+        expect(mergeCheques(rows, new Set(["c1"]))).toBe(rows);
+    });
+
+    it("merges the ticked rows from the grid and hands the new grid up", () => {
+        const onChange = vi.fn();
+        renderGrid({ cheques: [rent1, rent2, deposit], editable: true, onChange, contractValueInclVat: 35000 });
+        const merge = screen.getByTestId("cheque-grid-merge");
+        expect(merge).toBeDisabled();
+        fireEvent.click(screen.getByTestId("cheque-select-0"));
+        expect(merge).toBeDisabled();
+        fireEvent.click(screen.getByTestId("cheque-select-2"));
+        expect(merge).toBeEnabled();
+        expect(merge).toHaveTextContent("Merge 2 cheques");
+        fireEvent.click(merge);
+        const rows = onChange.mock.calls[0][0] as Cheque[];
+        expect(rows.map(c => c.id)).toEqual(["c1", "c2"]);
+        expect(rows[0]).toMatchObject({ amount: 20000, rowKind: "MIXED" });
+    });
+
+    it("offers no ticks or merge on a posted lease's grid", () => {
+        renderGrid({ cheques: [cheque({ id: "c1", seqNo: 1 })], editable: false });
+        expect(screen.queryByTestId("cheque-select-0")).toBeNull();
+        expect(screen.queryByTestId("cheque-grid-merge")).toBeNull();
     });
 });
