@@ -103,13 +103,26 @@ describe('PromoterDeveloperTab', () => {
         expect(await screen.findByText('Revoked by Miftah admin: Abuse report')).toBeTruthy()
     })
 
-    it('shows the server message when create hits the cap', async () => {
+    it('translates the cap conflict by code, not the raw server text', async () => {
         api.on('GET', API, { body: [] })
         api.on('POST', API, { status: 409, body: { message: 'Key limit reached', code: 'api_key.limit' } })
         renderTab()
         fireEvent.click(await screen.findByRole('button', { name: 'Create key' }))
         fireEvent.change(screen.getByLabelText('Key name'), { target: { value: 'x' } })
         fireEvent.click(screen.getByRole('button', { name: 'Create' }))
-        expect(await screen.findByText('Key limit reached')).toBeTruthy()
+        expect(await screen.findByText(en.Promoter.devErrorLimit)).toBeTruthy()
+        expect(screen.queryByText('Key limit reached')).toBeNull()
+    })
+
+    it('maps not_active on rotate and falls back to the generic text for unknown errors', async () => {
+        api.on('GET', API, { body: [key()] })
+        api.on('POST', `${API}/k-1/rotate`, { status: 409, body: { message: 'raw', code: 'api_key.not_active' } })
+        renderTab()
+        fireEvent.click(await screen.findByRole('button', { name: 'Rotate' }))
+        expect(await screen.findByText(en.Promoter.devErrorNotActive)).toBeTruthy()
+        api.on('POST', `${API}/k-1/rotate`, { status: 500, body: { message: 'boom internals' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Rotate' }))
+        expect(await screen.findByText(en.Promoter.devActionError)).toBeTruthy()
+        expect(screen.queryByText('boom internals')).toBeNull()
     })
 })

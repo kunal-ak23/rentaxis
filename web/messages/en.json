@@ -2085,6 +2085,8 @@
     "devRevokedByYou": "Revoked by you",
     "devRevokedReason": "Revoked: {reason}",
     "devLoadError": "Could not load your API keys. Try again.",
+    "devErrorLimit": "You already have 2 active keys. Revoke or rotate one first.",
+    "devErrorNotActive": "This key can no longer be rotated.",
     "devActionError": "That did not work. Try again.",
     "devRevealTitle": "Your new API key",
     "devRevealWarning": "This is the only time you will see this key. Copy it now and store it somewhere safe.",

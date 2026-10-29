@@ -2085,6 +2085,8 @@
     "devRevokedByYou": "ألغيته أنت",
     "devRevokedReason": "ملغى: {reason}",
     "devLoadError": "تعذّر تحميل مفاتيح API. حاول مرة أخرى.",
+    "devErrorLimit": "لديك بالفعل مفتاحان نشطان. ألغِ أحدهما أو بدّله أولًا.",
+    "devErrorNotActive": "لم يعد بالإمكان تبديل هذا المفتاح.",
     "devActionError": "لم تنجح العملية. حاول مرة أخرى.",
     "devRevealTitle": "مفتاح API الجديد",
     "devRevealWarning": "هذه هي المرة الوحيدة التي سترى فيها هذا المفتاح. انسخه الآن واحفظه في مكان آمن.",

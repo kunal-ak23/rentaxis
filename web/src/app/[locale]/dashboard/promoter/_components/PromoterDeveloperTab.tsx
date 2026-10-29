@@ -21,6 +21,22 @@ const STATUS_STYLE: Record<ApiKeyStatus, string> = {
     expired: "bg-gray-200 text-gray-700",
 };
 
+/** Backend conflict codes this tab can receive, mapped to catalog keys. */
+const ERROR_KEYS: Record<string, string> = {
+    "api_key.limit": "devErrorLimit",
+    "api_key.not_active": "devErrorNotActive",
+};
+
+function errorCode(e: unknown): string | null {
+    if (!(e instanceof ApiError) || !e.body) return null;
+    try {
+        const code = (JSON.parse(e.body) as { code?: unknown }).code;
+        return typeof code === "string" ? code : null;
+    } catch {
+        return null;
+    }
+}
+
 /**
  * The promoter's API keys: create, rotate, revoke. A secret exists only in
  * `issued` (state) while its reveal dialog is open; it is never persisted,
@@ -43,11 +59,18 @@ export function PromoterDeveloperTab() {
             setKeys(await fetchPromoterApiKeys());
             setError(null);
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("devLoadError"));
+            setError(messageFor(e, "devLoadError"));
         }
     }, [t]);
 
     useEffect(() => { void load(); }, [load]);
+
+    // Known codes get a translated sentence; anything else the generic one. The raw
+    // server text is English only, so it is never shown.
+    const messageFor = (e: unknown, fallback: string) => {
+        const key = ERROR_KEYS[errorCode(e) ?? ""];
+        return key ? t(key) : t(fallback);
+    };
 
     const fmt = (iso: string) => new Date(iso).toLocaleDateString(locale, { dateStyle: "medium" });
     const activeCount = (keys ?? []).filter(k => k.status === "active").length;
@@ -63,7 +86,7 @@ export function PromoterDeveloperTab() {
             setError(null);
             await load();
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("devActionError"));
+            setError(messageFor(e, "devActionError"));
         } finally {
             setBusy(false);
         }
@@ -77,7 +100,7 @@ export function PromoterDeveloperTab() {
             setError(null);
             await load();
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("devActionError"));
+            setError(messageFor(e, "devActionError"));
         } finally {
             setBusy(false);
         }
@@ -93,7 +116,7 @@ export function PromoterDeveloperTab() {
             await load();
         } catch (e) {
             setRevoking(null);
-            setError(e instanceof ApiError ? e.message : t("devActionError"));
+            setError(messageFor(e, "devActionError"));
         } finally {
             setBusy(false);
         }
