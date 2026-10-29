@@ -135,6 +135,30 @@ On the ad, add `UNIT_ID` (and optionally `PROPERTY_ID`) as redirect parameters, 
 Check that the `unitId` you receive is in your synced set; anything not in it is not one of your units. Whether a
 coupon was already used, or looks fraudulent, is for you to decide: Miftah does not track redemptions.
 
+## Deep links into your app
+
+The redirect link on a coupon ad is always an `https://` address on a domain your business has registered with
+Miftah. Custom schemes such as `yourapp://redeem` are refused, because any app on the phone could claim them.
+
+When a tenant taps **Copy** on your coupon:
+
+1. The code is copied to their clipboard.
+2. The app picks the link for their phone: the Android link on Android, the iPhone link on iPhone, otherwise the
+   main link. Your parameters are already appended, for example
+   `https://offers.example.com/redeem?code=SAVE10&unitId=7f3c…&propertyId=a91e…`.
+3. If the link carries tenant data (name, phone, email, property or unit), the tenant is asked to agree first.
+   Nothing opens if they decline.
+4. The link is handed to the phone, not to an in-app browser. If your app is installed and has verified that domain
+   (iOS Universal Links, Android App Links), the phone opens your app with the full link. Otherwise it opens your
+   website in the browser, so the same link works either way.
+
+To have the link open your app, publish `/.well-known/apple-app-site-association` and
+`/.well-known/assetlinks.json` on the domain and declare it in your app, as Apple and Google describe. Make the same
+path work on your website for tenants who do not have your app.
+
+A platform link that fails Miftah's checks (not `https`, not on your domains) opens nothing. It does not fall back to
+the main link.
+
 ## Errors and limits
 
 A missing, unknown, revoked or expired key, or one whose promoter or organisation is no longer active, always
