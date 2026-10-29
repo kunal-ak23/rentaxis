@@ -56,7 +56,7 @@ describe("promoter copy", () => {
 
     it("labels every redirect source and every redirect error in both languages", () => {
         const keys = [
-            ...["COUPON_CODE", "RENTER_NAME", "RENTER_PHONE", "RENTER_EMAIL", "PROPERTY_NAME", "UNIT_NUMBER", "STATIC"].map(s => `redirectSource${s}`),
+            ...["COUPON_CODE", "RENTER_NAME", "RENTER_PHONE", "RENTER_EMAIL", "PROPERTY_NAME", "UNIT_NUMBER", "PROPERTY_ID", "UNIT_ID", "STATIC"].map(s => `redirectSource${s}`),
             "redirectUrlTooLong", "redirectParamsNeedUrl", "redirectParamNameInvalid", "redirectParamNameDuplicate",
             "redirectParamValueRequired", "httpsRequired", "domainNotAllowed",
             // Addendum C: the Android / iPhone links, their hint and the labels that tell the three apart.

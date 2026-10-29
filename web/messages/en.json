@@ -2033,6 +2033,8 @@
     "redirectSourceRENTER_EMAIL": "Tenant's email",
     "redirectSourcePROPERTY_NAME": "Property name",
     "redirectSourceUNIT_NUMBER": "Unit number",
+    "redirectSourcePROPERTY_ID": "Property ID",
+    "redirectSourceUNIT_ID": "Unit ID",
     "redirectSourceSTATIC": "Fixed value",
     "redirectExample": "Example with sample values",
     "redirectSharesDetails": "This link shares tenant details, so tenants are asked to confirm before it opens.",

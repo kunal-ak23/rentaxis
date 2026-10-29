@@ -2033,6 +2033,8 @@
     "redirectSourceRENTER_EMAIL": "بريد المستأجر الإلكتروني",
     "redirectSourcePROPERTY_NAME": "اسم العقار",
     "redirectSourceUNIT_NUMBER": "رقم الوحدة",
+    "redirectSourcePROPERTY_ID": "معرّف العقار",
+    "redirectSourceUNIT_ID": "معرّف الوحدة",
     "redirectSourceSTATIC": "قيمة ثابتة",
     "redirectExample": "مثال بقيم تجريبية",
     "redirectSharesDetails": "يشارك هذا الرابط بيانات المستأجر، لذا يُطلب من المستأجر التأكيد قبل فتحه.",

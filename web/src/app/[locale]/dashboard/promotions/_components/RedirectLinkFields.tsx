@@ -60,7 +60,7 @@ export const rowsFromAd = (params: PromoRedirectParam[] | null | undefined): Red
 
 /** The renter-data sources: the app fills these in for the tenant, after they confirm. */
 export const RENTER_DATA_SOURCES: PromoRedirectParamSource[] =
-    ["RENTER_NAME", "RENTER_PHONE", "RENTER_EMAIL", "PROPERTY_NAME", "UNIT_NUMBER"];
+    ["RENTER_NAME", "RENTER_PHONE", "RENTER_EMAIL", "PROPERTY_NAME", "UNIT_NUMBER", "PROPERTY_ID", "UNIT_ID"];
 
 export const sharesRenterData = (params: { source: PromoRedirectParamSource }[]) =>
     params.some(p => RENTER_DATA_SOURCES.includes(p.source));
@@ -138,6 +138,8 @@ const SAMPLE: Partial<Record<PromoRedirectParamSource, string>> = {
     RENTER_PHONE: "+971501234567",
     RENTER_EMAIL: "sara@example.test",
     UNIT_NUMBER: "A-204",
+    PROPERTY_ID: "3f2b8c1e-0000-4000-8000-000000000001",
+    UNIT_ID: "3f2b8c1e-0000-4000-8000-000000000002",
 };
 
 export function exampleFor(

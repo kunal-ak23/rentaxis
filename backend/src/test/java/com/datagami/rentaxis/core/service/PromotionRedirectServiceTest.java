@@ -71,6 +71,33 @@ class PromotionRedirectServiceTest {
     }
 
     @Test
+    void propertyIdAndUnitIdCarryTheRentersLeaseIdsAndAreSharedRenterData() {
+        UUID propertyId = UUID.randomUUID();
+        UUID unitId = UUID.randomUUID();
+        when(leases.findActiveLeasePlacesForRenterUser(tenantId, renterUserId))
+                .thenReturn(List.<Object[]>of(new Object[]{propertyId, "Palm Tower", "A-204", unitId}));
+
+        PromotionRedirectService.Resolved res = resolve(ad("https://quickwash.example/r",
+                new PromoRedirectParam("pid", PromoRedirectSource.PROPERTY_ID, null),
+                new PromoRedirectParam("uid", PromoRedirectSource.UNIT_ID, null)));
+
+        assertThat(res.url()).isEqualTo("https://quickwash.example/r?pid=" + propertyId + "&uid=" + unitId);
+        assertThat(res.sharedFields()).containsExactly("PROPERTY_ID", "UNIT_ID");
+        assertThat(PromoRedirectSource.PROPERTY_ID.isRenterData()).isTrue();
+        assertThat(PromoRedirectSource.UNIT_ID.isRenterData()).isTrue();
+    }
+
+    @Test
+    void propertyIdAndUnitIdAreLeftOutWithoutAnActiveLease() {
+        PromotionRedirectService.Resolved res = resolve(ad("https://quickwash.example/r",
+                new PromoRedirectParam("pid", PromoRedirectSource.PROPERTY_ID, null),
+                new PromoRedirectParam("uid", PromoRedirectSource.UNIT_ID, null)));
+
+        assertThat(res.url()).isEqualTo("https://quickwash.example/r");
+        assertThat(res.sharedFields()).isEmpty();
+    }
+
+    @Test
     void valuesAreEncodedAsQueryComponents() {
         PromotionRedirectService.Resolved res = resolve(ad("https://quickwash.example/r?",
                 new PromoRedirectParam("q", PromoRedirectSource.STATIC, "a&b=c d+é/مفتاح")));

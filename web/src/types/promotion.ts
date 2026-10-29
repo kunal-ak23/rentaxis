@@ -19,11 +19,11 @@ export type PromoApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
  */
 export type PromoRedirectParamSource =
   | 'COUPON_CODE' | 'RENTER_NAME' | 'RENTER_PHONE' | 'RENTER_EMAIL'
-  | 'PROPERTY_NAME' | 'UNIT_NUMBER' | 'STATIC'
+  | 'PROPERTY_NAME' | 'UNIT_NUMBER' | 'PROPERTY_ID' | 'UNIT_ID' | 'STATIC'
 
 export const PROMO_REDIRECT_SOURCES: PromoRedirectParamSource[] = [
   'COUPON_CODE', 'RENTER_NAME', 'RENTER_PHONE', 'RENTER_EMAIL',
-  'PROPERTY_NAME', 'UNIT_NUMBER', 'STATIC',
+  'PROPERTY_NAME', 'UNIT_NUMBER', 'PROPERTY_ID', 'UNIT_ID', 'STATIC',
 ]
 
 /** One `name=value` pair appended to a coupon ad's redirect link. */

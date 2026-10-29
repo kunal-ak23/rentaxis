@@ -49,7 +49,7 @@ import java.util.stream.Collectors;
  * rather than keeps sending to a domain the business no longer claims. An ad left
  * with no link has no redirect at all.
  *
- * <p>PROPERTY_NAME and UNIT_NUMBER come from the renter's active lease at a
+ * <p>PROPERTY_NAME, UNIT_NUMBER, PROPERTY_ID and UNIT_ID come from the renter's active lease at a
  * property the ad targets (for a promoter's ad, one also in that promoter's
  * allowed set — where the ad is actually shown); an ad that targets every property
  * uses the renter's earliest-starting active lease. English property name; the
@@ -163,6 +163,8 @@ public class PromotionRedirectService {
                 case RENTER_EMAIL -> renter.email();
                 case PROPERTY_NAME -> renter.place(targetedProperties).map(Place::propertyName).orElse(null);
                 case UNIT_NUMBER -> renter.place(targetedProperties).map(Place::unitNumber).orElse(null);
+                case PROPERTY_ID -> renter.place(targetedProperties).map(pl -> idOrNull(pl.propertyId())).orElse(null);
+                case UNIT_ID -> renter.place(targetedProperties).map(pl -> idOrNull(pl.unitId())).orElse(null);
             };
             if (value == null || value.isBlank()) {
                 continue;
@@ -208,7 +210,11 @@ public class PromotionRedirectService {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
-    private record Place(UUID propertyId, String propertyName, String unitNumber) {
+    private record Place(UUID propertyId, String propertyName, String unitNumber, UUID unitId) {
+    }
+
+    private static String idOrNull(UUID id) {
+        return id == null ? null : id.toString();
     }
 
     /** The calling renter's own data, read once per feed and only if some ad asks for it. */
@@ -235,7 +241,7 @@ public class PromotionRedirectService {
                     .filter(r -> Objects.equals(r.getTenantId(), tenantId))
                     .orElse(null);
             places = leaseRepository.findActiveLeasePlacesForRenterUser(tenantId, userId).stream()
-                    .map(row -> new Place((UUID) row[0], (String) row[1], (String) row[2]))
+                    .map(row -> new Place((UUID) row[0], (String) row[1], (String) row[2], (UUID) row[3]))
                     .toList();
         }
 
