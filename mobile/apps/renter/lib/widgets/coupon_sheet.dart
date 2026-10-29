@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 import '../utils/promo_url.dart';
 import 'coupon_redirect_sheet.dart';
@@ -25,6 +26,7 @@ class CouponSheet extends StatelessWidget {
     super.key,
     required this.ad,
     this.launcher,
+    this.stringLauncher,
     this.platform,
   });
 
@@ -33,6 +35,11 @@ class CouponSheet extends StatelessWidget {
   /// How the redirect is opened; defaults to `url_launcher`. A seam for tests,
   /// and how `PromoActions` routes this through its own launcher.
   final PromoUrlLauncher? launcher;
+
+  /// How an app link (`yourapp://…`) is opened, as the exact stored string;
+  /// defaults to `launchUrlString`. A seam for tests, passed through by
+  /// `PromoActions` like [launcher].
+  final PromoUrlStringLauncher? stringLauncher;
 
   /// Which platform's redirect link to open; defaults to the phone's own
   /// (`defaultTargetPlatform`), read when Copy is tapped. A seam for tests,
@@ -43,14 +50,19 @@ class CouponSheet extends StatelessWidget {
     BuildContext context,
     PromoAd ad, {
     PromoUrlLauncher? launcher,
+    PromoUrlStringLauncher? stringLauncher,
     TargetPlatform? platform,
   }) {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) =>
-          CouponSheet(ad: ad, launcher: launcher, platform: platform),
+      builder: (_) => CouponSheet(
+        ad: ad,
+        launcher: launcher,
+        stringLauncher: stringLauncher,
+        platform: platform,
+      ),
     );
   }
 
@@ -78,7 +90,7 @@ class CouponSheet extends StatelessWidget {
     // link (http, no host, userinfo, a refused scheme) ends here: plain copy,
     // exactly as before. Unsafe is final — a refused platform link does not
     // fall back to the general one (see `chooseRedirectUrl`).
-    final target = parseSafeCouponRedirectUri(
+    final target = parseSafeCouponRedirect(
       chooseRedirectUrl(ad, platform ?? defaultTargetPlatform),
     );
     if (target == null) return;
@@ -98,9 +110,12 @@ class CouponSheet extends StatelessWidget {
     // externalApplication, not the in-app browser the WEBSITE CTA uses: it is
     // what lets an https universal link open the business's own app, and what
     // an app link needs anyway.
+    // An app link goes out as the exact stored string (launchUrlString), never
+    // re-serialised through `Uri`.
     final launch = launcher ?? launchUrl;
-    final opened = await launchPromoUri(
+    final opened = await launchCouponRedirect(
       launch,
+      stringLauncher ?? launchUrlString,
       target,
       LaunchMode.externalApplication,
     );
