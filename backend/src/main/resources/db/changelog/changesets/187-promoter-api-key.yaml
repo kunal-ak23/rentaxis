@@ -1,0 +1,38 @@
+# Promoter developer API keys (spec docs/superpowers/specs/2026-10-29-promoter-api-keys-design.md).
+#
+# A promoter calls the read-only partner endpoints with a secret key it created in
+# its Developer tab. Only the SHA-256 of the secret is kept (key_hash, unique: the
+# lookup), plus its first 12 characters for display (key_prefix).
+#
+#   - At most 2 active keys per promoter (revoked_at and expires_at both null).
+#   - Rotate sets the old key's expires_at to now + 24h; it still authenticates until then.
+#   - Revoke is immediate and permanent: revoked_at, revoked_by (promoter or super admin),
+#     revoked_reason (required for a super admin, optional for the promoter).
+#   - last_used_at is touched at most once a minute.
+#
+# user_id cascades: a deleted promoter login takes its keys with it. created_by and
+# revoked_by are plain ids (who did it is kept even if that login goes).
+databaseChangeLog:
+  - changeSet:
+      id: 187-promoter-api-key
+      author: claude
+      changes:
+        - createTable:
+            tableName: promoter_api_key
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_promoter_api_key, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_api_key_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_api_key_user, referencedTableName: users, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: name, type: varchar(80), constraints: { nullable: false } }
+              - column: { name: key_prefix, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: key_hash, type: varchar(64), constraints: { nullable: false, unique: true, uniqueConstraintName: uq_promoter_api_key_hash } }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: created_by, type: uuid, constraints: { nullable: false } }
+              - column: { name: expires_at, type: timestamptz }
+              - column: { name: last_used_at, type: timestamptz }
+              - column: { name: revoked_at, type: timestamptz }
+              - column: { name: revoked_by, type: uuid }
+              - column: { name: revoked_reason, type: varchar(500) }
+        - createIndex: { tableName: promoter_api_key, indexName: idx_promoter_api_key_user, columns: [ { column: { name: user_id } } ] }
+      rollback:
+        - dropTable: { tableName: promoter_api_key }
