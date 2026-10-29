@@ -66,6 +66,8 @@ test.describe('Renters CRUD', () => {
     }
 
     await page.locator('input[placeholder="john@example.com"]').fill(`portal-renter-${ts}@test.com`);
+    // Every tenant has a mobile (client request 2026-10-29).
+    await page.locator('input[placeholder="+971 50 123 4567"]').fill('050 123 4567');
 
     // Toggle portal account checkbox
     const portalCheckbox = page.locator('input[type="checkbox"]').first();

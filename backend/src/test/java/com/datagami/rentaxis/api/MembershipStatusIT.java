@@ -325,7 +325,7 @@ class MembershipStatusIT extends AbstractCallerIdentityIT {
         User inB = member(orgB, UserRole.RENTER, alice, OWN, true);
         User adminA = member(orgA, UserRole.TENANT_ADMIN, email(), "admin-a-password", false);
         ResponseEntity<String> added = as(adminA, HttpMethod.POST, "/api/v1/renters",
-                Map.of("nameEn", "Alice", "email", alice));
+                Map.of("nameEn", "Alice", "email", alice, "phone", "+971501234567"));
         assertThat(json.readTree(added.getBody()).get("portalAccount").asText()).isEqualTo("EXISTING_LOGIN");
         UUID inA = jdbc.query("select user_id from renters where id = ?::uuid",
                 rs -> rs.next() ? (UUID) rs.getObject(1) : null, json.readTree(added.getBody()).get("id").asText());
@@ -368,20 +368,20 @@ class MembershipStatusIT extends AbstractCallerIdentityIT {
         User inB = member(orgB, UserRole.RENTER, alice, OWN, true);
         User adminA = member(orgA, UserRole.TENANT_ADMIN, email(), "admin-a-password", false);
         ResponseEntity<String> added = as(adminA, HttpMethod.POST, "/api/v1/renters",
-                Map.of("nameEn", "Alice", "email", alice));
+                Map.of("nameEn", "Alice", "email", alice, "phone", "+971501234567"));
         String renterId = json.readTree(added.getBody()).get("id").asText();
         UUID inA = jdbc.query("select user_id from renters where id = ?::uuid",
                 rs -> rs.next() ? (UUID) rs.getObject(1) : null, renterId);
 
         String adminInbox = email();
         assertThat(as(adminA, HttpMethod.PUT, "/api/v1/renters/" + renterId,
-                Map.of("nameEn", "Alice", "email", adminInbox)).getStatusCode().value()).isEqualTo(200);
+                Map.of("nameEn", "Alice", "email", adminInbox, "phone", "+971501234567")).getStatusCode().value()).isEqualTo(200);
         assertThat(passwordEncoder.matches(OWN, hashOf(inA))).isFalse();
         assertThat(invites(inA)).as("the new address is invited").isEqualTo(1);
         assertThat(setPassword(inviteTokenOf(inA), "admin-chosen-pw-1")).isIn(200, 204);
 
         assertThat(as(adminA, HttpMethod.PUT, "/api/v1/renters/" + renterId,
-                Map.of("nameEn", "Alice", "email", alice)).getStatusCode().value()).isEqualTo(200);
+                Map.of("nameEn", "Alice", "email", alice, "phone", "+971501234567")).getStatusCode().value()).isEqualTo(200);
 
         assertThat(login(alice, "admin-chosen-pw-1", orgA).getStatusCode().value()).isEqualTo(401);
         assertThat(hashOf(inA)).isEqualTo(inB.getPasswordHash());

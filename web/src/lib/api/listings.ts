@@ -274,11 +274,18 @@ export async function fetchInterests(
   return res.json()
 }
 
-/** F14-51: the enquiry becomes a draft lease (renter record created if new, no login). Returns the draft. */
-export async function createLeaseFromInterest(listingId: string, interestId: string, token?: string): Promise<{ id: string }> {
-  const headers: HeadersInit = {}
+/**
+ * F14-51: the enquiry becomes a draft lease (renter record created if new, no login). Returns the draft.
+ * `mobile`: the tenant's mobile typed in the drawer when the enquirer's account has none (client
+ * request 2026-10-29) — the server refuses with `listing.tenantMobileRequired` until one is given.
+ */
+export async function createLeaseFromInterest(listingId: string, interestId: string, token?: string, mobile?: string): Promise<{ id: string }> {
+  const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${BASE}/${listingId}/interests/${interestId}/lease`, { method: 'POST', headers })
+  if (mobile) headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${BASE}/${listingId}/interests/${interestId}/lease`, {
+    method: 'POST', headers, ...(mobile ? { body: JSON.stringify({ mobile }) } : {}),
+  })
   if (!res.ok) {
     // An ApiError with the body, so the drawer can render a coded refusal in the viewer's language.
     const body = await res.text()

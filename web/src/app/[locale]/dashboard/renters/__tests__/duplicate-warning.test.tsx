@@ -55,6 +55,10 @@ afterEach(() => {
 });
 
 async function fill(email: string, phone: string) {
+    // Both are required (client request 2026-10-29): a case that matches on one field
+    // gets a value for the other that matches no tenant.
+    email = email || "nobody-else@example.com";
+    phone = phone || "0559999999";
     render(<RentersPage />);
     fireEvent.click((await screen.findAllByText("addRenter"))[0]);
     fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Person" } });
@@ -79,6 +83,14 @@ describe("Add Tenant duplicate warning", () => {
         const warning = await screen.findByTestId("renter-duplicate-warning");
         expect(warning.textContent).toContain("Sweep Tenant");
         expect(warning.textContent).toContain("duplicateMatchPhone");
+        expect(posts).toBe(0);
+    });
+
+    // Review of #454: the check runs on the mobile as it will be sent, so Arabic digits match too.
+    it("warns on a matching phone typed in Arabic digits", async () => {
+        await fill("", "٠٥٠ ١٢٣ ٤٥٦٧");
+        const warning = await screen.findByTestId("renter-duplicate-warning");
+        expect(warning.textContent).toContain("Sweep Tenant");
         expect(posts).toBe(0);
     });
 
@@ -132,19 +144,20 @@ describe("Add Tenant duplicate warning", () => {
 
     // Review fix 3: a check that resolves after the email/phone changed is stale.
     it("ignores a duplicate check whose email changed while it ran", async () => {
-        let release: (() => void) | null = null;
+        // Every lookup is held (by email and, now that a mobile is always given, by phone too).
+        const held: (() => void)[] = [];
         const fetchImpl = global.fetch as unknown as (u: unknown, i?: RequestInit) => Promise<Response>;
         global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
             if (String(url).includes("/v1/renters/search")) {
-                await new Promise<void>((r) => { release = r; });
+                await new Promise<void>((r) => { held.push(r); });
             }
             return fetchImpl(url, init);
         }) as unknown as typeof fetch;
 
         await fill("sweep@example.com", "");
-        await waitFor(() => expect(release).not.toBeNull());
+        await waitFor(() => expect(held.length).toBeGreaterThan(0));
         fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "other@example.com" } });
-        release!();
+        held.forEach(r => r());
         await waitFor(() => expect(screen.getByText("create").closest("button")!.disabled).toBe(false));
         expect(screen.queryByTestId("renter-duplicate-warning")).toBeNull();
         expect(posts).toBe(0);

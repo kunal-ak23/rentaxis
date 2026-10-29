@@ -522,6 +522,25 @@ class PortfolioImportServiceTest {
         }
     }
 
+    /** Client request 2026-10-29: a tenant needs an email and a mobile, in the import as on the form. */
+    @Test
+    void aTenantWithoutAMobileIsRefused() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Renters", 1, "Phone", "");
+        assertThat(service.validateAll(wb).errors())
+                .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getRow, ImportErrorDTO::getField, ImportErrorDTO::getMessage)
+                .contains(org.assertj.core.groups.Tuple.tuple("Renters", 2, "Phone", "Mobile is required"));
+        setCell(wb, "Renters", 1, "Phone", "\u00A0");
+        assertThat(service.validateAll(wb).errors())
+                .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getRow, ImportErrorDTO::getField, ImportErrorDTO::getMessage)
+                .as("a cell holding only a non-breaking space is empty")
+                .contains(org.assertj.core.groups.Tuple.tuple("Renters", 2, "Phone", "Mobile is required"));
+        setCell(wb, "Renters", 1, "Phone", "N/A");
+        assertThat(service.validateAll(wb).errors())
+                .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getRow, ImportErrorDTO::getField, ImportErrorDTO::getMessage)
+                .contains(org.assertj.core.groups.Tuple.tuple("Renters", 2, "Phone", "Mobile may contain only digits, spaces, +, - and parentheses (7-15 digits)"));
+    }
+
     @Test
     void aMissingTenantsOrContractsSheetIsNamedByBothItsNames() {
         Workbook wb = buildLegacyWorkbook();

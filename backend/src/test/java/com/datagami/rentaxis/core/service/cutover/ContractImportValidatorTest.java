@@ -166,8 +166,8 @@ class ContractImportValidatorTest {
 
         Sheet renters = wb.createSheet("Renters");
         row(renters, 0, "Name", "NameAr", "Email", "Phone");
-        row(renters, 1, "Sample Renter One", "", "sample.renter.one@example.com", "");
-        row(renters, 2, "Sample Renter Two", "", "sample.renter.two@example.com", "");
+        row(renters, 1, "Sample Renter One", "", "sample.renter.one@example.com", "+971500000001");
+        row(renters, 2, "Sample Renter Two", "", "sample.renter.two@example.com", "050 000 0002");
 
         if (!withContracts) return wb;
 
@@ -895,6 +895,28 @@ class ContractImportValidatorTest {
             assertThat(warnings(wb)).filteredOn(w -> "VatApplicable".equals(w.getField())).singleElement()
                     .satisfies(w -> assertThat(w.getMessage()).contains("no TRN"));
             assertThat(errors(wb)).noneMatch(e -> "VatApplicable".equals(e.getField()));
+        }
+    }
+
+    /** Client request 2026-10-29: a tenant needs an email and a mobile, in the import as on the form. */
+    @Test
+    void aRenterWithoutAMobileIsAnError() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            set(wb, "Renters", 1, 3, "");
+            assertThat(errors(wb))
+                    .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getRow, ImportErrorDTO::getField, ImportErrorDTO::getMessage)
+                    .contains(Tuple.tuple("Renters", 2, "Phone", "Mobile is required"));
+            set(wb, "Renters", 1, 3, "call the office");
+            assertThat(errors(wb))
+                    .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getRow, ImportErrorDTO::getField, ImportErrorDTO::getMessage)
+                    .contains(Tuple.tuple("Renters", 2, "Phone", "Mobile may contain only digits, spaces, +, - and parentheses (7-15 digits)"));
+            set(wb, "Renters", 1, 3, "\u00A0");
+            assertThat(errors(wb))
+                    .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getRow, ImportErrorDTO::getField, ImportErrorDTO::getMessage)
+                    .as("a cell holding only a non-breaking space is empty")
+                    .contains(Tuple.tuple("Renters", 2, "Phone", "Mobile is required"));
+            set(wb, "Renters", 1, 3, "٠٥٠ ١٢٣ ٤٥٦٧");
+            assertThat(errors(wb)).noneMatch(e -> "Phone".equals(e.getField()));
         }
     }
 

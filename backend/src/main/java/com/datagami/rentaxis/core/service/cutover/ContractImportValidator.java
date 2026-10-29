@@ -466,6 +466,14 @@ public class ContractImportValidator {
             if (SheetCells.getCellString(row, 0).isEmpty()) {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Name", "Name is required"));
             }
+            // Client request 2026-10-29: a tenant needs a mobile, in the import as on the form.
+            String phone = com.datagami.rentaxis.core.util.PhoneNumbers.forTenant(SheetCells.getCellString(row, 3));
+            if (phone == null) {
+                errors.add(new ImportErrorDTO("Renters", rowNum, "Phone", "Mobile is required"));
+            } else if (!com.datagami.rentaxis.core.util.PhoneNumbers.isPlausible(phone)) {
+                errors.add(new ImportErrorDTO("Renters", rowNum, "Phone",
+                        com.datagami.rentaxis.core.util.PhoneNumbers.LENIENT_MESSAGE));
+            }
             String email = SheetCells.getCellString(row, 2);
             if (email.isEmpty()) {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Email", "Email is required"));

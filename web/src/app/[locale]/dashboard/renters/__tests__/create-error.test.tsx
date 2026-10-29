@@ -70,6 +70,8 @@ describe("RentersPage create form", () => {
         // Empty state and header both render an addRenter button.
         fireEvent.click((await screen.findAllByText("addRenter"))[0]);
         fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
+        fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "new.renter@x.com" } });
+        fireEvent.change(screen.getByPlaceholderText("+971 50 123 4567"), { target: { value: "050 123 4567" } });
         fireEvent.click(screen.getByText("create"));
 
         expect(
@@ -86,6 +88,7 @@ describe("RentersPage create form", () => {
         fireEvent.click((await screen.findAllByText("addRenter"))[0]);
         fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
         fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.change(screen.getByPlaceholderText("+971 50 123 4567"), { target: { value: "050 123 4567" } });
         fireEvent.click(screen.getByText("create"));
 
         expect(await screen.findByText("sentBody")).toBeTruthy();
@@ -110,6 +113,7 @@ describe("RentersPage create form", () => {
         expect(screen.queryByText("createPortalAccount")).toBeNull();
         fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
         fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.change(screen.getByPlaceholderText("+971 50 123 4567"), { target: { value: "050 123 4567" } });
         fireEvent.click(screen.getByText("create"));
 
         expect(await screen.findByText("sentBody")).toBeTruthy();
@@ -124,6 +128,7 @@ describe("RentersPage create form", () => {
         fireEvent.click((await screen.findAllByText("addRenter"))[0]);
         fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
         fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.change(screen.getByPlaceholderText("+971 50 123 4567"), { target: { value: "050 123 4567" } });
         fireEvent.click(screen.getByText("create"));
 
         expect(await screen.findByText("emailInUseBody")).toBeTruthy();
@@ -139,6 +144,7 @@ describe("RentersPage create form", () => {
         fireEvent.click((await screen.findAllByText("addRenter"))[0]);
         fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
         fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.change(screen.getByPlaceholderText("+971 50 123 4567"), { target: { value: "050 123 4567" } });
         fireEvent.click(screen.getByText("create"));
 
         expect(await screen.findByText("accountInactiveBody")).toBeTruthy();
@@ -154,6 +160,7 @@ describe("RentersPage create form", () => {
         fireEvent.click((await screen.findAllByText("addRenter"))[0]);
         fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
         fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.change(screen.getByPlaceholderText("+971 50 123 4567"), { target: { value: "050 123 4567" } });
         fireEvent.click(screen.getByText("create"));
 
         expect(await screen.findByText("linkedExistingBody")).toBeTruthy();
@@ -169,22 +176,12 @@ describe("RentersPage create form", () => {
         fireEvent.click((await screen.findAllByText("addRenter"))[0]);
         fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
         fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.change(screen.getByPlaceholderText("+971 50 123 4567"), { target: { value: "050 123 4567" } });
         fireEvent.click(screen.getByText("create"));
 
         expect(await screen.findByText("existingLoginBody")).toBeTruthy();
         expect(screen.queryByText("sentBody")).toBeNull();
         expect(screen.queryByText("sentTitle")).toBeNull();
-    });
-
-    it("says no email was given when that is why there is no portal account", async () => {
-        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false } };
-        render(<RentersPage />);
-
-        fireEvent.click((await screen.findAllByText("addRenter"))[0]);
-        fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
-        fireEvent.click(screen.getByText("create"));
-
-        expect(await screen.findByText("noPortalBody")).toBeTruthy();
     });
 
     it("offers Resend invite for a renter whose invite is pending", async () => {

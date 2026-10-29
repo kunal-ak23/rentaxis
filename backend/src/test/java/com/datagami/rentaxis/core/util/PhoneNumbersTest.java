@@ -175,4 +175,22 @@ class PhoneNumbersTest {
         assertThat(PhoneNumbers.normalizeForRole("050 883-1786", role)).isEqualTo("0508831786");
         assertThat(PhoneNumbers.normalizeForRole(null, role)).isNull();
     }
+
+    /**
+     * The tenant mobile rule (client request 2026-10-29). Review of #454: a cell holding
+     * only a non-breaking space — common in sheets exported from web pages — is blank,
+     * not a phone; String.isBlank() alone does not see it.
+     */
+    @Test
+    void isPlausibleNeedsAPhoneNumberAndTreatsUnicodeSpacesAsBlank() {
+        assertThat(PhoneNumbers.isPlausible(null)).isFalse();
+        assertThat(PhoneNumbers.isPlausible("   ")).isFalse();
+        assertThat(PhoneNumbers.isPlausible("\u00A0")).isFalse();
+        assertThat(PhoneNumbers.isPlausible("\u202F\u2007")).isFalse();
+        assertThat(PhoneNumbers.isPlausible("N/A")).isFalse();
+        assertThat(PhoneNumbers.isPlausible("12345")).isFalse();
+        assertThat(PhoneNumbers.isPlausible("050 123 4567")).isTrue();
+        assertThat(PhoneNumbers.isPlausible("+971\u00A050\u202F123\u00A04567")).isTrue();
+        assertThat(PhoneNumbers.isPlausible("٠٥٠ ١٢٣ ٤٥٦٧")).isTrue();
+    }
 }

@@ -85,7 +85,7 @@ class AccountMailBypassesTenantGateIT extends AbstractPostgresIT {
                 .header("X-User-Role", admin.getRole().name())
                 .header("X-Tenant-Id", tenantId.toString())
                 .header("X-User-Tenant-Id", tenantId.toString())
-                .body(Map.of("nameEn", "Gate Renter", "email", "gate-renter-" + UUID.randomUUID() + "@t.io"))
+                .body(Map.of("nameEn", "Gate Renter", "email", "gate-renter-" + UUID.randomUUID() + "@t.io", "phone", "+971501234567"))
                 .retrieve().onStatus(s -> true, (rq, rs) -> { }).toEntity(Map.class);
 
         assertThat(res.getStatusCode().value()).isEqualTo(201);

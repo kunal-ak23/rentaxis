@@ -39,6 +39,40 @@ public final class PhoneNumbers {
     }
 
     /**
+     * The lenient rule for a phone a person types about themselves or a tenant:
+     * digits, spaces, "+", "-", parentheses, 7-15 digits — local UAE forms
+     * ("050 8831786", "04 123 9911") and every format in existing data pass; blank
+     * passes too, so a caller that requires a phone says so separately. Match it
+     * against {@link #normalizeUnicode} output. The web's {@code PHONE_PATTERN}
+     * ({@code web/src/lib/phone.ts}) and the manager app's {@code renterPhoneProblem}
+     * ({@code mobile/apps/manager/lib/screens/renters_screen.dart}) are the same rule;
+     * keep the three in step.
+     */
+    public static final String LENIENT_PATTERN = "^\\s*$|^\\s*\\+?[\\s()\\-]*(?:\\d[\\s()\\-]*){7,15}$";
+
+    /** What a tenant's mobile that breaks {@link #LENIENT_PATTERN} is refused with. */
+    public static final String LENIENT_MESSAGE = "Mobile may contain only digits, spaces, +, - and parentheses (7-15 digits)";
+
+    private static final Pattern LENIENT = Pattern.compile(LENIENT_PATTERN);
+
+    /**
+     * A phone that, normalized, is not blank and satisfies {@link #LENIENT_PATTERN}.
+     * Blank is judged after normalizing: a cell holding only a non-breaking space
+     * (sheets exported from web pages) is empty, though {@code String.isBlank} says not.
+     */
+    public static boolean isPlausible(String phone) {
+        String normalized = normalizeUnicode(phone);
+        if (normalized == null || normalized.isBlank()) return false;
+        return LENIENT.matcher(normalized).matches();
+    }
+
+    /** The phone as a tenant record stores it: normalized and trimmed, or null when blank. */
+    public static String forTenant(String phone) {
+        String normalized = normalizeUnicode(phone);
+        return normalized == null || normalized.isBlank() ? null : normalized.trim();
+    }
+
+    /**
      * Break-it round 2 M6: the web rule ({@code web/src/lib/phone.ts}) is a JS
      * regex whose {@code \s} matches every Unicode space — including the
      * non-breaking space (U+00A0) and narrow no-break space (U+202F) that a phone

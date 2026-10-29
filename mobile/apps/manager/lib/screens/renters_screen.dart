@@ -3,6 +3,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+/// Why a tenant's mobile is refused, or null when it is fine.
+enum RenterPhoneProblem { required, invalid }
+
+/// The lenient rule the server applies (PhoneNumbers.LENIENT_PATTERN): digits,
+/// spaces, "+", "-" and brackets, 7-15 digits.
+final RegExp _renterPhonePattern =
+    RegExp(r'^\s*\+?[\s()\-]*(?:\d[\s()\-]*){7,15}$');
+
+/// Arabic-Indic and extended Arabic-Indic digits made ASCII, every Unicode space
+/// (a number pasted from iOS or WhatsApp) made a plain space, trimmed — as the
+/// web's normalizePhone and the server's PhoneNumbers.normalizeUnicode do.
+String normalizeRenterPhone(String value) {
+  final out = StringBuffer();
+  for (final rune in value.runes) {
+    if (rune >= 0x0660 && rune <= 0x0669) {
+      out.writeCharCode(0x30 + rune - 0x0660);
+    } else if (rune >= 0x06F0 && rune <= 0x06F9) {
+      out.writeCharCode(0x30 + rune - 0x06F0);
+    } else if (RegExp(r'\s').hasMatch(String.fromCharCode(rune))) {
+      out.write(' ');
+    } else {
+      out.writeCharCode(rune);
+    }
+  }
+  return out.toString().trim();
+}
+
+/// Client request 2026-10-29: every tenant has a mobile.
+RenterPhoneProblem? renterPhoneProblem(String? value) {
+  final phone = normalizeRenterPhone(value ?? '');
+  if (phone.isEmpty) return RenterPhoneProblem.required;
+  if (!_renterPhonePattern.hasMatch(phone)) return RenterPhoneProblem.invalid;
+  return null;
+}
+
 final _renterServiceProvider = Provider<RenterService>((ref) {
   final client = ref.watch(apiClientProvider);
   return RenterService(client.dio);
@@ -248,6 +283,11 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                       labelText: l.phoneNumber,
                       prefixIcon: const Icon(Icons.phone_outlined),
                     ),
+                    validator: (v) => switch (renterPhoneProblem(v)) {
+                      RenterPhoneProblem.required => l.phoneRequired,
+                      RenterPhoneProblem.invalid => l.phoneInvalid,
+                      null => null,
+                    },
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
@@ -273,8 +313,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                         final created = await service.createRenter({
                           'nameEn': nameCtrl.text.trim(),
                           'email': email,
-                          if (phoneCtrl.text.isNotEmpty)
-                            'phone': phoneCtrl.text.trim(),
+                          'phone': normalizeRenterPhone(phoneCtrl.text),
                           'primaryLanguage': language,
                         });
                         if (ctx.mounted) Navigator.pop(ctx);
@@ -597,7 +636,12 @@ class _L {
       ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
   String get emailInvalid =>
       ar ? 'أدخل بريدًا إلكترونيًا صالحًا' : 'Enter a valid email';
-  String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone Number';
+  String get phoneNumber => ar ? 'رقم الجوال' : 'Mobile Number';
+  String get phoneRequired =>
+      ar ? 'رقم الجوال مطلوب' : 'Mobile number is required';
+  String get phoneInvalid => ar
+      ? 'أدخل رقم جوال: أرقام ومسافات و+ و- وأقواس، من 7 إلى 15 رقمًا'
+      : 'Enter a mobile number: digits, spaces, +, - and brackets, 7 to 15 digits';
   String get preferredLanguage => ar ? 'اللغة المفضلة' : 'Preferred Language';
   String get english => ar ? 'الإنجليزية' : 'English';
   String get arabic => ar ? 'العربية' : 'Arabic';

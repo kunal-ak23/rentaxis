@@ -393,8 +393,16 @@ class ContractImportPostIT extends AbstractPostgresIT {
         UUID first = importTheTemplate();
         UUID renterOne = tx.execute(s -> leaseOf("SAMPLE-0001").getRenter().getId());
         UUID renterTwo = tx.execute(s -> leaseOf("SAMPLE-0002").getRenter().getId());
+        // Review of #454: renter one has no mobile on record (an older tenant); the second
+        // workbook lists them again with one, which the matched record takes up.
+        tx.executeWithoutResult(s -> renterRepo.findById(renterOne).ifPresent(r -> {
+            r.setPhone(null);
+            renterRepo.save(r);
+        }));
 
         try (Workbook wb = secondWorkbook()) {
+            wb.getSheet("Renters").getRow(1).getCell(3, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK)
+                    .setCellValue("٠٥٠ ٧٧٧ ١٢٣٤");
             // While the first batch is still a DRAFT its renters are not reused: that is
             // the same data loaded twice, and discarding it would pull them away.
             var early = tx.execute(s -> contractValidator.validate(wb));
@@ -414,6 +422,8 @@ class ContractImportPostIT extends AbstractPostgresIT {
         UUID wb2Two = tx.execute(s -> leaseOf("WB2-0002").getRenter().getId());
         assertThat(wb2One).isEqualTo(renterOne);
         assertThat(wb2Two).isEqualTo(renterTwo);
+        String phoneNow = tx.execute(s -> renterRepo.findById(renterOne).orElseThrow().getPhone());
+        assertThat(phoneNow).as("the matched tenant takes the sheet's mobile, normalized").isEqualTo("050 777 1234");
     }
 
     /**

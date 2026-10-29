@@ -97,7 +97,7 @@ class OneLoginPerPersonIT extends AbstractCallerIdentityIT {
 
     private JsonNode createRenter(User admin, String email) throws Exception {
         ResponseEntity<String> res = as(admin, HttpMethod.POST, "/api/v1/renters",
-                Map.of("nameEn", "Shared Person", "email", email));
+                Map.of("nameEn", "Shared Person", "email", email, "phone", "+971501234567"));
         assertThat(res.getStatusCode().value()).as(res.getBody()).isEqualTo(201);
         return json.readTree(res.getBody());
     }

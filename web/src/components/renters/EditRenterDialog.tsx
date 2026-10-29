@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { serverText } from "@/components/finance/bankrec/serverText";
+import { contactProblem, sentPhone } from "./contactRules";
 
 /**
  * Edit tenant: prefilled fields from {@link EditableRenter}, PUT to
@@ -48,13 +49,19 @@ export function EditRenterDialog({ renter, onClose, onSaved }: {
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         if (submitting) return;
+        // Client request 2026-10-29: an email and a mobile, checked before anything is sent.
+        const problem = contactProblem(formData.email, formData.phone);
+        if (problem) {
+            setFormError(t(problem));
+            return;
+        }
         setSubmitting(true);
         setFormError(null);
         try {
             const res = await fetch(`/api/proxy/v1/renters/${encodeURIComponent(renter.id)}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData),
+                body: JSON.stringify({ ...formData, phone: sentPhone(formData.phone) }),
             });
             await throwIfNotOk(res);
             const data = await res.json();
@@ -101,6 +108,7 @@ export function EditRenterDialog({ renter, onClose, onSaved }: {
                         <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("email")}</label>
                         <input
                             type="email"
+                            aria-required="true"
                             placeholder="john@example.com"
                             className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             value={formData.email}
@@ -110,6 +118,10 @@ export function EditRenterDialog({ renter, onClose, onSaved }: {
                     <div className="col-span-1">
                         <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("phone")}</label>
                         <input
+                            type="tel"
+                            inputMode="tel"
+                            dir="ltr"
+                            aria-required="true"
                             placeholder="+971 50 123 4567"
                             className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             value={formData.phone}

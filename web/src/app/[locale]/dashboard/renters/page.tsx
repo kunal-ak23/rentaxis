@@ -18,6 +18,7 @@ import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 import type { Page } from "@/lib/api/ledger";
 import { findDuplicateRenters, normaliseEmail, type DuplicateMatch } from "@/lib/renters/duplicates";
+import { contactProblem, sentPhone } from "@/components/renters/contactRules";
 
 /** How long "Create anyway" stays unarmed after the duplicate warning appears. */
 const CREATE_ANYWAY_ARM_MS = 600;
@@ -174,7 +175,7 @@ function RentersPageInner() {
     // a new invited account, or their existing portal account in this
     // organisation — so the form has no opt-out. `portalAccount` on the create
     // response says which, or why none (the email belongs to another user).
-    type InviteOutcome = "invited" | "existingLogin" | "linked" | "emailInUse" | "accountInactive" | "noEmail" | "notInvited";
+    type InviteOutcome = "invited" | "existingLogin" | "linked" | "emailInUse" | "accountInactive" | "notInvited";
     const [inviteNotice, setInviteNotice] = useState<{ email: string; outcome: InviteOutcome } | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     // Break round 1 (P1): a fast double-click (or Enter twice) on "Create"
@@ -227,6 +228,12 @@ function RentersPageInner() {
 
     const submitRenter = async (createAnyway: boolean) => {
         if (submittingRef.current) return;
+        // Client request 2026-10-29: an email and a mobile, checked before anything is sent.
+        const problem = contactProblem(formData.email, formData.phone);
+        if (problem) {
+            setFormError(t(problem));
+            return;
+        }
         submittingRef.current = true;
         setSubmitting(true);
         setFormError(null);
@@ -234,14 +241,15 @@ function RentersPageInner() {
             if (!createAnyway) {
                 // A failed lookup must not block creating a renter: warn when
                 // we can, create when we cannot check.
-                const checked = { email: formData.email, phone: formData.phone };
+                // The mobile as it will be sent, so one typed in Arabic digits is checked too.
+                const checked = { email: formData.email, phone: sentPhone(formData.phone) };
                 const matches = await findDuplicateRenters(checked)
                     .catch((err) => { console.error(err); return [] as DuplicateMatch[]; });
                 // The email or phone changed while the check ran: its answer
                 // is about other values, and neither warns nor creates. The
                 // next Create checks what is in the form now.
                 const now = formDataRef.current;
-                if (normaliseEmail(now.email) !== normaliseEmail(checked.email) || now.phone.trim() !== checked.phone.trim()) {
+                if (normaliseEmail(now.email) !== normaliseEmail(checked.email) || sentPhone(now.phone) !== checked.phone) {
                     return;
                 }
                 if (matches.length > 0) {
@@ -253,7 +261,7 @@ function RentersPageInner() {
             const res = await fetch("/api/proxy/v1/renters", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData)
+                body: JSON.stringify({ ...formData, phone: sentPhone(formData.phone) })
             });
             // Surface backend failures (e.g. invalid email, duplicate portal
             // email aborting the transaction) instead of silently doing nothing.
@@ -269,7 +277,6 @@ function RentersPageInner() {
                 : data.portalAccount === "SKIPPED_EMAIL_IN_USE" ? "emailInUse"
                 : data.portalAccount === "SKIPPED_ACCOUNT_INACTIVE" ? "accountInactive"
                 : data.invitePending ? "invited"
-                : !formData.email.trim() ? "noEmail"
                 : "notInvited";
             setInviteNotice({ email: formData.email, outcome });
 
@@ -424,11 +431,11 @@ function RentersPageInner() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("email")}</label>
-                                <input type="email" placeholder="john@example.com" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.email} onChange={ev => { setDuplicates(null); setFormData({ ...formData, email: ev.target.value }); }} />
+                                <input type="email" aria-required="true" placeholder="john@example.com" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.email} onChange={ev => { setDuplicates(null); setFormData({ ...formData, email: ev.target.value }); }} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("phone")}</label>
-                                <input placeholder="+971 50 123 4567" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.phone} onChange={ev => { setDuplicates(null); setFormData({ ...formData, phone: ev.target.value }); }} />
+                                <input type="tel" inputMode="tel" dir="ltr" aria-required="true" placeholder="+971 50 123 4567" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.phone} onChange={ev => { setDuplicates(null); setFormData({ ...formData, phone: ev.target.value }); }} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("preferredLanguage")}</label>
@@ -634,7 +641,6 @@ function RentersPageInner() {
                                 : inviteNotice.outcome === "linked" ? tInv("linkedExistingBody")
                                 : inviteNotice.outcome === "emailInUse" ? tInv("emailInUseBody")
                                 : inviteNotice.outcome === "accountInactive" ? tInv("accountInactiveBody")
-                                : inviteNotice.outcome === "noEmail" ? tInv("noPortalBody")
                                 : tInv("noInviteBody")}
                         </p>
                         <button
