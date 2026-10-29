@@ -49,6 +49,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${D}/bookings`, "canManageFacilities"), r(`${D}/promotions`, "canManagePromotions"),
     // The promoter's own portal: PROMOTER only (its endpoints are hasRole('PROMOTER')).
     r(`${D}/promoter`, "canUsePromoterPortal"),
+    r(`${D}/promoter/developer`, "canUsePromoterPortal"),
     r(`${D}/staff`, "canAccessFinanceOps"),
     r(`${D}/settings`, role => buildSettingsSections(role).length > 0),
     r(`${F}/accounts`, "canAccessFinance"), r(`${F}/journals`, "canAccessFinance"), r(`${F}/journals/new`, "canPostJournals"),
@@ -76,6 +77,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${D}/renter-portal/penalties`, "canViewRenterPortal"), r(`${D}/renter-portal/facilities`, "canViewRenterPortal"),
     r(`${D}/renter-portal/renewals`, "canViewRenterPortal"), r(`${D}/renter-portal/renewal-intent`, "canViewRenterPortal"),
     r("/superadmin/tenants", "canManageTenants"), r("/superadmin/users", "canManageUsers"),
+    r("/superadmin/api-keys", "canManageTenants"),
 ];
 
 export function routeAllows(entry: RouteEntry, role: UserRole): boolean {

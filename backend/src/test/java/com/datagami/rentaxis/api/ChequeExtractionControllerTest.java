@@ -7,6 +7,7 @@ import com.datagami.rentaxis.config.SecurityConfig;
 import com.datagami.rentaxis.core.security.ApiSecurityFilter;
 import com.datagami.rentaxis.core.service.cheque.ChequeExtractionService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.core.service.PromoterApiKeyService;
 import com.datagami.rentaxis.security.PublicRateLimitFilter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +52,10 @@ class ChequeExtractionControllerTest {
 
     @MockitoBean
     private PublicRateLimitFilter publicRateLimitFilter;
+
+    /** SecurityConfig builds the partner key filter from it; untouched off /api/v1/partner/. */
+    @MockitoBean
+    private PromoterApiKeyService promoterApiKeyService;
 
     private UUID tenantId;
 

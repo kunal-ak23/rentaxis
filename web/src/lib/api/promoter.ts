@@ -2,7 +2,9 @@ import type { PageResponse } from '@/types/listing'
 import { ApiError, throwIfNotOk } from '@/lib/api/facilities'
 import { PROMO_IMAGE_MAX_BYTES, readDeleteOutcome } from '@/lib/api/promotions'
 import type {
+  ApiKeyDTO,
   DeleteOutcome,
+  IssuedKeyDTO,
   PromoAdDTO,
   PromoAdRequest,
   PromoBusinessDTO,
@@ -133,4 +135,37 @@ export async function uploadPromoterImage(file: File): Promise<string> {
   const data: { url?: string } = await res.json()
   if (!data.url) throw new ApiError(502, 'Upload succeeded but returned no URL')
   return data.url
+}
+
+// ─── Partner-API keys ───────────────────────────────────────────────────────
+// The secret is in the response to create / rotate only; callers must keep it in
+// component state and drop it when the reveal dialog closes.
+
+export async function fetchPromoterApiKeys(): Promise<ApiKeyDTO[]> {
+  const res = await fetch(`${BASE}/api-keys`)
+  await throwIfNotOk(res)
+  return res.json()
+}
+
+export async function createPromoterApiKey(name: string): Promise<IssuedKeyDTO> {
+  const res = await fetch(`${BASE}/api-keys`, {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ name }),
+  })
+  await throwIfNotOk(res)
+  return res.json()
+}
+
+/** The old key keeps working for 24 hours; the new one is returned. */
+export async function rotatePromoterApiKey(id: string): Promise<IssuedKeyDTO> {
+  const res = await fetch(`${BASE}/api-keys/${id}/rotate`, { method: 'POST' })
+  await throwIfNotOk(res)
+  return res.json()
+}
+
+export async function revokePromoterApiKey(id: string, reason?: string): Promise<ApiKeyDTO> {
+  const res = await fetch(`${BASE}/api-keys/${id}/revoke`, {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(reason ? { reason } : {}),
+  })
+  await throwIfNotOk(res)
+  return res.json()
 }

@@ -24,4 +24,12 @@ public interface PromoterPropertyRepository extends JpaRepository<PromoterProper
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("DELETE FROM PromoterProperty pp WHERE pp.tenantId = :tenantId AND pp.userId = :userId")
     void deleteByTenantIdAndUserId(@Param("tenantId") UUID tenantId, @Param("userId") UUID userId);
+
+    /** Granted properties that exist in the tenant (a property with no units still counts). */
+    @Query("""
+        SELECT COUNT(pp) FROM PromoterProperty pp, Property p
+        WHERE p.id = pp.propertyId AND p.tenantId = :tenantId
+          AND pp.tenantId = :tenantId AND pp.userId = :userId
+        """)
+    long countGrantedProperties(@Param("tenantId") UUID tenantId, @Param("userId") UUID userId);
 }

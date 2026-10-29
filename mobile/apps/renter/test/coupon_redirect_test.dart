@@ -267,6 +267,34 @@ void main() {
       );
     });
 
+    testWidgets('property and unit ids reuse the property and unit labels, once each', (
+      tester,
+    ) async {
+      _captureClipboard(tester);
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          sharedFields: const [
+            'PROPERTY_NAME',
+            'PROPERTY_ID',
+            'UNIT_NUMBER',
+            'UNIT_ID',
+          ],
+        ),
+        launcher: _Launcher(),
+      );
+
+      await _tapCopy(tester);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
+            .data,
+        'Property, Unit number',
+      );
+    });
+
     testWidgets('a field this version does not know is still disclosed', (
       tester,
     ) async {
@@ -1144,6 +1172,27 @@ void main() {
       await _tapCancel(tester);
 
       expect(launcher.uris, isEmpty);
+    });
+
+    testWidgets('unit id is labelled as the unit number in Arabic', (
+      tester,
+    ) async {
+      _captureClipboard(tester);
+      await _pump(
+        tester,
+        ad: _ad(redirectUrl: _link, sharedFields: const ['UNIT_ID']),
+        launcher: _Launcher(),
+        ar: true,
+      );
+
+      await _tapCopy(tester);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
+            .data,
+        'رقم الوحدة',
+      );
     });
 
     testWidgets('an unknown field is disclosed in Arabic', (tester) async {

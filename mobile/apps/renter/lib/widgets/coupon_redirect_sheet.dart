@@ -168,8 +168,10 @@ class _L {
       case 'RENTER_EMAIL':
         return ar ? 'البريد الإلكتروني' : 'Email';
       case 'PROPERTY_NAME':
+      case 'PROPERTY_ID':
         return ar ? 'العقار' : 'Property';
       case 'UNIT_NUMBER':
+      case 'UNIT_ID':
         return ar ? 'رقم الوحدة' : 'Unit number';
       default:
         return ar ? 'بيانات أخرى' : 'Other details';

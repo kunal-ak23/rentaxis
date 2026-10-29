@@ -182,6 +182,13 @@ app:
       key-id: ${APPLE_SIGNIN_KEY_ID:}
       # The .p8 file, base64-encoded whole:  base64 < AuthKey_XXXX.p8 | tr -d '\n'
       private-key-base64: ${APPLE_SIGNIN_PRIVATE_KEY_BASE64:}
+  # Promoter developer API (/api/v1/partner/**, X-Api-Key). Failed key attempts
+  # per client IP per minute (checked before any key lookup), and each valid
+  # key's own budget: per-minute refill with a burst capacity.
+  partner-api:
+    failed-auth-per-minute: ${APP_PARTNER_API_FAILED_AUTH_PER_MINUTE:30}
+    per-key-per-minute: ${APP_PARTNER_API_PER_KEY_PER_MINUTE:60}
+    per-key-burst: ${APP_PARTNER_API_PER_KEY_BURST:20}
   renewal:
     scheduler:
       enabled: ${APP_RENEWAL_SCHEDULER_ENABLED:false}

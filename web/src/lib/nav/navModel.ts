@@ -139,6 +139,7 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
         ...one("admin", can("canManageTenants") ? [
             pi("tenants", "/superadmin/tenants", N("tenants"), "sidebar-tenants"),
             pi("users", "/superadmin/users", N("users"), "sidebar-users"),
+            pi("apiKeys", "/superadmin/api-keys", N("apiKeys"), "sidebar-api-keys"),
         ] : [], N("sectionAdmin")),
     ]));
 

@@ -377,3 +377,5 @@ databaseChangeLog:
       file: db/changelog/changesets/185-bank-line-copy-proof.yaml
   - include:
       file: db/changelog/changesets/186-org-settings-unique-tenant.yaml
+  - include:
+      file: db/changelog/changesets/187-promoter-api-key.yaml

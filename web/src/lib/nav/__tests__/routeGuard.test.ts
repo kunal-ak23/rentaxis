@@ -179,6 +179,7 @@ describe("promoter portal", () => {
         expect(allowed("/en/dashboard/promoter")).toEqual(["PROMOTER"]);
         expect(allowed("/ar/dashboard/promoter")).toEqual(["PROMOTER"]);
         expect(findRoute("/en/dashboard/promoter")?.path).toBe("/dashboard/promoter");
+        expect(allowed("/en/dashboard/promoter/developer")).toEqual(["PROMOTER"]);
     });
 
     it("lets a promoter reach the pages every role has, and no other registered page", () => {
@@ -187,6 +188,7 @@ describe("promoter portal", () => {
         expect(open).toEqual([
             "/dashboard", "/dashboard/help", "/dashboard/help/[slug]", "/dashboard/help/videos",
             "/dashboard/notifications", "/dashboard/profile", "/dashboard/promoter",
+            "/dashboard/promoter/developer",
         ]);
     });
 

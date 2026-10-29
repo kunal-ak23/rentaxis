@@ -11,6 +11,10 @@ vi.mock('next-auth/react', () => ({
     useSession: () => ({ data: { user: { id: 'u-promoter', role: session.role } }, status: 'authenticated' }),
 }))
 
+vi.mock('@/i18n/routing', () => ({
+    Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
+}))
+
 import PromoterPortalPage from '../page'
 
 const PROMOTER_API = '/api/proxy/v1/promoter/'
@@ -74,6 +78,15 @@ afterEach(() => {
 })
 
 describe('promoter portal', () => {
+    it('has a Developer tab that lists the API keys', async () => {
+        plan()
+        api.on('GET', `${PROMOTER_API}api-keys`, { body: [] })
+        renderPortal()
+        await screen.findByText('Ad live')
+        fireEvent.click(screen.getByRole('tab', { name: 'Developer' }))
+        expect(await screen.findByRole('button', { name: 'Create key' })).toBeTruthy()
+    })
+
     it('shows the organisation, and the ads with a status pill each', async () => {
         plan()
         renderPortal()

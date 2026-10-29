@@ -134,6 +134,7 @@ export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
     // A Company Admin manages their own organisation's users here.
     byRole: { TENANT_ADMIN: { article: 'admin--managing-staff', videos: ['05', '03'] } },
   },
+  '/superadmin/api-keys': { article: 'admin--super-admin-guide', videos: [] },
   // More
   '/dashboard/meetings': {
     article: 'operations--bookings-meetings-promotions', videos: ['23'],

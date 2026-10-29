@@ -34,7 +34,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         const settings = buildNav(ctx("SUPER_ADMIN")).find(s => s.id === "settings")!;
         expect(settings.groups.map(g => [g.id, g.items.map(i => i.href)])).toEqual([
             ["sections", ["/dashboard/settings?section=organisation", "/dashboard/settings?section=users", "/dashboard/settings?section=rent", "/dashboard/settings?section=payments"]],
-            ["admin", ["/superadmin/tenants", "/superadmin/users"]],
+            ["admin", ["/superadmin/tenants", "/superadmin/users", "/superadmin/api-keys"]],
         ]);
     });
 

@@ -11,8 +11,9 @@ import {
 import type { PromoBusinessDTO, PromoterMeDTO, PromoterPropertyDTO } from "@/types/promotion";
 import { PromoterAdsTab } from "./_components/PromoterAdsTab";
 import { PromoterBusinessesTab } from "./_components/PromoterBusinessesTab";
+import { PromoterDeveloperTab } from "./_components/PromoterDeveloperTab";
 
-type Tab = "ads" | "businesses";
+type Tab = "ads" | "businesses" | "developer";
 
 /**
  * The promoter's portal (/dashboard/promoter): an outside advertiser's ads and
@@ -92,9 +93,17 @@ export default function PromoterPortalPage() {
                     className={`px-4 py-2 text-sm ${tab === "businesses" ? "border-b-2 border-gray-900 font-medium" : "text-gray-500"}`}>
                     {t("businessesTab")}
                 </button>
+                <button type="button" role="tab" aria-selected={tab === "developer"}
+                    onClick={() => setTab("developer")}
+                    className={`px-4 py-2 text-sm ${tab === "developer" ? "border-b-2 border-gray-900 font-medium" : "text-gray-500"}`}>
+                    {t("developerTab")}
+                </button>
             </div>
 
-            {loading ? (
+            {tab === "developer" ? (
+                // Keys do not depend on the lookups, so the tab does not wait for them.
+                <PromoterDeveloperTab />
+            ) : loading ? (
                 <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
             ) : tab === "ads" ? (
                 <PromoterAdsTab businesses={businesses} properties={properties} />

@@ -17,6 +17,8 @@ const NEW_DESTINATIONS: Record<string, string> = {
     "/dashboard/finance/vouchers/credit-note": "/dashboard/finance/vouchers",
     // SUPER_ADMIN keeps /superadmin/users too; Settings › Users & staff embeds that same component.
     "/dashboard/settings?section=users": "/superadmin/users",
+    // Promoter API keys: a super-admin-only page beside Users, behind the same gate as Organisations (canManageTenants).
+    "/superadmin/api-keys": "/superadmin/tenants",
     // Tutorial 19: the Accountant reads Bank Accounts (BankAccountController's GETs) — the
     // accounts their bank reconciliation already works on; edit stays the admin's.
     "/dashboard/finance/bank-accounts": "/dashboard/finance/bank-reconciliation",

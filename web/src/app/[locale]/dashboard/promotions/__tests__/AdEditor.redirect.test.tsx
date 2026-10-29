@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from 'next-intl'
 import en from '../../../../../../messages/en.json'
 import ar from '../../../../../../messages/ar.json'
 import { AdEditor } from '../_components/AdEditor'
+import { RENTER_DATA_SOURCES, sharesRenterData } from '../_components/RedirectLinkFields'
 import type { PromoAdDTO, PromoAdRequest, PromoBusinessDTO } from '@/types/promotion'
 
 /** Addendum A: a coupon ad's optional "after copying, open this link" with custom parameters. */
@@ -117,6 +118,22 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
         type(`${L.redirectParamSource} 1`, 'UNIT_NUMBER')
         save()
         expect(onSave.mock.calls[0][0].redirectParams).toEqual([{ name: 'promo', source: 'UNIT_NUMBER' }])
+    })
+
+    it('offers the property and unit id sources and flags them as renter data', () => {
+        const onSave = startCoupon(mode)
+        fireEvent.change(linkField(), { target: { value: LINK } })
+        addRow('pid', 'PROPERTY_ID')
+        addRow('uid', 'UNIT_ID')
+        expect(screen.getByTestId('redirect-example').textContent).toContain('pid=3f2b8c1e-0000-4000-8000-000000000001')
+        expect(screen.getByTestId('redirect-example').textContent).toContain('uid=3f2b8c1e-0000-4000-8000-000000000002')
+        expect(RENTER_DATA_SOURCES).toEqual(expect.arrayContaining(['PROPERTY_ID', 'UNIT_ID']))
+        expect(sharesRenterData([{ source: 'UNIT_ID' }])).toBe(true)
+        save()
+        expect(onSave.mock.calls[0][0].redirectParams).toEqual([
+            { name: 'pid', source: 'PROPERTY_ID' },
+            { name: 'uid', source: 'UNIT_ID' },
+        ])
     })
 
     it('shows a live example with sample values, keeping the link\'s own query', () => {
@@ -660,6 +677,7 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
             ar.Promotions.redirectSourceCOUPON_CODE, ar.Promotions.redirectSourceRENTER_NAME,
             ar.Promotions.redirectSourceRENTER_PHONE, ar.Promotions.redirectSourceRENTER_EMAIL,
             ar.Promotions.redirectSourcePROPERTY_NAME, ar.Promotions.redirectSourceUNIT_NUMBER,
+            ar.Promotions.redirectSourcePROPERTY_ID, ar.Promotions.redirectSourceUNIT_ID,
             ar.Promotions.redirectSourceSTATIC,
         ])
     })
