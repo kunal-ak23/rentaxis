@@ -128,7 +128,7 @@ describe("wizard Review: monthly rent and cheques", () => {
         expect(screen.getByTestId("review-suggested")).toHaveTextContent(en.Leasing.reviewFirstDueDefaulted);
         // Asked of the generator with the Terms step's count, the start date as first due date.
         expect(api.previewCheques).toHaveBeenCalledWith("L1", {
-            installments: 12, firstDueDate: "2026-09-09", distribution: "LAST_LARGER", foldDepositsAndFeesIntoFirst: true,
+            installments: 12, firstDueDate: "2026-09-09", distribution: "LAST_LARGER", foldDepositsAndFeesIntoFirst: false,
         });
 
         api.generateCheques.mockResolvedValue({ cheques: [cheque(1)], version: 2 });
@@ -151,7 +151,7 @@ describe("wizard Review: monthly rent and cheques", () => {
 describe("wizard Cheques: a changed count asks before regenerating", () => {
     it("asks, and regenerates only on confirm", async () => {
         await toChequesStep([cheque(1), cheque(2), cheque(3), cheque(4)]);
-        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 12, but 4 are saved");
+        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 12, but the grid was generated for 4");
         expect(api.generateCheques).not.toHaveBeenCalled();
         api.generateCheques.mockResolvedValue({ cheques: Array.from({ length: 12 }, (_, i) => cheque(i + 1)), version: 2 });
         fireEvent.click(screen.getByTestId("wizard-regenerate-confirm"));

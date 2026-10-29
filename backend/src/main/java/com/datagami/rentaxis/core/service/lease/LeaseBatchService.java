@@ -117,12 +117,16 @@ public class LeaseBatchService {
 
     /**
      * The grid the draft editor's "Generate cheques" would cut: the lease's own payment terms
-     * (copied from the predecessor). A contract with none — an import that carried its own
+     * (copied from the predecessor), and — as that button now does by default (client request
+     * 2026-10-28, review of #452 I4) — the deposit and each fee on a cheque of their own rather
+     * than on rent cheque 1. A contract with no payment terms — an import that carried its own
      * register — takes as many instalments as the predecessor's rent cheques, the nearest
      * reading of "the same as now". Everything else is the generator's default.
      */
     private com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest gridFor(UUID predecessorId, LeaseDTO draft) {
-        if (draft.getPaymentTerms() != null && draft.getPaymentTerms() > 0) return null;
+        if (draft.getPaymentTerms() != null && draft.getPaymentTerms() > 0) {
+            return new com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest(null, null, null, null, null, false, null);
+        }
         long rent = chequeRepository.findByLease_IdOrderBySeqNoAsc(predecessorId).stream()
                 .filter(c -> c.getRowKind() == null || c.getRowKind() == com.datagami.rentaxis.domain.entity.enums.ChequeRowKind.RENT
                         || c.getRowKind() == com.datagami.rentaxis.domain.entity.enums.ChequeRowKind.MIXED)
@@ -130,7 +134,7 @@ public class LeaseBatchService {
                         && c.getStatus() != com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED)
                 .count();
         return new com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest((int) Math.max(1, rent), null, null, null,
-                null, null, null);
+                null, false, null);
     }
 
     /**

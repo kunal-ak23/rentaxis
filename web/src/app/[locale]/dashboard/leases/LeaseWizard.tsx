@@ -86,6 +86,12 @@ const initialTerms: Terms = {
     rentVatApplicable: false,
 };
 
+/** Rent instalments in a grid: its RENT and MIXED rows, or every row when none says what it is. */
+function rentInstalmentsOf(grid: Cheque[]): number {
+    return grid.filter(c => c.rowKind === "RENT" || c.rowKind === "MIXED").length
+        || grid.filter(c => c.rowKind == null).length;
+}
+
 /** Only the two the draft endpoint admits — see `DraftPaymentMethod`. */
 function asDraftMethod(v: string | null | undefined): DraftPaymentMethod {
     return v === "ONLINE" ? "ONLINE" : "CHEQUE";
@@ -169,6 +175,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [cheques, setCheques] = useState<Cheque[]>([]);
+    // Review of #452, I2: the grid as the server last returned it — a merge or any other
+    // edit not saved yet is the difference, and Next saves it before the review is priced.
+    const [savedCheques, setSavedCheques] = useState<Cheque[]>([]);
+    // Review of #452, I1: the rent instalments the grid was cut into, at the last
+    // Generate or when the saved grid was read — not counted off the rows as they
+    // stand, which a merge changes without the Terms changing.
+    const [generatedCount, setGeneratedCount] = useState<number | null>(null);
     const [chequeNotice, setChequeNotice] = useState<string | null>(null);
     const [chequeError, setChequeError] = useState<string | null>(null);
     const [scanOpen, setScanOpen] = useState(false);
@@ -196,6 +209,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setRows([blankLine(0)]);
         setLease(null);
         setCheques([]);
+        setSavedCheques([]);
+        setGeneratedCount(null);
         setFoldChoice(null);
         setChequeNotice(null);
         setChequeError(null);
@@ -379,6 +394,20 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
      * (409 lease.changed). Read it back — its lines, grid and (at review) its
      * figures — so the user reviews what is saved now rather than overwriting it.
      */
+    /**
+     * A grid the server answered with: what the wizard shows and what it compares edits
+     * against. `cut: "generate"` — a fresh cut of the Terms, so its rent rows are the
+     * instalment count; `"read"` — the saved grid read back, which counts only when the
+     * count is not known yet (it may hold the user's merges since).
+     */
+    const fromServer = (grid: Cheque[], opts: { cut?: "generate" | "read" } = {}) => {
+        setCheques(grid);
+        setSavedCheques(grid);
+        if (grid.length === 0) setGeneratedCount(null);
+        else if (opts.cut === "generate") setGeneratedCount(rentInstalmentsOf(grid));
+        else if (opts.cut === "read") setGeneratedCount(prev => prev ?? rentInstalmentsOf(grid));
+    };
+
     const reloadChanged = async (id: string) => {
         // PR #396 review P3-1: read everything first and apply it together. Applying the
         // new version before the grid arrived left, on a failed second read, the old
@@ -408,7 +437,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
             setSelectedRenter({ id: fresh.renterId, nameEn: fresh.renterName ?? "", nameAr: null, phone: null, email: null });
         }
         setRows(toRows(fresh.lines));
-        setCheques(grid);
+        fromServer(grid, { cut: "read" });
         if (freshDry) setDry(freshDry);
     };
 
@@ -429,7 +458,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
             // role mapping; reading the lines back is how the grid learns it.
             setRows(toRows(saved.lines));
             const grid = await leaseApi.cheques(saved.id);
-            setCheques(grid);
+            fromServer(grid, { cut: "read" });
             setChequeNotice(had && grid.length === 0 ? t("chequesClearedNotice") : null);
             onCreated();
             setStepIdx(3);
@@ -450,16 +479,19 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         }
     };
 
-    /** Runs one grid write; true when it landed (the scan entry point saves first and opens only then). */
-    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>): Promise<boolean> => {
+    /**
+     * Runs one grid write; true when it landed (the scan entry point saves first and opens only then).
+     * `cut`: the write is a Generate, so the rows it returns are a fresh cut of the Terms.
+     */
+    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>, opts: { cut?: "generate" } = {}): Promise<boolean> => {
         setBusy(true);
         setChequeError(null);
         try {
             const r = await fn();
             if (Array.isArray(r)) {
-                setCheques(r);
+                fromServer(r, opts);
             } else {
-                setCheques(r.cheques);
+                fromServer(r.cheques, opts);
                 // Review A M3: the grid write moved the draft's version; the next save and the post name the new one.
                 const version = r.version;
                 if (version != null) setLease(prev => (prev ? withVersion(prev, version) : prev));
@@ -483,7 +515,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const generate = (req: GenerateChequesRequest) => {
         if (!lease) return;
         if (req.foldDepositsAndFeesIntoFirst != null) setFoldChoice(req.foldDepositsAndFeesIntoFirst);
-        runCheques(() => leaseApi.generateCheques(lease.id, req, lease.version));
+        runCheques(() => leaseApi.generateCheques(lease.id, req, lease.version), { cut: "generate" });
     };
     const generateNumbers = (startingNumber: string) => {
         if (!lease) return;
@@ -500,17 +532,17 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         terms.endDate, lease?.rentFreePeriods ?? null);
     /**
      * Review of R4-B M8: whether one-time charges ride on cheque 1 — the user's
-     * "Separate cheque for one-time charges" choice on the last Generate; before one,
-     * what the saved rows show (a FEE or DEPOSIT row of its own means separate); else
-     * folded, the Cheques step's default.
+     * "Separate cheque for one-time charges" choice on the last Generate; else
+     * separate, the Cheques step's default since the client's request of 2026-10-28.
+     * Not read off the saved rows (review of #452, I1): a MIXED row may be the user's
+     * own merge, and regenerating it as a fold would put every charge on cheque 1.
      */
-    const foldOneTime = foldChoice
-        ?? !cheques.some(c => c.rowKind === "FEE" || c.rowKind === "DEPOSIT");
+    const foldOneTime = foldChoice ?? false;
     /**
      * Owner requests (2026-09-29): what "Generate cheques" is asked for — the Terms
      * step's count (as the generator counts it), first due date (the start date when
-     * empty) and distribution, with one-time charges folded into cheque 1 unless the
-     * user chose a separate cheque. The Review step's suggestion and "Use this
+     * empty) and distribution, with one-time charges on cheques of their own unless
+     * the user asked for them on cheque 1. The Review step's suggestion and "Use this
      * schedule" use exactly this.
      */
     const chequeRequest = (): GenerateChequesRequest => ({
@@ -521,7 +553,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     });
     const applySchedule = async (req: GenerateChequesRequest) => {
         if (!lease) return;
-        await runCheques(() => leaseApi.generateCheques(lease.id, req, lease.version));
+        await runCheques(() => leaseApi.generateCheques(lease.id, req, lease.version), { cut: "generate" });
         try {
             setDry(await leaseApi.dryRunPost(lease.id));
         } catch {
@@ -531,10 +563,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     // Owner request (2026-09-29): a count changed after cheques were generated is not
     // applied silently — the Cheques step asks before regenerating.
     const [keptCountFor, setKeptCountFor] = useState<number | null>(null);
-    const rentRowCount = cheques.filter(c => c.rowKind === "RENT" || c.rowKind === "MIXED").length
-        || cheques.filter(c => c.rowKind == null).length;
-    const countChanged = !!lease && lease.status === "DRAFT" && cheques.length > 0
-        && rentRowCount !== generatorCount && keptCountFor !== generatorCount;
+    const gridUnsaved = JSON.stringify(toChequeRows(cheques)) !== JSON.stringify(toChequeRows(savedCheques));
+    const countChanged = !!lease && lease.status === "DRAFT" && cheques.length > 0 && generatedCount != null
+        && generatedCount !== generatorCount && keptCountFor !== generatorCount;
 
     const saveCheques = () => {
         if (!lease || focusFirstInvalidMoney(document)) return;
@@ -554,6 +585,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
 
     const toReview = async () => {
         if (!lease) return;
+        // Review of #452, I2: Review lists the grid on screen and Post posts the saved one,
+        // so an edit not saved yet (a merge, typically) is saved first; a refused save
+        // keeps the user here with the reason on the grid.
+        if (gridUnsaved) {
+            if (focusFirstInvalidMoney(document)) return;
+            if (!(await runCheques(() => leaseApi.saveCheques(lease.id, toChequeRows(cheques), lease.version)))) return;
+        }
         setBusy(true);
         setError(null);
         try {
@@ -879,7 +917,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                 <div role="alert" data-testid="wizard-regenerate-prompt"
                                     className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-warning">
                                     <AlertTriangle size={12} />
-                                    <span>{t("regenerateChequesPrompt", { count: generatorCount, had: rentRowCount })}</span>
+                                    <span>{t("regenerateChequesPrompt", { count: generatorCount, had: generatedCount ?? 0 })}</span>
                                     <button type="button" data-testid="wizard-regenerate-confirm" disabled={busy}
                                         onClick={() => generate(chequeRequest())}
                                         className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-semibold cursor-pointer disabled:opacity-50">

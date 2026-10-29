@@ -183,6 +183,13 @@ export default function LeaseDetailPage() {
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [cheques, setCheques] = useState<Cheque[]>([]);
+    // Review of #452, I2: the grid as the server last returned it. The Post dialog prices
+    // and posts the saved grid, so an edit still on screen (a merge) is saved before it opens.
+    const [savedCheques, setSavedCheques] = useState<Cheque[]>([]);
+    const fromServer = (grid: Cheque[]) => {
+        setCheques(grid);
+        setSavedCheques(grid);
+    };
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
     const [renter, setRenter] = useState<Renter | null>(null);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -242,7 +249,7 @@ export default function LeaseDetailPage() {
         try {
             const detail = await leaseApi.get(leaseId);
             setLease(detail);
-            setCheques(await leaseApi.cheques(leaseId));
+            fromServer(await leaseApi.cheques(leaseId));
             leaseApi.addenda(leaseId).then(setAddenda).catch(() => setAddenda([]));
             if (detail.renterId) {
                 const r = await fetch(`/api/proxy/v1/renters/${detail.renterId}`);
@@ -342,9 +349,9 @@ export default function LeaseDetailPage() {
         try {
             const r = await fn();
             if (Array.isArray(r)) {
-                setCheques(r);
+                fromServer(r);
             } else {
-                setCheques(r.cheques);
+                fromServer(r.cheques);
                 // Review A M3: a grid write moved the lease's version; this tab holds the new one,
                 // so its next save or its Post names it rather than refusing itself (409 lease.changed).
                 const version = r.version;
@@ -363,6 +370,21 @@ export default function LeaseDetailPage() {
         } finally {
             setChequeBusy(false);
         }
+    };
+
+    /**
+     * Post: the grid on screen first, if it differs from the saved one; a refused save shows on
+     * the grid. As Save cheques does, an amount the field refused is never saved (it reads as 0).
+     */
+    const openPost = async () => {
+        if (lease && JSON.stringify(toChequeRows(cheques)) !== JSON.stringify(toChequeRows(savedCheques))) {
+            if (focusFirstInvalidMoney(document)) return;
+            if (!(await runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques), lease.version)))) {
+                selectTab("payments", "cheques");
+                return;
+            }
+        }
+        setPostOpen(true);
     };
 
     const handleChequeAction = async () => {
@@ -557,7 +579,7 @@ export default function LeaseDetailPage() {
                 requestAnimationFrame(() => document.getElementById("lease-metadata-editor")?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
             },
         },
-        post: { label: t("postLease"), testId: "lease-post", icon: CheckCircle, onSelect: () => setPostOpen(true) },
+        post: { label: t("postLease"), testId: "lease-post", icon: CheckCircle, onSelect: () => { void openPost(); } },
         recordPayment: {
             label: tA("recordPayment"), testId: "lease-record-payment", icon: Banknote,
             href: `/dashboard/collections?tab=all&leaseId=${lease.id}&receive=1`,

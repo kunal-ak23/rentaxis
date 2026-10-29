@@ -451,6 +451,9 @@ export type ChequeRowInput = {
  */
 export type ChequeRowKind = "RENT" | "FEE" | "DEPOSIT" | "MIXED";
 
+/** `GET /leases/line-accounts`: the account a line of this charge type is credited to by default. */
+export type LineAccountSuggestion = { chargeTypeId: string; accountId: string };
+
 /** ExtendLeaseRequest. */
 export type ExtendLeaseInput = {
   newEndDate: string;
@@ -1635,6 +1638,12 @@ export const leaseApi = {
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),
+  /**
+   * Client request (2026-10-28): per charge type, the Ledger a line on this property is
+   * credited to when none is picked — what the save writes. Types with nothing mapped are absent.
+   */
+  lineAccounts: (propertyId: string) =>
+    get<LineAccountSuggestion[]>(`/leases/line-accounts${qs({ propertyId })}`),
   /** Owner request (2026-09-29): what generateCheques would write for this request, written nowhere. */
   previewCheques: (id: string, req?: GenerateChequesRequest) =>
     send<ChequePreviewRow[]>("POST", `/leases/${id}/cheques/preview`, req ?? {}),

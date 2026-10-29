@@ -44,13 +44,22 @@ vi.mock("@/components/leases/ChequeGrid", async orig => {
     const m = await orig<typeof import("@/components/leases/ChequeGrid")>();
     return {
         ...m,
-        // The grid's own Generate, with "Separate cheque for one-time charges" ticked.
-        default: ({ onGenerate }: { onGenerate?: (r: unknown) => void }) => (
+        // The grid's own Generate, with "Separate cheque for one-time charges" ticked,
+        // and its Merge on the first two or the last two rows (the real mergeCheques).
+        default: ({ cheques, onGenerate, onChange }: {
+            cheques: import("@/lib/api/leasing").Cheque[];
+            onGenerate?: (r: unknown) => void;
+            onChange?: (rows: import("@/lib/api/leasing").Cheque[]) => void;
+        }) => (
             <div data-testid="cheque-grid">
                 <button type="button" data-testid="grid-generate-separate" onClick={() => onGenerate?.({
                     installments: 4, firstDueDate: "2026-09-09", distribution: "LAST_LARGER",
                     foldDepositsAndFeesIntoFirst: false, mode: "PDC",
                 })} />
+                <button type="button" data-testid="grid-merge-first-two"
+                    onClick={() => onChange?.(m.mergeCheques(cheques, new Set(cheques.slice(0, 2).map(c => c.id))))} />
+                <button type="button" data-testid="grid-merge-last-two"
+                    onClick={() => onChange?.(m.mergeCheques(cheques, new Set(cheques.slice(-2).map(c => c.id))))} />
             </div>
         ),
     };
@@ -60,7 +69,7 @@ const RENT_TYPE = { id: "ct-rent", code: "RENT", behaviour: "RENT", vatApplicabl
 const chargeTypes = vi.hoisted(() => ({ list: vi.fn() }));
 const api = vi.hoisted(() => ({
     createDraft: vi.fn(), updateDraft: vi.fn(), cheques: vi.fn(), generateCheques: vi.fn(),
-    dryRunPost: vi.fn(), previewCheques: vi.fn(), rentSchedulePreview: vi.fn(),
+    dryRunPost: vi.fn(), previewCheques: vi.fn(), rentSchedulePreview: vi.fn(), saveCheques: vi.fn(),
 }));
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
@@ -166,12 +175,80 @@ describe("M8: the wizard's regenerate and Use this schedule honour a separate on
         expect(api.generateCheques.mock.calls[1][1]).toMatchObject({ foldDepositsAndFeesIntoFirst: false });
     });
 
-    it("still folds by default", async () => {
+    // Client request (2026-10-28): the deposit and each fee get a cheque of their own
+    // unless the user asks for them on cheque 1.
+    it("keeps one-time charges on their own cheques by default", async () => {
         await toChequesStep([cheque(1), cheque(2)]);
         api.generateCheques.mockResolvedValue({ cheques: [cheque(1)], version: 2 });
         fireEvent.click(screen.getByTestId("wizard-regenerate-confirm"));
         await waitFor(() => expect(api.generateCheques).toHaveBeenCalledTimes(1));
-        expect(api.generateCheques.mock.calls[0][1]).toMatchObject({ foldDepositsAndFeesIntoFirst: true });
+        expect(api.generateCheques.mock.calls[0][1]).toMatchObject({ foldDepositsAndFeesIntoFirst: false });
+    });
+
+    // Review of #452, I1: a MIXED row may be the user's own merge, not the generator's fold.
+    it("does not fold because a saved row is MIXED", async () => {
+        await toChequesStep([{ ...cheque(1), rowKind: "MIXED" }, cheque(2)]);
+        api.generateCheques.mockResolvedValue({ cheques: [cheque(1)], version: 2 });
+        fireEvent.click(screen.getByTestId("wizard-regenerate-confirm"));
+        await waitFor(() => expect(api.generateCheques).toHaveBeenCalledTimes(1));
+        expect(api.generateCheques.mock.calls[0][1]).toMatchObject({ foldDepositsAndFeesIntoFirst: false });
+    });
+});
+
+/**
+ * Review of #452: merging cheques on the wizard grid (client request 2026-10-28).
+ * I1 — a merge changes the rows, not the Terms, so it never raises "regenerate".
+ * I2 — Next saves a grid with unsaved edits first, so Review and Post see the merge.
+ */
+describe("a merge on the wizard's cheque grid", () => {
+    const twelve = () => Array.from({ length: 12 }, (_, i) => cheque(i + 1));
+    const deposit = { ...cheque(13), rowKind: "DEPOSIT", amount: 5000 };
+    const feeRow = { ...cheque(14), rowKind: "FEE", amount: 1000 };
+
+    it("does not ask to regenerate after two rent cheques are merged", async () => {
+        await toChequesStep(twelve());
+        expect(screen.queryByTestId("wizard-regenerate-prompt")).toBeNull();
+        fireEvent.click(screen.getByTestId("grid-merge-first-two"));
+        expect(screen.queryByTestId("wizard-regenerate-prompt")).toBeNull();
+    });
+
+    it("does not ask to regenerate after the deposit and the fee are merged", async () => {
+        await toChequesStep([...twelve(), deposit, feeRow]);
+        fireEvent.click(screen.getByTestId("grid-merge-last-two"));
+        expect(screen.queryByTestId("wizard-regenerate-prompt")).toBeNull();
+    });
+
+    it("saves an unsaved merge on Next, before the review is priced", async () => {
+        await toChequesStep(twelve());
+        fireEvent.click(screen.getByTestId("grid-merge-first-two"));
+        api.saveCheques.mockImplementation((_id: string, rows: unknown[]) =>
+            Promise.resolve({ cheques: rows.map((r, i) => ({ ...cheque(i + 1), ...(r as object), id: `c${i + 1}` })), version: 2 }));
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        await waitFor(() => expect(screen.getByTestId("wizard-review")).toBeInTheDocument());
+        expect(api.saveCheques).toHaveBeenCalledTimes(1);
+        const [, rows, version] = api.saveCheques.mock.calls[0];
+        expect(rows).toHaveLength(11);
+        expect(rows[0]).toMatchObject({ id: "c1", amount: 30000 });
+        expect(version).toBe(1);
+        expect(api.saveCheques.mock.invocationCallOrder[0]).toBeLessThan(api.dryRunPost.mock.invocationCallOrder[0]);
+    });
+
+    it("goes straight to the review when nothing on the grid is unsaved", async () => {
+        await toChequesStep(twelve());
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        await waitFor(() => expect(screen.getByTestId("wizard-review")).toBeInTheDocument());
+        expect(api.saveCheques).not.toHaveBeenCalled();
+    });
+
+    it("stays on the Cheques step when that save is refused", async () => {
+        await toChequesStep(twelve());
+        fireEvent.click(screen.getByTestId("grid-merge-first-two"));
+        api.saveCheques.mockRejectedValue(new Error("network"));
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        await waitFor(() => expect(api.saveCheques).toHaveBeenCalledTimes(1));
+        expect(screen.queryByTestId("wizard-review")).toBeNull();
+        expect(screen.getByTestId("cheque-grid")).toBeInTheDocument();
+        expect(api.dryRunPost).not.toHaveBeenCalled();
     });
 });
 
@@ -187,7 +264,7 @@ describe("M9: a rent-free period does not make the regenerate prompt reappear", 
 
     it("asks with the generator's count, and regenerates with it", async () => {
         await toChequesStep([cheque(1), cheque(2), cheque(3), cheque(4)], FREE);
-        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 11, but 4 are saved");
+        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 11, but the grid was generated for 4");
         api.generateCheques.mockResolvedValue({ cheques: Array.from({ length: 11 }, (_, i) => cheque(i + 1)), version: 2 });
         fireEvent.click(screen.getByTestId("wizard-regenerate-confirm"));
         await waitFor(() => expect(api.generateCheques).toHaveBeenCalledTimes(1));

@@ -54,7 +54,8 @@ public final class LeaseBatch {
      *                        (the single renew dialog's proposal)
      * @param contractDate    the successors' contract date; null = the single renew's default
      * @param generateGrid    also cut each draft's cheque grid with the defaults the draft editor's
-     *                        "Generate cheques" uses ({@code ChequeGenerationService.generate(id, null)})
+     *                        "Generate cheques" uses: the lease's payment terms, and the deposit and
+     *                        each fee on a cheque of their own (client request 2026-10-28)
      * @param additionalLines charges added to every renewal (e.g. a renewal fee), as on the single renew
      */
     public record RenewRequest(@NotEmpty(message = "Choose at least one contract")
