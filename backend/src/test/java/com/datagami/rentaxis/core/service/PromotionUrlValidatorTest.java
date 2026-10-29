@@ -155,18 +155,52 @@ class PromotionUrlValidatorTest {
     }
 
     @Test
-    void isAppLink_refusesDangerousAndMalformedLinks() {
+    void isAppLink_refusesMalformedLinks() {
         for (String bad : new String[]{
-                "javascript:alert(1)", "JavaScript:x", "data:text/html,x", "http://a.example",
-                "https://a.example", "intent://x#Intent;end", "file:///etc/passwd", "glidewash:",
-                "glide wash://x", "glidewash://re deem", "glidewash://x\n", "glidewash://x\u200Ey",
-                "glidewash://x\u00A0", "1app://x", "a://x", "a".repeat(33) + "://x", "://x", "glidewash",
-                "", "tel:+971500000000", "sms:1", "mailto:a@b.example", "itms-services://?action=download",
-                "chrome-extension://x", "vbscript:x", "blob:x", "about:blank", "content://x",
-                "facetime-audio:1", "ws://x", "wss://x", "ftp://x"}) {
+                "glidewash:", "glide wash://x", "glidewash://re deem", "glidewash://x\n", "glidewash://x\t",
+                "1app://x", "a://x", "a".repeat(33) + "://x", "://x", "glidewash", ""}) {
             assertThat(validator.isAppLink(bad)).as(bad).isFalse();
         }
         assertThat(validator.isAppLink(null)).isFalse();
+    }
+
+    @Test
+    void isAppLink_isPrintableAsciiOnly() {
+        // A variation selector, a Hangul filler, a no-break space, a zero-width
+        // mark and a non-ASCII letter: each could make the link read differently
+        // on the review screen than what the phone opens.
+        for (String bad : new String[]{
+                "glidewash://x\uFE00", "glidewash://\u3164", "glidewash://x\u00A0y",
+                "glidewash://x\u200Ey", "glidewash://caf\u00E9", "glidewash://x\u007F"}) {
+            assertThat(validator.isAppLink(bad)).as(bad).isFalse();
+        }
+        assertThat(validator.isAppLink("glidewash://!~#%7e")).isTrue();
+    }
+
+    @Test
+    void isAppLink_refusesEverySchemeInTheSharedFixture() {
+        for (String scheme : RefusedAppSchemes.all()) {
+            for (String variant : new String[]{scheme, scheme.toUpperCase(java.util.Locale.ROOT)}) {
+                assertThat(validator.isAppLink(variant + "://x")).as(variant).isFalse();
+                assertThat(validator.isAppLink(variant + ":x")).as(variant).isFalse();
+            }
+        }
+        // The fixture covers everything the validator names.
+        assertThat(RefusedAppSchemes.NAMED).containsAll(PromotionUrlValidator.REFUSED_APP_SCHEMES);
+        for (String scheme : RefusedAppSchemes.ALLOWED) {
+            assertThat(validator.isAppLink(scheme + "://x")).as(scheme).isTrue();
+        }
+    }
+
+    @Test
+    void browserBridgesCannotGetAroundTheAllowlist() {
+        for (String bridge : new String[]{
+                "googlechromes://evil.example/r", "googlechrome://navigate?url=https://evil.example",
+                "x-safari-https://evil.example/r", "microsoft-edge-https://evil.example/r",
+                "opera-https://evil.example/r", "firefox://open-url?url=https://evil.example",
+                "brave://open-url?url=https://evil.example", "GoogleChromes://evil.example/r"}) {
+            assertThat(validator.isAllowedRedirect(bridge, "spice-bazaar.ae")).as(bridge).isFalse();
+        }
     }
 
     @Test

@@ -24,7 +24,9 @@ import java.util.regex.Pattern;
  * apply to those — they have no web host — so the control is the admin's
  * review of the ad (promoter-written ads are approved before renters see them;
  * the review screen marks an app link). What this still refuses is any scheme a
- * phone would hand to a browser, a script engine, a file or the dialler.
+ * phone would hand to a browser (which would get around the domain allowlist),
+ * a script engine, a file, the dialler or messages, and anything that is not
+ * printable ASCII.
  *
  * <p>Subdomain matching compares label boundaries, not string suffixes —
  * {@code evil-spice-bazaar.ae} ends with {@code spice-bazaar.ae} but is a
@@ -61,14 +63,25 @@ public class PromotionUrlValidator {
     /**
      * Schemes an app link may never use, compared lower-cased. Web schemes stay
      * under {@link #isAllowed}'s domain rule (so an https link on a domain the
-     * business does not claim is still refused, and plain http never passes);
-     * the rest run script, read local data, reach system handlers (Android
-     * {@code intent:}, iOS enterprise installs) or place calls and messages.
+     * business does not claim is still refused, and plain http never passes).
+     * Browser-opening schemes ({@code googlechromes://host/path},
+     * {@code firefox://open-url?url=…}, {@code microsoft-edge-https://…}) are
+     * refused because they hand a web address to a browser and so would get
+     * around the domain allowlist; see also {@link #isRefusedAppScheme} for the
+     * {@code -http}/{@code -https}/{@code x-safari-} families. The rest run
+     * script, read local data, reach system handlers (Android {@code intent:},
+     * iOS enterprise installs) or place calls, messages and FaceTime calls.
+     * Keep in step with the web form and the renter app.
      */
     static final Set<String> REFUSED_APP_SCHEMES = Set.of(
             "http", "https", "javascript", "vbscript", "data", "file", "blob", "about",
             "content", "ftp", "ws", "wss", "intent", "itms-services", "chrome",
-            "chrome-extension", "mailto", "tel", "sms", "facetime", "facetime-audio");
+            "chrome-extension", "mailto", "tel", "sms", "facetime", "facetime-audio",
+            // Browsers: these open a web address and would get around the allowlist.
+            "googlechrome", "googlechromes", "firefox", "focus", "brave", "opera", "opera-http",
+            "microsoft-edge", "duckduckgo", "edge",
+            // Calls and messages.
+            "telprompt", "facetime-prompt", "facetime-audio-prompt", "smsto", "mms", "mmsto");
 
     /** Normalises admin input into bare lowercase hostnames, dropping anything invalid. */
     public List<String> parseDomains(String raw) {
@@ -176,35 +189,39 @@ public class PromotionUrlValidator {
 
     /**
      * An app deep link with a custom scheme: the scheme matches {@link #APP_SCHEME},
-     * something follows {@code scheme:}, nothing anywhere is whitespace or a
-     * control/format character (a zero-width or bidi-override character would let
-     * a link read differently on the review screen than what the phone opens), and
-     * the scheme is not one of {@link #REFUSED_APP_SCHEMES}. Not trimmed: a caller
-     * passes the stored, already-trimmed value.
+     * something follows {@code scheme:}, every character is printable ASCII
+     * ({@code !} to {@code ~}: no space, control, non-ASCII or invisible character,
+     * so the link reads on the review screen exactly as the phone opens it), and
+     * the scheme is not refused ({@link #isRefusedAppScheme}). Not trimmed: a
+     * caller passes the stored, already-trimmed value.
      */
     public boolean isAppLink(String url) {
         if (url == null || url.isEmpty()) {
             return false;
         }
-        for (int i = 0; i < url.length(); ) {
-            int cp = url.codePointAt(i);
-            if (isWhitespaceOrControl(cp)) {
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c < 0x21 || c > 0x7E) {
                 return false;
             }
-            i += Character.charCount(cp);
         }
         int colon = url.indexOf(':');
         if (colon < 0 || colon == url.length() - 1) {
             return false;
         }
         String scheme = url.substring(0, colon);
-        return APP_SCHEME.matcher(scheme).matches()
-                && !REFUSED_APP_SCHEMES.contains(scheme.toLowerCase(Locale.ROOT));
+        return APP_SCHEME.matcher(scheme).matches() && !isRefusedAppScheme(scheme);
     }
 
-    private static boolean isWhitespaceOrControl(int cp) {
-        int type = Character.getType(cp);
-        return Character.isWhitespace(cp) || Character.isSpaceChar(cp) || cp == 0xFEFF
-                || type == Character.CONTROL || type == Character.FORMAT;
+    /**
+     * Whether an app link may not use {@code scheme} (any case): one of
+     * {@link #REFUSED_APP_SCHEMES}, or a browser bridge by pattern — anything
+     * ending in {@code -http} or {@code -https} ({@code microsoft-edge-https},
+     * {@code opera-https}) or starting with {@code x-safari-}.
+     */
+    static boolean isRefusedAppScheme(String scheme) {
+        String s = scheme.toLowerCase(Locale.ROOT);
+        return REFUSED_APP_SCHEMES.contains(s)
+                || s.endsWith("-http") || s.endsWith("-https") || s.startsWith("x-safari-");
     }
 }

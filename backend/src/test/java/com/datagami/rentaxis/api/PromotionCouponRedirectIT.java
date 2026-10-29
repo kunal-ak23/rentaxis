@@ -184,6 +184,26 @@ class PromotionCouponRedirectIT extends AbstractPromoterIT {
     }
 
     @Test
+    void aWebsiteAdStaysHttpsOnly() {
+        // Coupon redirects take app links; a WEBSITE ctaUrl never does.
+        Map<String, Object> req = coupon(null, List.of());
+        req.put("ctaType", "WEBSITE");
+        req.put("ctaUrl", "glidewash://redeem");
+        assertRefused(req, "ctaUrl must be https");
+    }
+
+    @Test
+    void everyRefusedSchemeInTheSharedFixtureIsA400() {
+        for (String scheme : com.datagami.rentaxis.core.service.RefusedAppSchemes.all()) {
+            assertRefused(platform("redirectUrlAndroid", scheme + "://evil.example/r"), "or an app link");
+        }
+        for (String scheme : com.datagami.rentaxis.core.service.RefusedAppSchemes.ALLOWED) {
+            assertThat(post(admin, "/api/v1/promotions/ads", platform("redirectUrlIos", scheme + "://x")).status())
+                    .as(scheme).isEqualTo(201);
+        }
+    }
+
+    @Test
     void aRefusedSchemeIsA400NamingBothForms() {
         for (String field : List.of("redirectUrl", "redirectUrlAndroid", "redirectUrlIos")) {
             for (String bad : List.of("javascript:alert(1)", "intent://x#Intent;end", "data:text/html,x",
@@ -214,12 +234,23 @@ class PromotionCouponRedirectIT extends AbstractPromoterIT {
     }
 
     @Test
+    void anAppLinkIsResolvedByteForByteAsStored() {
+        User renter = user(org, UserRole.RENTER);
+        String stored = "GlideWash://Redeem/a/../b?x=%7e";
+        String adId = post(admin, "/api/v1/promotions/ads",
+                coupon(null, stored, null, List.of(param("code", "COUPON_CODE", null)))).text("id");
+
+        assertThat(adById(adId).get("redirectUrlAndroid").asText()).isEqualTo(stored);
+        assertThat(offers(renter).get(adId).get("redirectUrlAndroid").asText()).isEqualTo(stored + "&code=SAVE10");
+    }
+
+    @Test
     void aStoredAppLinkWithARefusedSchemeIsDroppedAtReadTime() {
         User renter = user(org, UserRole.RENTER);
         String adId = post(admin, "/api/v1/promotions/ads",
                 coupon(LINK, "glidewash://redeem", null, List.of())).text("id");
         // A value that bypassed the write check (an old row, a manual fix) is re-checked in the feed.
-        jdbc.update("UPDATE promo_ads SET redirect_url_android = 'javascript:alert(1)' WHERE id = ?::uuid", adId);
+        jdbc.update("UPDATE promo_ads SET redirect_url_android = 'googlechromes://evil.example/r' WHERE id = ?::uuid", adId);
 
         JsonNode card = offers(renter).get(adId);
 
