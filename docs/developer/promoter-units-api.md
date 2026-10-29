@@ -1,0 +1,151 @@
+# Promoter units API – developer guide
+
+## Overview
+
+The promoter API lets your own systems read the list of units you may receive coupon redemptions from. It is
+read-only and returns units only: unit id, unit number, property id and property name. It never returns tenant,
+contract, payment or other personal data. The units are those in the properties shared with you; when a property is
+added or removed, the list changes with it.
+
+## Getting a key
+
+1. Open the **Developer** tab of the promoter portal and choose **Create key**.
+2. The full key is shown **once**. Copy it straight into a secret manager; Miftah keeps only a fingerprint and cannot
+   show it again.
+3. You can have at most **2 active keys**. To replace a key without downtime use **Rotate**: a new key is created and
+   the old one keeps working for **24 hours**, then stops. Move your systems over within that window.
+4. You can **revoke** a key at any time; it stops working at once. Miftah staff can also revoke a key (for example
+   after a leak); the Developer tab then shows the reason.
+
+## Base URL
+
+```
+https://<your Miftah host>/api/v1/partner/promoter
+```
+
+HTTPS only. The in-app copy of this guide (Developer tab → "Read the developer docs") shows your real host.
+
+## Authentication
+
+Send the key in the `X-Api-Key` header on every request. Do not use `Authorization`; the key is the only credential
+the API accepts.
+
+```
+X-Api-Key: mfk_live_EXAMPLEEXAMPLEEXAMPLEEXAMPLE
+```
+
+All examples below use a fake key and fake ids.
+
+## `GET /ping`
+
+Checks that the key works and returns who it acts for.
+
+```bash
+curl -H "X-Api-Key: mfk_live_EXAMPLEEXAMPLEEXAMPLEEXAMPLE" \
+  "https://<your Miftah host>/api/v1/partner/promoter/ping"
+```
+
+```json
+{
+  "promoterUserId": "0b7e5a10-2c4d-4e6f-8a9b-1c2d3e4f5a6b",
+  "tenantId": "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a"
+}
+```
+
+## `GET /units/count`
+
+A cheap summary of your unit list: number of properties and units, a fingerprint of the whole list, and when it was
+generated. The fingerprint changes whenever any unit, property or name in the list changes.
+
+```bash
+curl -H "X-Api-Key: mfk_live_EXAMPLEEXAMPLEEXAMPLEEXAMPLE" \
+  "https://<your Miftah host>/api/v1/partner/promoter/units/count"
+```
+
+```json
+{
+  "properties": 2,
+  "units": 148,
+  "fingerprint": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "generatedAt": "2026-10-29T08:15:00Z"
+}
+```
+
+## `GET /units`
+
+The unit list, one page at a time, ordered by property name, unit number, then unit id. Every unit in your shared
+properties is included, whatever its status.
+
+| Parameter    | Meaning                                                                    |
+|--------------|----------------------------------------------------------------------------|
+| `page`       | Page number from 0 (default 0)                                             |
+| `size`       | Page size, default 100, maximum 500 (larger values are reduced to 500)     |
+| `propertyId` | Optional; only that property's units                                       |
+
+Every page carries the fingerprint of the **whole** list, not of the page.
+
+```bash
+curl -H "X-Api-Key: mfk_live_EXAMPLEEXAMPLEEXAMPLEEXAMPLE" \
+  "https://<your Miftah host>/api/v1/partner/promoter/units?page=0&size=500"
+```
+
+```json
+{
+  "content": [
+    { "unitId": "3f2b8c1e-5a47-4d9e-9b6a-0c1d2e3f4a51", "unitNumber": "101",
+      "propertyId": "c1d2e3f4-a5b6-4789-90ab-cdef01234567", "propertyName": "Example Tower" },
+    { "unitId": "7a9d4e20-1b3c-4f58-8e6d-5c4b3a291f02", "unitNumber": "102",
+      "propertyId": "c1d2e3f4-a5b6-4789-90ab-cdef01234567", "propertyName": "Example Tower" }
+  ],
+  "page": 0,
+  "size": 500,
+  "totalElements": 148,
+  "totalPages": 1,
+  "fingerprint": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+}
+```
+
+A promoter with no shared properties gets `200` with an empty list, not `404`.
+
+## Recommended sync loop
+
+1. Every 15 minutes, call `GET /units/count`.
+2. If the `fingerprint` equals the one you stored, stop: nothing changed.
+3. Otherwise fetch every page of `GET /units` with `size=500`, from page 0 until `totalPages` is reached.
+4. If any page's `fingerprint` differs from the first page's, the list changed while you were reading it. Discard what
+   you fetched and start again.
+5. Replace your local set in one atomic step and store the new fingerprint.
+
+## Validating a coupon redemption
+
+On the ad, add `UNIT_ID` (and optionally `PROPERTY_ID`) as redirect parameters, for example `unitId` and
+`propertyId`. When a tenant opens your link, the Miftah app passes their unit and property ids to your page.
+
+Check that the `unitId` you receive is in your synced set; anything not in it is not one of your units. Whether a
+coupon was already used, or looks fraudulent, is for you to decide: Miftah does not track redemptions.
+
+## Errors and limits
+
+A missing, unknown, revoked or expired key, or one whose promoter is no longer active, always answers `401`. These
+cases cannot be told apart, on purpose.
+
+```
+HTTP/1.1 401
+{"error":"invalid_api_key"}
+```
+
+Each key may make **60 requests per minute**, with bursts of up to **20**. Beyond that you receive `429` and a
+`Retry-After` header giving the seconds to wait. Repeated bad keys from one address are also limited (30 per minute).
+
+```
+HTTP/1.1 429
+Retry-After: 12
+{"error":"rate_limited"}
+```
+
+## Security
+
+- Call the API from your **servers only**. Never put a key in a mobile app, a web page, or any code that runs on a
+  device you do not control.
+- Store keys in a secret manager, never in source control or logs.
+- Rotate keys when staff who knew them leave, and revoke any key you suspect has leaked.

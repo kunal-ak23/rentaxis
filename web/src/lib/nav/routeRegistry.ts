@@ -49,6 +49,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${D}/bookings`, "canManageFacilities"), r(`${D}/promotions`, "canManagePromotions"),
     // The promoter's own portal: PROMOTER only (its endpoints are hasRole('PROMOTER')).
     r(`${D}/promoter`, "canUsePromoterPortal"),
+    r(`${D}/promoter/developer`, "canUsePromoterPortal"),
     r(`${D}/staff`, "canAccessFinanceOps"),
     r(`${D}/settings`, role => buildSettingsSections(role).length > 0),
     r(`${F}/accounts`, "canAccessFinance"), r(`${F}/journals`, "canAccessFinance"), r(`${F}/journals/new`, "canPostJournals"),
