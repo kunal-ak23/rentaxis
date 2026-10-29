@@ -347,3 +347,26 @@ export interface PromoterPropertyDTO {
 export interface PendingAdCountDTO {
   count: number
 }
+
+/** A promoter's partner-API key. The secret is never part of it: see IssuedKeyDTO. */
+export type ApiKeyStatus = 'active' | 'expiring' | 'revoked' | 'expired'
+
+export interface ApiKeyDTO {
+  id: string
+  name: string
+  /** First 12 characters of the secret, e.g. "mfk_live_a1B". */
+  keyPrefix: string
+  createdAt: string
+  lastUsedAt: string | null
+  expiresAt: string | null
+  revokedAt: string | null
+  revokedReason: string | null
+  revokedByAdmin: boolean
+  status: ApiKeyStatus
+}
+
+/** Response to create / rotate: the only time the secret is ever sent. */
+export interface IssuedKeyDTO {
+  key: ApiKeyDTO
+  secret: string
+}
