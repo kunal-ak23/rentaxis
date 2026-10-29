@@ -292,8 +292,8 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Email", "Duplicate email: " + email));
             }
             // Client request 2026-10-29: a tenant needs a mobile, in the import as on the form.
-            String phone = getCellString(row, 3);
-            if (phone.isBlank()) {
+            String phone = com.datagami.rentaxis.core.util.PhoneNumbers.forTenant(getCellString(row, 3));
+            if (phone == null) {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Phone", "Mobile is required"));
             } else if (!com.datagami.rentaxis.core.util.PhoneNumbers.isPlausible(phone)) {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Phone",

@@ -44,7 +44,9 @@ public final class PhoneNumbers {
      * ("050 8831786", "04 123 9911") and every format in existing data pass; blank
      * passes too, so a caller that requires a phone says so separately. Match it
      * against {@link #normalizeUnicode} output. The web's {@code PHONE_PATTERN}
-     * ({@code web/src/lib/phone.ts}) is the same rule; keep the two in step.
+     * ({@code web/src/lib/phone.ts}) and the manager app's {@code renterPhoneProblem}
+     * ({@code mobile/apps/manager/lib/screens/renters_screen.dart}) are the same rule;
+     * keep the three in step.
      */
     public static final String LENIENT_PATTERN = "^\\s*$|^\\s*\\+?[\\s()\\-]*(?:\\d[\\s()\\-]*){7,15}$";
 
@@ -53,10 +55,21 @@ public final class PhoneNumbers {
 
     private static final Pattern LENIENT = Pattern.compile(LENIENT_PATTERN);
 
-    /** A non-blank phone that, normalized, satisfies {@link #LENIENT_PATTERN}. */
+    /**
+     * A phone that, normalized, is not blank and satisfies {@link #LENIENT_PATTERN}.
+     * Blank is judged after normalizing: a cell holding only a non-breaking space
+     * (sheets exported from web pages) is empty, though {@code String.isBlank} says not.
+     */
     public static boolean isPlausible(String phone) {
-        if (phone == null || phone.isBlank()) return false;
-        return LENIENT.matcher(normalizeUnicode(phone)).matches();
+        String normalized = normalizeUnicode(phone);
+        if (normalized == null || normalized.isBlank()) return false;
+        return LENIENT.matcher(normalized).matches();
+    }
+
+    /** The phone as a tenant record stores it: normalized and trimmed, or null when blank. */
+    public static String forTenant(String phone) {
+        String normalized = normalizeUnicode(phone);
+        return normalized == null || normalized.isBlank() ? null : normalized.trim();
     }
 
     /**

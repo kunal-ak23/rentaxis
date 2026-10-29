@@ -910,6 +910,11 @@ class ContractImportValidatorTest {
             assertThat(errors(wb))
                     .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getRow, ImportErrorDTO::getField, ImportErrorDTO::getMessage)
                     .contains(Tuple.tuple("Renters", 2, "Phone", "Mobile may contain only digits, spaces, +, - and parentheses (7-15 digits)"));
+            set(wb, "Renters", 1, 3, "\u00A0");
+            assertThat(errors(wb))
+                    .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getRow, ImportErrorDTO::getField, ImportErrorDTO::getMessage)
+                    .as("a cell holding only a non-breaking space is empty")
+                    .contains(Tuple.tuple("Renters", 2, "Phone", "Mobile is required"));
             set(wb, "Renters", 1, 3, "٠٥٠ ١٢٣ ٤٥٦٧");
             assertThat(errors(wb)).noneMatch(e -> "Phone".equals(e.getField()));
         }

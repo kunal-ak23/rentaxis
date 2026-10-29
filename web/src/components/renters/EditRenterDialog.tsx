@@ -108,7 +108,7 @@ export function EditRenterDialog({ renter, onClose, onSaved }: {
                         <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("email")}</label>
                         <input
                             type="email"
-                            required
+                            aria-required="true"
                             placeholder="john@example.com"
                             className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             value={formData.email}
@@ -120,7 +120,8 @@ export function EditRenterDialog({ renter, onClose, onSaved }: {
                         <input
                             type="tel"
                             inputMode="tel"
-                            required
+                            dir="ltr"
+                            aria-required="true"
                             placeholder="+971 50 123 4567"
                             className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             value={formData.phone}

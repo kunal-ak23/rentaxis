@@ -241,14 +241,15 @@ function RentersPageInner() {
             if (!createAnyway) {
                 // A failed lookup must not block creating a renter: warn when
                 // we can, create when we cannot check.
-                const checked = { email: formData.email, phone: formData.phone };
+                // The mobile as it will be sent, so one typed in Arabic digits is checked too.
+                const checked = { email: formData.email, phone: sentPhone(formData.phone) };
                 const matches = await findDuplicateRenters(checked)
                     .catch((err) => { console.error(err); return [] as DuplicateMatch[]; });
                 // The email or phone changed while the check ran: its answer
                 // is about other values, and neither warns nor creates. The
                 // next Create checks what is in the form now.
                 const now = formDataRef.current;
-                if (normaliseEmail(now.email) !== normaliseEmail(checked.email) || now.phone.trim() !== checked.phone.trim()) {
+                if (normaliseEmail(now.email) !== normaliseEmail(checked.email) || sentPhone(now.phone) !== checked.phone) {
                     return;
                 }
                 if (matches.length > 0) {
@@ -430,11 +431,11 @@ function RentersPageInner() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("email")}</label>
-                                <input type="email" required placeholder="john@example.com" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.email} onChange={ev => { setDuplicates(null); setFormData({ ...formData, email: ev.target.value }); }} />
+                                <input type="email" aria-required="true" placeholder="john@example.com" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.email} onChange={ev => { setDuplicates(null); setFormData({ ...formData, email: ev.target.value }); }} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("phone")}</label>
-                                <input type="tel" inputMode="tel" required placeholder="+971 50 123 4567" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.phone} onChange={ev => { setDuplicates(null); setFormData({ ...formData, phone: ev.target.value }); }} />
+                                <input type="tel" inputMode="tel" dir="ltr" aria-required="true" placeholder="+971 50 123 4567" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.phone} onChange={ev => { setDuplicates(null); setFormData({ ...formData, phone: ev.target.value }); }} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("preferredLanguage")}</label>

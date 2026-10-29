@@ -159,7 +159,8 @@ class PortfolioImportPersistEndToEndTest {
         Sheet renters = wb.createSheet("Renters");
         writeRow(renters, 0, "Name", "NameAr", "Email", "Phone");
         for (int r = 1; r <= 5; r++) {
-            writeRow(renters, r, "Tenant " + r, "", "tenant" + r + "@email.com", "");
+            // Every tenant has a mobile (client request 2026-10-29).
+            writeRow(renters, r, "Tenant " + r, "", "tenant" + r + "@email.com", "050 000 000" + r);
         }
 
         Sheet leases = wb.createSheet("Leases");

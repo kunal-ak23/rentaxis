@@ -636,7 +636,7 @@ class _L {
       ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
   String get emailInvalid =>
       ar ? 'أدخل بريدًا إلكترونيًا صالحًا' : 'Enter a valid email';
-  String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone Number';
+  String get phoneNumber => ar ? 'رقم الجوال' : 'Mobile Number';
   String get phoneRequired =>
       ar ? 'رقم الجوال مطلوب' : 'Mobile number is required';
   String get phoneInvalid => ar

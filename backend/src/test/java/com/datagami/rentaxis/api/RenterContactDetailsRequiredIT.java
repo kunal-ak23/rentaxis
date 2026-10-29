@@ -127,6 +127,7 @@ class RenterContactDetailsRequiredIT extends AbstractPostgresIT {
     void aMobileTypedInArabicDigitsOrPastedWithNonBreakingSpacesIsAccepted() {
         ResponseEntity<Map> arabic = send(HttpMethod.POST, "/api/v1/renters", tenant(unique(), "٠٥٠ ١٢٣ ٤٥٦٧"));
         assertThat(arabic.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(arabic.getBody().get("phone")).as("stored with plain digits").isEqualTo("050 123 4567");
         ResponseEntity<Map> pasted = send(HttpMethod.POST, "/api/v1/renters", tenant(unique(), "+971 50 123 4567"));
         assertThat(pasted.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }

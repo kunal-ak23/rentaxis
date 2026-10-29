@@ -247,6 +247,8 @@ public class RenterService {
         if (!dto.isCreatePortalAccount()) {
             outcome = RenterDTO.PortalAccount.NOT_REQUESTED;
         } else if (!hasEmail) {
+            // Not reachable through POST /renters since every tenant needs an email (client
+            // request 2026-10-29, CreateRenterDTO); kept for internal callers and API compat.
             outcome = RenterDTO.PortalAccount.NO_EMAIL;
         } else {
             List<User> sameEmail = tenantId == null ? List.of()
@@ -377,6 +379,7 @@ public class RenterService {
 
         if (emailChanged && renter.getUserId() != null) {
             if (normalizedNewEmail == null) {
+                // Backstop: UpdateRenterDTO's @NotBlank refuses a blank email before this (2026-10-29).
                 throw new BusinessRuleViolationException(PORTAL_EMAIL_REQUIRED_MESSAGE, PORTAL_EMAIL_REQUIRED_CODE, null);
             }
             if (!portalUserValid) {

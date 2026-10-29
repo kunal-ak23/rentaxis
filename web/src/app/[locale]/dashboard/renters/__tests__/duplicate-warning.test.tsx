@@ -86,6 +86,14 @@ describe("Add Tenant duplicate warning", () => {
         expect(posts).toBe(0);
     });
 
+    // Review of #454: the check runs on the mobile as it will be sent, so Arabic digits match too.
+    it("warns on a matching phone typed in Arabic digits", async () => {
+        await fill("", "٠٥٠ ١٢٣ ٤٥٦٧");
+        const warning = await screen.findByTestId("renter-duplicate-warning");
+        expect(warning.textContent).toContain("Sweep Tenant");
+        expect(posts).toBe(0);
+    });
+
     it("creates straight away (no warning) when nothing matches", async () => {
         await fill("brand-new@example.com", "0559999999");
         expect(await screen.findByText("noInviteBody")).toBeTruthy();

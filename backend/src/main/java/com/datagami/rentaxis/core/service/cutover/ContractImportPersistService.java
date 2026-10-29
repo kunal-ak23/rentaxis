@@ -448,6 +448,13 @@ public class ContractImportPersistService {
             Renter existing = existingRenter(SheetCells.getCellString(row, 2), SheetCells.getCellString(row, 0),
                     "Renters", i + 1, "Email");
             if (existing != null) {
+                // Review of #454: an older tenant with no mobile takes the one this row
+                // gives (validated as every row is); one already on record is kept.
+                String phone = com.datagami.rentaxis.core.util.PhoneNumbers.forTenant(SheetCells.getCellString(row, 3));
+                if (phone != null && (existing.getPhone() == null || existing.getPhone().isBlank())) {
+                    existing.setPhone(phone);
+                    renterRepository.save(existing);
+                }
                 byEmail.put(SheetCells.getCellString(row, 2).trim().toLowerCase(Locale.ROOT), existing);
                 continue;
             }
@@ -455,7 +462,7 @@ public class ContractImportPersistService {
             r.setNameEn(SheetCells.getCellString(row, 0));
             r.setNameAr(blankToNull(SheetCells.getCellString(row, 1)));
             r.setEmail(SheetCells.getCellString(row, 2));
-            r.setPhone(blankToNull(SheetCells.getCellString(row, 3)));
+            r.setPhone(com.datagami.rentaxis.core.util.PhoneNumbers.forTenant(SheetCells.getCellString(row, 3)));
             Renter saved = renterRepository.save(r);
             batches.linkEntity(batch.getId(), ImportedEntityType.RENTER, saved.getId());
             byEmail.put(saved.getEmail().toLowerCase(Locale.ROOT), saved);

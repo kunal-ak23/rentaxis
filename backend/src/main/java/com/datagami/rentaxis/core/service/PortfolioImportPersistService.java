@@ -256,7 +256,7 @@ public class PortfolioImportPersistService {
             r.setNameEn(getCellString(row, 0));
             r.setNameAr(getCellString(row, 1).isEmpty() ? null : getCellString(row, 1));
             r.setEmail(getCellString(row, 2));
-            r.setPhone(getCellString(row, 3).isEmpty() ? null : getCellString(row, 3));
+            r.setPhone(com.datagami.rentaxis.core.util.PhoneNumbers.forTenant(getCellString(row, 3)));
 
             renterMap.put(r.getEmail().toLowerCase(), renterRepository.save(r));
         }
