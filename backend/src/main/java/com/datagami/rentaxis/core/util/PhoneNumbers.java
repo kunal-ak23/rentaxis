@@ -39,6 +39,27 @@ public final class PhoneNumbers {
     }
 
     /**
+     * The lenient rule for a phone a person types about themselves or a tenant:
+     * digits, spaces, "+", "-", parentheses, 7-15 digits — local UAE forms
+     * ("050 8831786", "04 123 9911") and every format in existing data pass; blank
+     * passes too, so a caller that requires a phone says so separately. Match it
+     * against {@link #normalizeUnicode} output. The web's {@code PHONE_PATTERN}
+     * ({@code web/src/lib/phone.ts}) is the same rule; keep the two in step.
+     */
+    public static final String LENIENT_PATTERN = "^\\s*$|^\\s*\\+?[\\s()\\-]*(?:\\d[\\s()\\-]*){7,15}$";
+
+    /** What a tenant's mobile that breaks {@link #LENIENT_PATTERN} is refused with. */
+    public static final String LENIENT_MESSAGE = "Mobile may contain only digits, spaces, +, - and parentheses (7-15 digits)";
+
+    private static final Pattern LENIENT = Pattern.compile(LENIENT_PATTERN);
+
+    /** A non-blank phone that, normalized, satisfies {@link #LENIENT_PATTERN}. */
+    public static boolean isPlausible(String phone) {
+        if (phone == null || phone.isBlank()) return false;
+        return LENIENT.matcher(normalizeUnicode(phone)).matches();
+    }
+
+    /**
      * Break-it round 2 M6: the web rule ({@code web/src/lib/phone.ts}) is a JS
      * regex whose {@code \s} matches every Unicode space — including the
      * non-breaking space (U+00A0) and narrow no-break space (U+202F) that a phone

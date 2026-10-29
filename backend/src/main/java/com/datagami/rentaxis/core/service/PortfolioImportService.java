@@ -291,6 +291,14 @@ public class PortfolioImportService {
             } else if (!renterEmails.add(email.toLowerCase())) {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Email", "Duplicate email: " + email));
             }
+            // Client request 2026-10-29: a tenant needs a mobile, in the import as on the form.
+            String phone = getCellString(row, 3);
+            if (phone.isBlank()) {
+                errors.add(new ImportErrorDTO("Renters", rowNum, "Phone", "Mobile is required"));
+            } else if (!com.datagami.rentaxis.core.util.PhoneNumbers.isPlausible(phone)) {
+                errors.add(new ImportErrorDTO("Renters", rowNum, "Phone",
+                        com.datagami.rentaxis.core.util.PhoneNumbers.LENIENT_MESSAGE));
+            }
         }
     }
 

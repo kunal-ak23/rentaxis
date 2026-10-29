@@ -54,6 +54,7 @@ async function openAndFill() {
     fireEvent.click((await screen.findAllByText("addRenter"))[0]);
     fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "Double Click" } });
     fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "dbl@x.com" } });
+    fireEvent.change(screen.getByPlaceholderText("+971 50 123 4567"), { target: { value: "050 123 4567" } });
 }
 
 describe("RentersPage create is single-flight", () => {

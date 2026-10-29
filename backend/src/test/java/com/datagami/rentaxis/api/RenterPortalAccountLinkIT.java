@@ -76,8 +76,15 @@ class RenterPortalAccountLinkIT extends AbstractPostgresIT {
     }
 
     private JsonNode create(User admin, String email) throws Exception {
+        ResponseEntity<String> res = post(admin, email);
+        assertThat(res.getStatusCode().value()).as(res.getBody()).isEqualTo(201);
+        return json.readTree(res.getBody());
+    }
+
+    private ResponseEntity<String> post(User admin, String email) {
         Map<String, Object> body = new HashMap<>();
         body.put("nameEn", "Portal Link Tenant");
+        body.put("phone", "+971501234567");
         if (email != null) body.put("email", email);
         ResponseEntity<String> res = RestClient.builder().baseUrl("http://localhost:" + port).build()
                 .post().uri("/api/v1/renters")
@@ -88,8 +95,7 @@ class RenterPortalAccountLinkIT extends AbstractPostgresIT {
                 .header("X-User-Tenant-Id", admin.getTenantId().toString())
                 .body(body)
                 .retrieve().onStatus(s -> true, (rq, rs) -> { }).toEntity(String.class);
-        assertThat(res.getStatusCode().value()).as(res.getBody()).isEqualTo(201);
-        return json.readTree(res.getBody());
+        return res;
     }
 
     private UUID renterUserId(JsonNode created) {
@@ -211,14 +217,15 @@ class RenterPortalAccountLinkIT extends AbstractPostgresIT {
     }
 
     @Test
-    void noEmailMeansNoPortalAccount() throws Exception {
+    void aTenantWithoutAnEmailIsRefused() throws Exception {
+        // Client request 2026-10-29: every tenant has an email (and a mobile), so the
+        // NO_EMAIL portal outcome can no longer be reached through this endpoint.
         LandlordOrg org = org("none");
         User admin = user(org, UserRole.TENANT_ADMIN, email());
 
-        JsonNode created = create(admin, null);
-
-        assertThat(created.get("portalAccount").asText()).isEqualTo("NO_EMAIL");
-        assertThat(renterUserId(created)).isNull();
+        ResponseEntity<String> res = post(admin, null);
+        assertThat(res.getStatusCode().value()).isEqualTo(400);
+        assertThat(res.getBody()).contains("email: Email is required");
     }
 
     /** Review m5: a deactivated portal account is not linked; the note says why. */

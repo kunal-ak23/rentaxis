@@ -512,7 +512,7 @@ public class AuthController {
         }
     }
 
-    static final String PHONE_PATTERN = "^\\s*$|^\\s*\\+?[\\s()\\-]*(?:\\d[\\s()\\-]*){7,15}$";
+    static final String PHONE_PATTERN = PhoneNumbers.LENIENT_PATTERN;
 
     public record ChangePasswordRequest(String currentPassword, String newPassword) {
     }

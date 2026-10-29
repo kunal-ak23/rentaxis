@@ -340,7 +340,7 @@ class ForgotPasswordIT extends AbstractCallerIdentityIT {
         User adminA = row(orgA, UserRole.TENANT_ADMIN, email());
         ResponseEntity<String> created = asSelf(org.springframework.http.HttpMethod.POST, "/api/v1/renters", adminA)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("nameEn", "Security notice: call +971 50 000 0000", "email", victimEmail))
+                .body(Map.of("nameEn", "Security notice: call +971 50 000 0000", "email", victimEmail, "phone", "+971501234567"))
                 .retrieve().onStatus(st -> true, (rq, rs) -> { }).toEntity(String.class);
         assertThat(created.getStatusCode().value()).as(created.getBody()).isEqualTo(201);
         assertThat(json.readTree(created.getBody()).get("portalAccount").asText()).isEqualTo("EXISTING_LOGIN");
