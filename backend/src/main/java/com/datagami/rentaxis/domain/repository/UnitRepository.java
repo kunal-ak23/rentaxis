@@ -157,4 +157,32 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
             "select u.unitNumber from Unit u where u.tenantId = :tenantId and u.property.id = :propertyId and u.building is null")
     List<String> unitNumbersWithoutBuilding(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
                                             @org.springframework.data.repository.query.Param("propertyId") UUID propertyId);
+
+    /** One row of the promoter developer API's units feed. */
+    interface PartnerFeedRow {
+        UUID getUnitId();
+        String getUnitNumber();
+        UUID getPropertyId();
+        String getPropertyName();
+    }
+
+    /**
+     * The units of the properties {@code promoterUserId} is granted, in feed order
+     * (property name, unit number, unit id). The tenant is checked on the unit, the
+     * grant and the property, and the grant is the promoter's own: the Hibernate
+     * tenant filter is not what keeps another organisation's or promoter's rows out.
+     * Order is stated here once; the paging and the fingerprint both read this list.
+     */
+    @Query("""
+        select u.id as unitId, u.unitNumber as unitNumber, p.id as propertyId, p.nameEn as propertyName
+        from Unit u join u.property p, PromoterProperty pp
+        where pp.propertyId = p.id
+          and pp.userId = :promoterUserId
+          and pp.tenantId = :tenantId
+          and u.tenantId = :tenantId
+          and p.tenantId = :tenantId
+        order by p.nameEn asc, u.unitNumber asc, u.id asc
+        """)
+    List<PartnerFeedRow> findPartnerFeedRows(@Param("tenantId") UUID tenantId,
+                                             @Param("promoterUserId") UUID promoterUserId);
 }
