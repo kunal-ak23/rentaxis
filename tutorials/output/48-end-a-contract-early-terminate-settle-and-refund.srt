@@ -1,0 +1,135 @@
+1
+00:00:00,000 --> 00:00:04,087
+This tutorial ends a tenancy contract
+before its term is
+
+2
+00:00:04,087 --> 00:00:08,174
+over: terminate it, settle the deposit,
+and pay the refund.
+
+3
+00:00:08,174 --> 00:00:12,670
+Ahmed Hassan's contract for unit A-101
+runs to the end of
+
+4
+00:00:12,670 --> 00:00:16,757
+December, but he moved out on the
+thirty-first of August.
+
+5
+00:00:16,757 --> 00:00:18,392
+First, his July cheque.
+
+6
+00:00:18,392 --> 00:00:22,888
+It is already at the bank, and the bank
+has confirmed
+
+7
+00:00:22,888 --> 00:00:27,384
+it, so find it in the cheque register and
+choose Clear.
+
+8
+00:00:27,384 --> 00:00:31,062
+Open his contract, and under More actions,
+select Terminate.
+
+9
+00:00:31,062 --> 00:00:34,741
+Set the termination date to the
+thirty-first of August.
+
+10
+00:00:34,741 --> 00:00:38,828
+Rent earned to that day is 56,589.04, and
+the 28,410.96
+
+11
+00:00:38,828 --> 00:00:42,506
+after it is reversed, because it was never
+earned.
+
+12
+00:00:42,506 --> 00:00:45,367
+The October cheque is dated after he
+
+13
+00:00:45,367 --> 00:00:48,228
+left, so it is returned to him.
+
+14
+00:00:48,228 --> 00:00:49,455
+Terminate, and confirm.
+
+15
+00:00:49,455 --> 00:00:52,316
+The settlement opens, computed from the
+ledger.
+
+16
+00:00:52,316 --> 00:00:55,585
+Ahmed's deposit of 22,000 is held, and the
+
+17
+00:00:55,585 --> 00:00:58,446
+balance shows the landlord owes him
+7,160.96.
+
+18
+00:00:58,446 --> 00:01:01,307
+Deduct 750 for cleaning after move-out,
+and
+
+19
+00:01:01,307 --> 00:01:03,760
+the refund to Ahmed is 28,410.96.
+
+20
+00:01:03,760 --> 00:01:05,803
+Save the draft, then Finalize.
+
+21
+00:01:05,803 --> 00:01:09,073
+Finalizing writes the settlement journal,
+and the refund
+
+22
+00:01:09,073 --> 00:01:12,343
+is owed to him until it is paid.
+
+23
+00:01:12,343 --> 00:01:13,569
+Choose Pay refund.
+
+24
+00:01:13,569 --> 00:01:17,247
+A payment voucher opens, filled in from
+the settlement:
+
+25
+00:01:17,247 --> 00:01:20,517
+Ahmed, the refunds payable account, and
+the amount.
+
+26
+00:01:20,517 --> 00:01:25,013
+Pay from the building's bank account, the
+Emirates Islamic account for
+
+27
+00:01:25,013 --> 00:01:29,509
+Residence Tower, by bank transfer, enter
+the transfer reference, and Post.
+
+28
+00:01:29,509 --> 00:01:32,778
+Back on Ahmed's settlement, the refund of
+28,410.96
+
+29
+00:01:32,778 --> 00:01:36,048
+is paid in full, and nothing is
+outstanding.

@@ -1,0 +1,58 @@
+{
+  "id": "48",
+  "slug": "end-a-contract-early-terminate-settle-and-refund",
+  "title": "Miftah tutorial 48 · End a contract early: terminate, settle and refund",
+  "description": "Terminate a contract on the move-out date, return the cheques dated after it, settle the deposit with a deduction and pay the Tenant's refund from the building's bank account.\n\nWho this is for: Accountant, Company Admin, Property Manager.\n\nChapters:\n0:00 Clear the Banked July Cheque\n0:29 Terminate on the Move-out Date\n0:51 Settle the Deposit\n1:14 Pay the Refund\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nأنهِ العقد في تاريخ الإخلاء، وأعد الشيكات المؤرخة بعده، وسوِّ التأمين مع خصم، وادفع للمستأجر المبلغ المستحق من الحساب البنكي للمبنى.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "tenancy contract",
+    "lease agreement",
+    "tenant management",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Leasing",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Clear the Banked July Cheque"
+    },
+    {
+      "startSec": 29.4,
+      "start": "0:29",
+      "label": "Terminate on the Move-out Date"
+    },
+    {
+      "startSec": 51.1,
+      "start": "0:51",
+      "label": "Settle the Deposit"
+    },
+    {
+      "startSec": 74.4,
+      "start": "1:14",
+      "label": "Pay the Refund"
+    }
+  ],
+  "durationSec": 97,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "ACCOUNTANT"
+  ],
+  "topic": "leasing",
+  "captionsFile": "tutorials/output/48-end-a-contract-early-terminate-settle-and-refund.srt",
+  "videoFile": "tutorials/output/48-end-a-contract-early-terminate-settle-and-refund.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/48.png"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "51",
+  "slug": "monthly-rent-posted-nightly-and-checked-by-hand",
+  "title": "Miftah tutorial 51 · Monthly rent: posted nightly, checked by hand",
+  "description": "Each ended month moves from Advance Rent to Rental Income on its own every night. See what is still waiting in Month-end recognition, preview it, and post it.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Posted on Its Own\n0:20 What Is Waiting\n0:44 Preview, Then Run\n1:09 September Is Posted\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nيُنقل كل شهر منتهٍ من الإيجار المقدّم إلى إيراد الإيجار تلقائيًا كل ليلة. اطّلع على ما ينتظر في الاعتراف بالإيراد في نهاية الشهر، وعاينه، ثم رحّله.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Posted on Its Own"
+    },
+    {
+      "startSec": 20.2,
+      "start": "0:20",
+      "label": "What Is Waiting"
+    },
+    {
+      "startSec": 44.2,
+      "start": "0:44",
+      "label": "Preview, Then Run"
+    },
+    {
+      "startSec": 69.3,
+      "start": "1:09",
+      "label": "September Is Posted"
+    }
+  ],
+  "durationSec": 81,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/51-monthly-rent-posted-nightly-and-checked-by-hand.srt",
+  "videoFile": "tutorials/output/51-monthly-rent-posted-nightly-and-checked-by-hand.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/51.png"
+}

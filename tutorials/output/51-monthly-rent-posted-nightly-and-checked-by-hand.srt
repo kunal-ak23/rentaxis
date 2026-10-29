@@ -1,0 +1,109 @@
+1
+00:00:00,000 --> 00:00:02,774
+Monthly rent is posted on its own.
+
+2
+00:00:02,774 --> 00:00:06,738
+Every night, each month that has ended
+moves from Advance
+
+3
+00:00:06,738 --> 00:00:10,702
+Rent to Rental Income, as one journal for
+each contract.
+
+4
+00:00:10,702 --> 00:00:13,872
+On Fatima Al Zaabi's contract for A-102,
+July
+
+5
+00:00:13,872 --> 00:00:17,043
+and August are Posted, each with its
+journal.
+
+6
+00:00:17,043 --> 00:00:20,214
+September has ended, but it is still
+Planned.
+
+7
+00:00:20,214 --> 00:00:22,592
+To see everything that is waiting,
+
+8
+00:00:22,592 --> 00:00:24,574
+open Accounting, then Month-end
+recognition.
+
+9
+00:00:24,574 --> 00:00:28,141
+The warning says ten ended months,
+87,369.90 in all,
+
+10
+00:00:28,141 --> 00:00:31,709
+are not recognised yet, the oldest ending
+in January.
+
+11
+00:00:31,709 --> 00:00:35,672
+The list shows them by building: Fatima's
+September, and nine
+
+12
+00:00:35,672 --> 00:00:39,636
+months of Sara Mansour's contract for
+M-1501, which was posted
+
+13
+00:00:39,636 --> 00:00:43,599
+in late September for a term that began in
+January.
+
+14
+00:00:43,599 --> 00:00:48,355
+The To date is already the end of last
+month, the thirtieth
+
+15
+00:00:48,355 --> 00:00:52,715
+of September: a month that has not ended
+is never recognised.
+
+16
+00:00:52,715 --> 00:00:56,679
+Select Preview: ten periods, 87,369.90,
+and nothing is written yet.
+
+17
+00:00:56,679 --> 00:00:59,057
+Then select Run recognition, and confirm.
+
+18
+00:00:59,057 --> 00:01:03,021
+Ten journals are posted, and nothing is
+waiting any more.
+
+19
+00:01:03,021 --> 00:01:05,795
+Running it again is safe: a month
+
+20
+00:01:05,795 --> 00:01:08,173
+already posted is never posted twice.
+
+21
+00:01:08,173 --> 00:01:12,137
+Back on Fatima's contract, September is
+Posted, with its journal.
+
+22
+00:01:12,137 --> 00:01:16,100
+Open it: Advance Rent is debited 5,095.89,
+the rent for
+
+23
+00:01:16,100 --> 00:01:20,064
+September's thirty days, and Rental Income
+is credited the same.

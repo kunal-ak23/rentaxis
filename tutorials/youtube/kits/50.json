@@ -1,0 +1,63 @@
+{
+  "id": "50",
+  "slug": "an-early-termination-in-the-books",
+  "title": "Miftah tutorial 50 · An early termination in the books",
+  "description": "What ending a contract early writes: the unearned rent reversed, the settlement journal, the refund payment, and every holding account back to zero.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 What the Termination Wrote\n0:46 The Settlement Journal\n1:09 Paying the Refund\n1:26 Account by Account\n1:55 Recognition Stops at the Termination\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nما يسجّله إنهاء العقد مبكرًا: عكس الإيجار غير المكتسب، وقيد التسوية، ودفع المبلغ المسترد، وعودة كل الحسابات الوسيطة إلى الصفر.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "What the Termination Wrote"
+    },
+    {
+      "startSec": 46.0,
+      "start": "0:46",
+      "label": "The Settlement Journal"
+    },
+    {
+      "startSec": 69.2,
+      "start": "1:09",
+      "label": "Paying the Refund"
+    },
+    {
+      "startSec": 86.2,
+      "start": "1:26",
+      "label": "Account by Account"
+    },
+    {
+      "startSec": 115.8,
+      "start": "1:55",
+      "label": "Recognition Stops at the Termination"
+    }
+  ],
+  "durationSec": 127,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/50-an-early-termination-in-the-books.srt",
+  "videoFile": "tutorials/output/50-an-early-termination-in-the-books.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/50.png"
+}

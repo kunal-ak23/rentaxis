@@ -4,7 +4,9 @@ import type { UserRole } from "../rbac";
 /**
  * The Help center's video tutorial catalogue. One entry per web tutorial
  * (tutorials/tutorial-storyboards.md 01–28 and 34–37; 29–33 are mobile-only; 38–46 are the accounting
- * track, .superpowers/accounting-tutorials.md). The Help center lists a topic's entries in array order,
+ * track, .superpowers/accounting-tutorials.md; 47–50 follow one contract and one early termination
+ * through operations and then the books, and 51 shows their months posted overnight and caught up by
+ * hand). The Help center lists a topic's entries in array order,
  * so the accounting entries sit in track order (38, the overview, first) rather than id order.
  * An entry with `youtubeId: null` is not published yet and is never shown.
  */
@@ -149,6 +151,24 @@ export const TUTORIALS: Tutorial[] = [
             ar: "جدّد العقد لمدة جديدة، ومدّد عقدًا لشهر إضافي، وسجّل إشعار المستأجر، وأنهِ العقد، وأكمل التسوية النهائية.",
         },
         relatedArticles: ["leases--lease-lifecycle", "leases--renewal-season"],
+    },
+    {
+        id: "47", slug: "a-tenancy-contract-from-draft-to-cleared-cheques", topic: "leasing", roles: PORTFOLIO, durationSec: 104, youtubeId: "izkxE3lqir0",
+        title: { en: "A tenancy contract from draft to cleared cheques", ar: "عقد إيجار من المسودة حتى صرف شيكاته" },
+        description: {
+            en: "Follow one contract end to end: draft it with a cheque of its own for the deposit and the fee, post it, bank the cheques that are due and clear them when the bank confirms.",
+            ar: "تابع عقدًا واحدًا من البداية إلى النهاية: صُغه مع شيك مستقل للتأمين وآخر للرسوم، ثم رحّله، وأودع الشيكات المستحقة، وسجّل صرفها عند تأكيد البنك.",
+        },
+        relatedArticles: ["leases--creating-a-lease", "leases--payment-schedules"],
+    },
+    {
+        id: "48", slug: "end-a-contract-early-terminate-settle-and-refund", topic: "leasing", roles: [...PORTFOLIO, "ACCOUNTANT"], durationSec: 96, youtubeId: "3vhlXr7SdfY",
+        title: { en: "End a contract early: terminate, settle and refund", ar: "إنهاء العقد مبكرًا: الإنهاء والتسوية ورد المبلغ" },
+        description: {
+            en: "Terminate a contract on the move-out date, return the cheques dated after it, settle the deposit with a deduction and pay the Tenant's refund from the building's bank account.",
+            ar: "أنهِ العقد في تاريخ الإخلاء، وأعد الشيكات المؤرخة بعده، وسوِّ التأمين مع خصم، وادفع للمستأجر المبلغ المستحق من الحساب البنكي للمبنى.",
+        },
+        relatedArticles: ["leases--lease-lifecycle"],
     },
     {
         id: "14", slug: "penalties-and-cheque-failure-fines", topic: "collections", roles: [...PORTFOLIO, "ACCOUNTANT", "RENTER"], durationSec: 108, youtubeId: "SJRZi5tivc0",
@@ -320,6 +340,33 @@ export const TUTORIALS: Tutorial[] = [
             ar: "أقفل الأشهر المنتهية، وأقفل السنة المالية بترحيل نتيجتها إلى الأرباح المحتجزة، وأعد فتحها عند الحاجة.",
         },
         relatedArticles: ["finance--books-start", "finance--month-end"],
+    },
+    {
+        id: "49", slug: "a-tenancy-contract-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 123, youtubeId: "5M6dnLCc7z0",
+        title: { en: "A tenancy contract in the books", ar: "عقد الإيجار في الدفاتر" },
+        description: {
+            en: "What posting a contract writes: the receivable against Advance Rent, Security Deposit and fees, one entry per cheque in hand, the receipt when a cheque clears, and the per-day recognition schedule.",
+            ar: "ما يسجّله ترحيل العقد: الذمة المدينة مقابل الإيجار المقدّم والتأمين والرسوم، وقيد لكل شيك مستلم، وسند القبض عند صرف الشيك، وجدول الاعتراف بالإيراد يومًا بيوم.",
+        },
+        relatedArticles: ["finance--ledgers-and-reports", "finance--month-end"],
+    },
+    {
+        id: "50", slug: "an-early-termination-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 127, youtubeId: "2wbj6yD70bE",
+        title: { en: "An early termination in the books", ar: "الإنهاء المبكر للعقد في الدفاتر" },
+        description: {
+            en: "What ending a contract early writes: the unearned rent reversed, the settlement journal, the refund payment, and every holding account back to zero.",
+            ar: "ما يسجّله إنهاء العقد مبكرًا: عكس الإيجار غير المكتسب، وقيد التسوية، ودفع المبلغ المسترد، وعودة كل الحسابات الوسيطة إلى الصفر.",
+        },
+        relatedArticles: ["finance--ledgers-and-reports", "leases--lease-lifecycle"],
+    },
+    {
+        id: "51", slug: "monthly-rent-posted-nightly-and-checked-by-hand", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 80, youtubeId: "2oh_63msArI",
+        title: { en: "Monthly rent: posted nightly, checked by hand", ar: "الإيجار الشهري: يُرحَّل ليلًا ويُراجَع يدويًا" },
+        description: {
+            en: "Each ended month moves from Advance Rent to Rental Income on its own every night. See what is still waiting in Month-end recognition, preview it, and post it.",
+            ar: "يُنقل كل شهر منتهٍ من الإيجار المقدّم إلى إيراد الإيجار تلقائيًا كل ليلة. اطّلع على ما ينتظر في الاعتراف بالإيراد في نهاية الشهر، وعاينه، ثم رحّله.",
+        },
+        relatedArticles: ["finance--month-end"],
     },
     {
         id: "21", slug: "tenant-payments", topic: "tenant-portal", roles: ["RENTER"], durationSec: 58, youtubeId: "-rlmAdcRiV0",
