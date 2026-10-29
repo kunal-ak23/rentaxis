@@ -104,10 +104,19 @@
 
     encode gzip
 
+    # The access log records every request header. Caddy redacts Authorization and
+    # Cookie on its own, but not X-Api-Key, which carries a promoter's full partner
+    # API secret (mfk_live_...): drop it before the line is written.
     log {
         output file /var/log/caddy/access.log {
             roll_size 50mb
             roll_keep 5
+        }
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Api-Key delete
+            }
         }
     }
 }
