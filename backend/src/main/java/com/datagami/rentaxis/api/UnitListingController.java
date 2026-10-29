@@ -124,12 +124,21 @@ public class UnitListingController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * The tenant's mobile, typed in the convert dialog when the enquirer's account has none
+     * (client request 2026-10-29). The body is optional: an enquiry whose account carries a
+     * mobile converts without one.
+     */
+    public record CreateLeaseRequest(String mobile) { }
+
     /** F14-51: the enquiry becomes a draft lease (renter record created if new, no login). */
     @PostMapping("/{id}/interests/{interestId}/lease")
-    public ResponseEntity<com.datagami.rentaxis.api.dto.LeaseDTO> createLease(@PathVariable UUID id, @PathVariable UUID interestId) {
+    public ResponseEntity<com.datagami.rentaxis.api.dto.LeaseDTO> createLease(@PathVariable UUID id, @PathVariable UUID interestId,
+                                                                            @RequestBody(required = false) CreateLeaseRequest body) {
         checkEnabled();
         requireListingInScope(id);
-        return ResponseEntity.ok(listingLeases.createLease(TenantContextHolder.getTenantId(), id, interestId));
+        return ResponseEntity.ok(listingLeases.createLease(TenantContextHolder.getTenantId(), id, interestId,
+                body == null ? null : body.mobile()));
     }
 
     public record RepublishRequest(boolean on) { }

@@ -10,7 +10,8 @@ import { downloadCsv } from "@/lib/csv";
 import { interestsCsv } from "./interestsCsv";
 import { createLeaseFromInterest, fetchInterests } from "@/lib/api/listings";
 import { ApiError } from "@/lib/api/facilities";
-import { serverText } from "@/components/finance/bankrec/serverText";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
+import { contactProblem, sentPhone } from "@/components/renters/contactRules";
 import { Link, useRouter } from "@/i18n/routing";
 import type { InterestDTO, InterestStatus } from "@/types/listing";
 
@@ -43,15 +44,36 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
   const { data: session } = useSession();
   const token = (session?.user as { accessToken?: string })?.accessToken;
   const router = useRouter();
+  const tMaster = useTranslations('MasterData');
   const [creating, setCreating] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  // Client request 2026-10-29: every tenant has a mobile. When the server says this
+  // enquirer has none, the enquiry asks for it here and the next Create sends it.
+  const [mobileFor, setMobileFor] = useState<string | null>(null);
+  const [mobile, setMobile] = useState("");
   const createLease = async (interestId: string) => {
+    const asked = mobileFor === interestId;
+    if (asked) {
+      // Only the mobile is asked for here: the enquirer's account always has an email.
+      const problem = contactProblem("-", mobile);
+      if (problem) {
+        setCreateError(tMaster(problem));
+        return;
+      }
+    }
     setCreating(interestId);
     setCreateError(null);
     try {
-      const lease = await createLeaseFromInterest(listingId, interestId, token);
+      const lease = asked
+        ? await createLeaseFromInterest(listingId, interestId, token, sentPhone(mobile))
+        : await createLeaseFromInterest(listingId, interestId, token);
       router.push(`/dashboard/leases/${lease.id}`);
     } catch (e) {
+      const code = codedOf(e).code;
+      if (code === 'listing.tenantMobileRequired' || code === 'listing.tenantMobileInvalid') {
+        if (!asked) setMobile("");
+        setMobileFor(interestId);
+      }
       setCreateError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t('createLeaseFailed'));
     } finally {
       setCreating(null);
@@ -220,6 +242,22 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
                               className="mt-2 inline-block text-xs font-semibold text-primary hover:underline">
                           {t('leaseCreated')}
                         </Link>
+                      )}
+                      {mobileFor === interest.id && interest.status !== 'CONVERTED' && (
+                        <label className="mt-2 block">
+                          <span className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">{tMaster('phone')}</span>
+                          <input
+                            type="tel"
+                            inputMode="tel"
+                            dir="ltr"
+                            aria-required="true"
+                            data-testid={`interest-mobile-${interest.id}`}
+                            placeholder="+971 50 123 4567"
+                            value={mobile}
+                            onChange={e => setMobile(e.target.value)}
+                            className="w-full bg-input border border-border rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                          />
+                        </label>
                       )}
                       {interest.status !== 'WITHDRAWN' && interest.status !== 'CONVERTED' && (
                         <button

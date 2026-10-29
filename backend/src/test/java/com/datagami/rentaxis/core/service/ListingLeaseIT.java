@@ -88,9 +88,14 @@ class ListingLeaseIT extends AbstractPostgresIT {
     }
 
     private UUID interest(String name) {
+        return interest(name, "+971501234567", "enquirer-" + UUID.randomUUID() + "@it.test");
+    }
+
+    private UUID interest(String name, String accountPhone, String email) {
         User u = new User();
         u.setRole(UserRole.RENTER);
-        u.setEmail("enquirer-" + UUID.randomUUID() + "@it.test");
+        u.setEmail(email);
+        u.setPhoneNumber(accountPhone);
         u.setName(name);
         u.setPasswordHash("hash");
         u = userRepo.save(u);
@@ -233,5 +238,54 @@ class ListingLeaseIT extends AbstractPostgresIT {
         UnitListing shown = tx.execute(s -> marketplace.getBySlug(fixtures.tenantId(),
                 listingRepo.findById(listingId).orElseThrow().getSlug()));
         assertThat(shown.getId()).isEqualTo(listingId);
+    }
+
+    // ------------------------------------------------------------------
+    // Every tenant has a mobile (client request 2026-10-29; ruling: the
+    // convert dialog asks for it when the enquirer's account has none).
+    // ------------------------------------------------------------------
+
+    private com.datagami.rentaxis.api.exception.BusinessRuleViolationException refusal(UUID interestId, String phone) {
+        Throwable t = org.assertj.core.api.Assertions.catchThrowable(() ->
+                tx.execute(s -> service.createLease(fixtures.tenantId(), listingId, interestId, phone)));
+        assertThat(t).isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class);
+        return (com.datagami.rentaxis.api.exception.BusinessRuleViolationException) t;
+    }
+
+    @Test
+    void anEnquirerWithNoMobileIsNotMadeATenantUntilOneIsGiven() {
+        UUID interestId = interest("Noor Haddad", null, "noor-" + UUID.randomUUID() + "@it.test");
+        long renters = renterRepo.count();
+
+        assertThat(refusal(interestId, null).getCode()).isEqualTo("listing.tenantMobileRequired");
+        assertThat(refusal(interestId, "\u00A0").getCode()).isEqualTo("listing.tenantMobileRequired");
+        assertThat(refusal(interestId, "N/A").getCode()).isEqualTo("listing.tenantMobileInvalid");
+        assertThat(renterRepo.count()).as("nothing created").isEqualTo(renters);
+        assertThat(interestRepo.findById(interestId).orElseThrow().getStatus()).isEqualTo(InterestStatus.ACTIVE);
+
+        LeaseDTO draft = tx.execute(s -> service.createLease(fixtures.tenantId(), listingId, interestId, "٠٥٠ ١٢٣ ٤٥٦٧"));
+        assertThat(renterRepo.findById(draft.getRenterId()).orElseThrow().getPhone()).isEqualTo("050 123 4567");
+    }
+
+    @Test
+    void theEnquirersOwnMobileIsUsedWhenTheirAccountHasOne() {
+        UUID interestId = interest("Omar Saeed", "+971 55 765 4321", "omar-" + UUID.randomUUID() + "@it.test");
+        LeaseDTO draft = tx.execute(s -> service.createLease(fixtures.tenantId(), listingId, interestId, null));
+        assertThat(renterRepo.findById(draft.getRenterId()).orElseThrow().getPhone()).isEqualTo("+971 55 765 4321");
+    }
+
+    @Test
+    void anExistingTenantWithNoMobileTakesTheOneGivenAndOneOnRecordIsKept() {
+        String email = "layla-" + UUID.randomUUID() + "@it.test";
+        com.datagami.rentaxis.domain.entity.Renter existing = new com.datagami.rentaxis.domain.entity.Renter();
+        existing.setNameEn("Layla Haddad");
+        existing.setEmail(email);
+        UUID existingId = tx.execute(s -> renterRepo.save(existing).getId());
+
+        UUID first = interest("Layla Haddad", null, email);
+        assertThat(refusal(first, null).getCode()).isEqualTo("listing.tenantMobileRequired");
+        LeaseDTO draft = tx.execute(s -> service.createLease(fixtures.tenantId(), listingId, first, "050 222 3333"));
+        assertThat(draft.getRenterId()).isEqualTo(existingId);
+        assertThat(renterRepo.findById(existingId).orElseThrow().getPhone()).isEqualTo("050 222 3333");
     }
 }

@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingInterest;
@@ -56,6 +57,19 @@ public class ListingLeaseService {
 
     @Transactional
     public LeaseDTO createLease(UUID tenantId, UUID listingId, UUID interestId) {
+        return createLease(tenantId, listingId, interestId, null);
+    }
+
+    /**
+     * {@code mobile}: the tenant's mobile as staff typed it in the convert dialog, or null.
+     * Client request 2026-10-29 (ruling: ask for it at conversion): every tenant has a mobile,
+     * so a new tenant takes this one or, failing it, the enquirer's account phone — and when
+     * neither is there the enquiry is refused ({@code listing.tenantMobileRequired}) before
+     * anything is written. An existing tenant the enquirer is matched to keeps a mobile it
+     * has, and takes this one (or the account's) when it has none.
+     */
+    @Transactional
+    public LeaseDTO createLease(UUID tenantId, UUID listingId, UUID interestId, String mobile) {
         UnitListing listing = listings.get(tenantId, listingId);
         UnitListingInterest interest = interests.findById(interestId)
                 .filter(i -> listing.getId().equals(i.getListingId()))
@@ -70,12 +84,27 @@ public class ListingLeaseService {
         User enquirer = users.findById(interest.getRenterUserId())
                 .orElseThrow(() -> new NotFoundException("The enquirer's account is gone"));
 
+        String given = PhoneNumbers.forTenant(mobile);
+        if (given != null && !PhoneNumbers.isPlausible(given)) {
+            throw new BusinessRuleViolationException(PhoneNumbers.LENIENT_MESSAGE, "listing.tenantMobileInvalid", Map.of());
+        }
+        String accountPhone = PhoneNumbers.forTenant(enquirer.getPhoneNumber());
+        String tenantMobile = given != null ? given
+                : accountPhone != null && PhoneNumbers.isPlausible(accountPhone) ? accountPhone : null;
+
         UUID renterId = existingRenter(tenantId, enquirer);
+        if (renterId != null) {
+            Renter existing = renters.findById(renterId).orElseThrow();
+            if (PhoneNumbers.forTenant(existing.getPhone()) == null) {
+                existing.setPhone(requireMobile(tenantMobile));
+                renters.save(existing);
+            }
+        }
         if (renterId == null) {
             CreateRenterDTO r = new CreateRenterDTO();
             r.setNameEn(enquirer.getName() != null && !enquirer.getName().isBlank() ? enquirer.getName() : enquirer.getEmail());
             r.setEmail(enquirer.getEmail());
-            r.setPhone(enquirer.getPhoneNumber());
+            r.setPhone(requireMobile(tenantMobile));
             r.setCreatePortalAccount(false);
             renterId = renterService.createRenter(r).getId();
         }
@@ -109,6 +138,14 @@ public class ListingLeaseService {
         interest.setLeaseId(lease.getId());
         interests.save(interest);
         return lease;
+    }
+
+    private static String requireMobile(String mobile) {
+        if (mobile == null) {
+            throw new BusinessRuleViolationException("The tenant needs a mobile number: enter it to create the contract.",
+                    "listing.tenantMobileRequired", Map.of());
+        }
+        return mobile;
     }
 
     /** The listing quotes a year's rent; a term of other length pro-rates it by months. */
