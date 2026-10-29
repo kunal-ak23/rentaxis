@@ -137,27 +137,48 @@ coupon was already used, or looks fraudulent, is for you to decide: Miftah does 
 
 ## Deep links into your app
 
-The redirect link on a coupon ad is always an `https://` address on a domain your business has registered with
-Miftah. Custom schemes such as `yourapp://redeem` are refused, because any app on the phone could claim them.
+A coupon ad has a main redirect link and, optionally, an Android link and an iPhone link. Each of them can be either:
+
+- an **https link** on a domain your business has registered with Miftah, such as
+  `https://offers.example.com/redeem`; or
+- an **app link** with your app's own scheme, such as `yourapp://redeem` or `yourapp:redeem`.
+
+App links are not checked against your registered domains, so Miftah's admins check them by eye when they review
+your ad (the review screen marks each one as an app link). The scheme must start with a letter and be 2 to 32
+letters, digits, `+`, `.` or `-`; something must follow the `:`; spaces are not allowed. Web, script, file and
+system schemes (`http`, `https`, `javascript`, `data`, `file`, `intent`, `tel`, `mailto`, `sms` and similar) are
+refused as app links. Every link is at most 2048 characters.
 
 When a tenant taps **Copy** on your coupon:
 
 1. The code is copied to their clipboard.
 2. The app picks the link for their phone: the Android link on Android, the iPhone link on iPhone, otherwise the
    main link. Your parameters are already appended, for example
-   `https://offers.example.com/redeem?code=SAVE10&unitId=7f3c…&propertyId=a91e…`.
+   `https://offers.example.com/redeem?code=SAVE10&unitId=7f3c…&propertyId=a91e…` or
+   `yourapp://redeem?code=SAVE10&unitId=7f3c…`.
 3. If the link carries tenant data (name, phone, email, property or unit), the tenant is asked to agree first.
    Nothing opens if they decline.
-4. The link is handed to the phone, not to an in-app browser. If your app is installed and has verified that domain
-   (iOS Universal Links, Android App Links), the phone opens your app with the full link. Otherwise it opens your
-   website in the browser, so the same link works either way.
+4. The link is handed to the phone, not to an in-app browser.
+   - An https link opens your app if it is installed and has verified that domain (iOS Universal Links, Android
+     App Links), and your website in the browser otherwise.
+   - An app link opens your app if it is installed. If the phone cannot open it (your app is not installed), the
+     Miftah app opens the ad's main link instead, with the same parameters, as long as the main link is an
+     https link. If the main link is not https, nothing more opens; the code is still on the clipboard.
 
-To have the link open your app, publish `/.well-known/apple-app-site-association` and
+**Recommended:** put an https link in the main field and your app link in the Android and iPhone fields. Phones
+with your app go straight into it, and phones without it land on your website.
+
+Be aware that this fallback needs a current version of the Miftah tenant app. Older versions accept https links
+only: on those, an app link opens nothing (they do not fall back to the main link), and the tenant keeps the copied
+code. An https link with Universal Links / App Links works on every version, so prefer it if you need every tenant
+to reach you today.
+
+To have an https link open your app, publish `/.well-known/apple-app-site-association` and
 `/.well-known/assetlinks.json` on the domain and declare it in your app, as Apple and Google describe. Make the same
 path work on your website for tenants who do not have your app.
 
-A platform link that fails Miftah's checks (not `https`, not on your domains) opens nothing. It does not fall back to
-the main link.
+A link that fails Miftah's checks (plain `http`, an https link off your domains, a refused scheme) opens nothing.
+It does not fall back to the main link.
 
 ## Errors and limits
 

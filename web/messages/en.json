@@ -6110,7 +6110,7 @@
     "syncStep4": "If any page's fingerprint differs from the first page's, the list changed while you were reading it. Discard what you fetched and start again.",
     "syncStep5": "Replace your local set in one atomic step and store the new fingerprint.",
     "validateTitle": "Validating a coupon redemption",
-    "validateP1": "On the ad, add UNIT_ID (and optionally PROPERTY_ID) as redirect parameters, for example unitId and propertyId. When a tenant opens your link, the Miftah app passes their unit and property ids to your page.",
+    "validateP1": "On the ad, add UNIT_ID (and optionally PROPERTY_ID) as redirect parameters, for example unitId and propertyId. When a tenant opens your link, the Miftah app passes their unit and property ids to your page or app.",
     "validateP2": "Check that the unitId you receive is in your synced set. Anything not in it is not one of your units. Whether a coupon was already used, or looks fraudulent, is for you to decide: Miftah does not track redemptions.",
     "errorsTitle": "Errors and limits",
     "errorsP1": "A missing, unknown, revoked or expired key, or one whose promoter or organisation is no longer active, always answers 401 with the body below. These cases cannot be told apart, on purpose.",
