@@ -2,13 +2,15 @@
 
 import { useTranslations } from "next-intl";
 import type { PromoAdDTO } from "@/types/promotion";
-import { REDIRECT_LINK_KEYS, REDIRECT_LINK_LABEL, sharesRenterData } from "./RedirectLinkFields";
+import { REDIRECT_LINK_KEYS, REDIRECT_LINK_LABEL, isAppLink, sharesRenterData } from "./RedirectLinkFields";
 
 /**
  * A coupon ad's redirect links (the default and, when set, the Android and iPhone
  * ones, each labelled) and the names (with sources) of its parameters, for an ad
  * list. This is what an admin reads before approving: it says exactly what the app
- * will append to each link and whether tenant details are in it.
+ * will append to each link and whether tenant details are in it. An app link
+ * (`yourapp://…`) is not checked against the business's allowed domains, so it
+ * carries a visible "App link" label for the reviewer to check it by eye.
  *
  * The sentences are translated and run in the page's direction; only the URLs and
  * the parameter names, which are always left-to-right, are isolated (`<bdi dir="ltr">`),
@@ -32,6 +34,12 @@ export function RedirectSummary({ ad }: {
                         label: t(REDIRECT_LINK_LABEL[key]),
                         url: () => <bdi dir="ltr">{url}</bdi>,
                     })}
+                    {isAppLink(url) && (
+                        <span data-testid={`redirect-app-link-${key}`} title={t("redirectAppLinkReview")}
+                            className="ms-1 inline-block rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800">
+                            {t("redirectAppLinkBadge")}
+                        </span>
+                    )}
                 </span>
             ))}
             {params.length > 0 && (

@@ -62,6 +62,9 @@ describe("promoter copy", () => {
             // Addendum C: the Android / iPhone links, their hint and the labels that tell the three apart.
             "redirectUrlAndroid", "redirectUrlIos", "redirectPlatformHint",
             "redirectLinkDefault", "redirectLinkAndroid", "redirectLinkIos",
+            // App links on coupon redirects (2026-10-29): placeholder, help, error and the reviewer's label.
+            "redirectUrlPlaceholder", "redirectAppLinkHint", "redirectLinkInvalid",
+            "redirectAppLinkBadge", "redirectAppLinkReview",
         ];
         for (const cat of [en.Promotions, ar.Promotions] as Record<string, string>[]) {
             expect(keys.filter(k => !cat[k])).toEqual([]);

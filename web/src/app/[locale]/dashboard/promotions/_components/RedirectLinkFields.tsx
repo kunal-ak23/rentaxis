@@ -21,8 +21,42 @@ export type RedirectLinkKey = "redirectUrl" | "redirectUrlAndroid" | "redirectUr
 export const REDIRECT_LINK_KEYS: RedirectLinkKey[] = ["redirectUrl", "redirectUrlAndroid", "redirectUrlIos"];
 export type RedirectLinks = Record<RedirectLinkKey, string>;
 
-/** The link's own https / allowlist verdict, which AdEditor shares with a WEBSITE ctaUrl. */
-export type RedirectLinkProblem = "https" | "domain" | null;
+/**
+ * The link's own verdict: "domain" for an https link off the business's allowed
+ * domains (or with userinfo), "invalid" for a link that is neither https nor an
+ * app link. AdEditor works it out with the same allowlist check as a WEBSITE ctaUrl.
+ */
+export type RedirectLinkProblem = "invalid" | "domain" | null;
+
+/** An app link's scheme: a letter, then 1–31 letters, digits, `+`, `.` or `-`. */
+const APP_SCHEME = /^[a-z][a-z0-9+.-]{1,31}$/i;
+
+/**
+ * Schemes an app link may never use. https and http stay under the allowlist rule
+ * (an https link off the allowed domains is still refused); the rest run script,
+ * read local data, reach system handlers or place calls and messages.
+ */
+export const REFUSED_APP_SCHEMES: ReadonlySet<string> = new Set([
+    "http", "https", "javascript", "vbscript", "data", "file", "blob", "about",
+    "content", "ftp", "ws", "wss", "intent", "itms-services", "chrome",
+    "chrome-extension", "mailto", "tel", "sms", "facetime", "facetime-audio",
+]);
+
+/**
+ * A coupon redirect link may be an app deep link with a custom scheme
+ * (`glidewash://redeem`, owner ruling 2026-10-29) as well as an allowlisted https
+ * link. Mirrors `PromotionUrlValidator.isAppLink` — change both together: a valid
+ * scheme, something after `scheme:`, no whitespace, control or format character
+ * anywhere (so the link reads on the review screen as the phone opens it), and not
+ * a refused scheme. The allowed domains do not apply; admins check app links on review.
+ */
+export function isAppLink(url: string): boolean {
+    if (url === "" || /[\s\p{Cc}\p{Cf}]/u.test(url)) return false;
+    const colon = url.indexOf(":");
+    if (colon < 0 || colon === url.length - 1) return false;
+    const scheme = url.slice(0, colon);
+    return APP_SCHEME.test(scheme) && !REFUSED_APP_SCHEMES.has(scheme.toLowerCase());
+}
 
 /** The label each link carries wherever the three appear together (the example, the ad list). */
 export const REDIRECT_LINK_LABEL: Record<RedirectLinkKey, string> = {
@@ -80,8 +114,8 @@ export function rowsToParams(rows: RedirectParamRow[]): PromoRedirectParam[] {
  * `redirectUrlAndroid` and `redirectUrlIos` for each link (each held to the same
  * rules), `redirectParams` for the list, `row-{id}` for one row. Mirrors the
  * server's checks (PromotionService) so a typo is a field error, not a round
- * trip; the server stays the authority. `problems` is each link's own https /
- * allowlist verdict.
+ * trip; the server stays the authority. `problems` is each link's own verdict
+ * (https on the allowlist, or an app link).
  */
 export function redirectErrors(
     links: RedirectLinks, rows: RedirectParamRow[], problems: Record<RedirectLinkKey, RedirectLinkProblem>,
@@ -91,7 +125,7 @@ export function redirectErrors(
         const trimmed = links[key].trim();
         if (trimmed === "") continue;
         if (trimmed.length > REDIRECT_URL_MAX) errors[key] = "redirectUrlTooLong";
-        else if (problems[key] === "https") errors[key] = "httpsRequired";
+        else if (problems[key] === "invalid") errors[key] = "redirectLinkInvalid";
         else if (problems[key] === "domain") errors[key] = "domainNotAllowed";
     }
     // Parameters are shared by all three links, so any one of them is enough.
@@ -209,10 +243,11 @@ export function RedirectLinkFields({ links, onLink, rows, onRows, allowedDomains
             <label className="block">
                 <span className="mb-1 block text-sm font-medium">{t("redirectUrl")}</span>
                 <input aria-label={t("redirectUrl")} dir="ltr"
-                    placeholder="https://" {...invalid("redirectUrl")}
+                    placeholder={t("redirectUrlPlaceholder")} {...invalid("redirectUrl")}
                     className="w-full rounded-lg border px-3 py-2"
                     value={links.redirectUrl} onChange={e => onLink("redirectUrl", e.target.value)} />
                 <span className="mt-1 block text-xs text-gray-500">{t("redirectUrlHint")}</span>
+                <span className="block text-xs text-gray-500">{t("redirectAppLinkHint")}</span>
                 {allowedDomains.length > 0 && (
                     <span className="block text-xs text-gray-500" dir="ltr">{allowedDomains.join(", ")}</span>
                 )}
@@ -225,7 +260,7 @@ export function RedirectLinkFields({ links, onLink, rows, onRows, allowedDomains
                         <label key={key} className="block">
                             <span className="mb-1 block text-sm font-medium">{t(key)}</span>
                             <input aria-label={t(key)} dir="ltr"
-                                placeholder="https://" {...platformInvalid(key)}
+                                placeholder={t("redirectUrlPlaceholder")} {...platformInvalid(key)}
                                 className="w-full rounded-lg border px-3 py-2"
                                 value={links[key]} onChange={e => onLink(key, e.target.value)} />
                             {err(key)}
