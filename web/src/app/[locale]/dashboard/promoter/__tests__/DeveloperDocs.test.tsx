@@ -45,6 +45,15 @@ describe('promoter developer docs page', () => {
         for (const pre of Array.from(container.querySelectorAll('pre'))) expect(pre.getAttribute('dir')).toBe('ltr')
     })
 
+    it('documents the 400 shape, the shared bad-key 429 and that re-activation restores keys', () => {
+        const { container } = renderDocs()
+        const text = Array.from(container.querySelectorAll('pre')).map(p => p.textContent).join('\n')
+        expect(text).toContain('HTTP/1.1 400\n{"error":true,"message":"Invalid value for parameter \'propertyId\'","status":400}')
+        for (const key of ['keyP4', 'errorsP3', 'errorsP4'] as const) {
+            expect(screen.getByText(en.PromoterDocs[key])).toBeTruthy()
+        }
+    })
+
     it('uses the page origin as the base URL', () => {
         renderDocs()
         expect(screen.getAllByText(new RegExp(`${window.location.origin}/api/v1/partner/promoter`)).length).toBeGreaterThan(0)

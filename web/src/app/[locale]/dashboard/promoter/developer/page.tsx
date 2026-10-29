@@ -34,6 +34,7 @@ const UNITS_JSON = JSON.stringify({
 
 const INVALID_JSON = '{"error":"invalid_api_key"}';
 const RATE_JSON = '{"error":"rate_limited"}';
+const BAD_PARAM_JSON = '{"error":true,"message":"Invalid value for parameter \'propertyId\'","status":400}';
 
 const noSubscribe = () => () => {};
 
@@ -94,6 +95,7 @@ export default function PromoterDeveloperDocsPage() {
                 <P>{t("keyP1")}</P>
                 <P>{t("keyP2")}</P>
                 <P>{t("keyP3")}</P>
+                <P>{t("keyP4")}</P>
             </Section>
 
             <Section title={t("baseUrlTitle")}>
@@ -150,6 +152,9 @@ export default function PromoterDeveloperDocsPage() {
                 <Code>{`HTTP/1.1 401\n${INVALID_JSON}`}</Code>
                 <P>{t("errorsP2")}</P>
                 <Code>{`HTTP/1.1 429\nRetry-After: 12\n${RATE_JSON}`}</Code>
+                <P>{t("errorsP3")}</P>
+                <P>{t("errorsP4")}</P>
+                <Code>{`HTTP/1.1 400\n${BAD_PARAM_JSON}`}</Code>
             </Section>
 
             <Section title={t("securityTitle")}>

@@ -63,6 +63,12 @@ describe("PromoterApiKeysManager", () => {
         await waitFor(() => expect(urls.some(u => u.includes("q=mfk_live_AbCd"))).toBe(true));
     });
 
+    it("tells the admin a full leaked key can be pasted into search", async () => {
+        render(<PromoterApiKeysManager />);
+        await screen.findByText("Acme Realty");
+        expect(screen.getByTestId("api-keys-search").getAttribute("placeholder")).toMatch(/full key/i);
+    });
+
     it("sends the status filter", async () => {
         render(<PromoterApiKeysManager />);
         await screen.findByText("Acme Realty");
@@ -80,6 +86,7 @@ describe("PromoterApiKeysManager", () => {
         expect(dialog).toHaveTextContent("mfk_live_AbCd");
         const confirm = screen.getByTestId("api-key-revoke-confirm");
         expect(confirm).toBeDisabled();
+        expect(screen.getByTestId("api-key-revoke-reason")).toHaveAttribute("maxLength", "500");
         fireEvent.change(screen.getByTestId("api-key-revoke-reason"), { target: { value: "   " } });
         expect(confirm).toBeDisabled();
         fireEvent.change(screen.getByTestId("api-key-revoke-reason"), { target: { value: "  leaked on GitHub " } });

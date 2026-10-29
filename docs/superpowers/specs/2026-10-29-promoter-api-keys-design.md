@@ -177,3 +177,20 @@ No real client names.
 
 Exact class/filter structure, DTO naming, whether rotate shares the cap, docs page placement, the `propertyId` filter,
 audit mechanism, test file layout. Follow existing promoter code idioms.
+
+## Deploy notes
+
+- **Caddy access log.** `infra/caddy/Caddyfile.template` now drops the `X-Api-Key` request header from the access
+  log (`format filter` → `request>headers>X-Api-Key delete`); Caddy only redacts `Authorization`/`Cookie` by itself,
+  so without this every partner call would write the full `mfk_live_…` secret to `/var/log/caddy/access.log`. The
+  Caddyfile is not baked into an image: it must be re-rendered on the VM (copied to `/opt/rentaxis/Caddyfile`) and
+  Caddy reloaded (`docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile`) before partners get keys.
+  The GitHub deploy workflow copies it and reloads when the file hash changes; a manual `infra/deploy.sh` run must
+  be followed by the reload. Check afterwards with one partner call that the new access-log line has no
+  `X-Api-Key`. If any partner call reached prod before the reload, revoke those keys and rotate the old log files out.
+- **Organisation status.** A key authenticates only while its organisation is ACTIVE (the same rule as JWT and
+  X-User-* callers, via `TokenRevocationService.orgActive`, cached up to 30 s for status changes made outside
+  `LandlordOrgService`).
+- **Deactivation is a suspension, not a revocation.** Deactivating a promoter (or its organisation) stops its keys at
+  once, but re-activating restores every key that was not revoked. To kill a key permanently, revoke it explicitly
+  (promoter Developer tab, or the superadmin API keys page).

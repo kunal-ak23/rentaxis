@@ -248,6 +248,7 @@ export default function PromoterApiKeysManager() {
                                 data-testid="api-key-revoke-reason"
                                 value={reason}
                                 onChange={e => setReason(e.target.value)}
+                                maxLength={500}
                                 rows={3}
                                 className="mt-1 w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
                             />

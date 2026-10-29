@@ -16,6 +16,9 @@ added or removed, the list changes with it.
    the old one keeps working for **24 hours**, then stops. Move your systems over within that window.
 4. You can **revoke** a key at any time; it stops working at once. Miftah staff can also revoke a key (for example
    after a leak); the Developer tab then shows the reason.
+5. Keys follow your account. If Miftah deactivates your promoter account or its organisation, every key stops
+   working; if the account is re-activated, any key you had not revoked works again. To retire a key for good,
+   **revoke** it.
 
 ## Base URL
 
@@ -107,6 +110,14 @@ curl -H "X-Api-Key: mfk_live_EXAMPLEEXAMPLEEXAMPLEEXAMPLE" \
 
 A promoter with no shared properties gets `200` with an empty list, not `404`.
 
+A malformed query parameter (for example `propertyId=abc` or `page=x`) answers `400`. This error has a different
+shape from the others: `error` is `true` and the explanation is in `message`:
+
+```
+HTTP/1.1 400
+{"error":true,"message":"Invalid value for parameter 'propertyId'","status":400}
+```
+
 ## Recommended sync loop
 
 1. Every 15 minutes, call `GET /units/count`.
@@ -126,8 +137,8 @@ coupon was already used, or looks fraudulent, is for you to decide: Miftah does 
 
 ## Errors and limits
 
-A missing, unknown, revoked or expired key, or one whose promoter is no longer active, always answers `401`. These
-cases cannot be told apart, on purpose.
+A missing, unknown, revoked or expired key, or one whose promoter or organisation is no longer active, always
+answers `401`. These cases cannot be told apart, on purpose.
 
 ```
 HTTP/1.1 401
@@ -142,6 +153,14 @@ HTTP/1.1 429
 Retry-After: 12
 {"error":"rate_limited"}
 ```
+
+The bad-key limit counts per address, before the key is looked at, so once an address has used it up even a valid
+key gets `429` from there until its `Retry-After` has passed. A common cause is a worker still sending a revoked or expired key
+from the same server as your working ones. When you rotate or revoke a key, remove the old one from **every** worker
+and scheduled job.
+
+A malformed query parameter answers `400` with `{"error":true,"message":…,"status":400}`; see
+[`GET /units`](#get-units).
 
 ## Security
 
