@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.FiguresChangedException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.ApiKeySecrets;
+import com.datagami.rentaxis.core.security.TokenRevocationService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.PromoterApiKey;
 import com.datagami.rentaxis.domain.entity.User;
@@ -75,14 +76,17 @@ public class PromoterApiKeyService {
 
     private final PromoterApiKeyRepository keyRepository;
     private final UserRepository userRepository;
+    private final TokenRevocationService tokenRevocation;
     private final Clock clock;
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    public PromoterApiKeyService(PromoterApiKeyRepository keyRepository, UserRepository userRepository, Clock clock) {
+    public PromoterApiKeyService(PromoterApiKeyRepository keyRepository, UserRepository userRepository,
+                                 TokenRevocationService tokenRevocation, Clock clock) {
         this.keyRepository = keyRepository;
         this.userRepository = userRepository;
+        this.tokenRevocation = tokenRevocation;
         this.clock = clock;
     }
 
@@ -156,9 +160,11 @@ public class PromoterApiKeyService {
 
     /**
      * The key behind {@code secret}, if it may be used right now: not revoked, not past
-     * {@code expires_at}, and its user still an ACTIVE PROMOTER of the key's organisation
-     * (checked on every call, nothing cached). Touches {@code last_used_at} at most once
-     * a minute. Every failure is the same empty result.
+     * {@code expires_at}, its user still an ACTIVE PROMOTER of the key's organisation
+     * (checked on every call, nothing cached), and that organisation ACTIVE. The org rule
+     * is the one the JWT and X-User-* paths apply ({@link TokenRevocationService#orgActive},
+     * whose cache is evicted on every in-process status change). Touches
+     * {@code last_used_at} at most once a minute. Every failure is the same empty result.
      */
     @Transactional
     public Optional<AuthenticatedKey> authenticate(String secret) {
@@ -184,7 +190,7 @@ public class PromoterApiKeyService {
                 .filter(u -> u.getStatus() == UserStatus.ACTIVE)
                 .filter(u -> Objects.equals(u.getTenantId(), key.getTenantId()))
                 .isPresent();
-        if (!promoterStillValid) {
+        if (!promoterStillValid || !tokenRevocation.orgActive(key.getTenantId())) {
             return Optional.empty();
         }
         keyRepository.touchLastUsed(key.getId(), now, now.minus(LAST_USED_GRANULARITY));
@@ -193,8 +199,10 @@ public class PromoterApiKeyService {
 
     /**
      * Every organisation's keys, newest first. {@code q} matches org name, promoter
-     * name or email, key name or prefix (case-insensitive substring); {@code status}
-     * is one of active / expiring / revoked / expired, or null for all (else 400).
+     * name or email, key name or prefix (case-insensitive substring); a {@code q} shaped
+     * like a full secret instead matches only the key with that secret's hash, so a
+     * leaked key pasted into the search finds its row. {@code status} is one of
+     * active / expiring / revoked / expired, or null for all (else 400).
      */
     @Transactional(readOnly = true)
     public Page<AdminKeyRow> listAll(String q, String status, Pageable p) {
@@ -202,11 +210,15 @@ public class PromoterApiKeyService {
         if (wanted != null && !STATUSES.contains(wanted)) {
             throw new BusinessRuleViolationException("Unknown status: " + status);
         }
-        String pattern = q == null || q.isBlank() ? null : "%" + escapeLike(q.trim().toLowerCase(Locale.ROOT)) + "%";
+        String term = q == null || q.isBlank() ? null : q.trim();
+        // A pasted secret is matched exactly by its hash; it never reaches a LIKE.
+        String keyHash = term != null && ApiKeySecrets.looksLikeKey(term) ? ApiKeySecrets.hash(term) : null;
+        String pattern = term == null || keyHash != null ? null
+                : "%" + escapeLike(term.toLowerCase(Locale.ROOT)) + "%";
         Instant now = now();
         // The order is fixed in the query; a caller's sort would name entity fields the native SQL lacks.
         Pageable page = PageRequest.of(p.getPageNumber(), p.getPageSize());
-        return keyRepository.findAllForAdmin(pattern, wanted, now, page)
+        return keyRepository.findAllForAdmin(pattern, keyHash, wanted, now, page)
                 .map(r -> new AdminKeyRow(r.getId(), r.getTenantId(), r.getOrgName(), r.getPromoterUserId(),
                         r.getPromoterName(), r.getPromoterEmail(), r.getName(), r.getKeyPrefix(), r.getCreatedAt(),
                         r.getLastUsedAt(), r.getExpiresAt(), r.getRevokedAt(), r.getRevokedReason(),

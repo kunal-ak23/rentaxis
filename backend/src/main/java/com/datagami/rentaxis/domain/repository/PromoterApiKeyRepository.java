@@ -70,13 +70,17 @@ public interface PromoterApiKeyRepository extends JpaRepository<PromoterApiKey, 
             + " WHERE (CAST(:q AS text) IS NULL"
             + "   OR lower(o.name) LIKE :q OR lower(u.name) LIKE :q OR lower(u.email) LIKE :q"
             + "   OR lower(k.name) LIKE :q OR lower(k.key_prefix) LIKE :q)"
+            + " AND (CAST(:keyHash AS text) IS NULL OR k.key_hash = :keyHash)"
             + " AND (CAST(:status AS text) IS NULL"
             + "   OR (:status = 'revoked' AND k.revoked_at IS NOT NULL)"
             + "   OR (:status = 'expired' AND k.revoked_at IS NULL AND k.expires_at <= :now)"
             + "   OR (:status = 'expiring' AND k.revoked_at IS NULL AND k.expires_at > :now)"
             + "   OR (:status = 'active' AND k.revoked_at IS NULL AND k.expires_at IS NULL))";
 
-    /** Every org's keys, newest first. {@code q} is a lowercase LIKE pattern (or null). */
+    /**
+     * Every org's keys, newest first. {@code q} is a lowercase LIKE pattern (or null);
+     * {@code keyHash}, when set, keeps only the key with that exact hash (a pasted secret).
+     */
     @Query(value = "SELECT k.id AS id, k.tenant_id AS tenantId, o.name AS orgName, k.user_id AS promoterUserId,"
             + " u.name AS promoterName, u.email AS promoterEmail, k.name AS name, k.key_prefix AS keyPrefix,"
             + " k.created_at AS createdAt, k.last_used_at AS lastUsedAt, k.expires_at AS expiresAt,"
@@ -84,8 +88,8 @@ public interface PromoterApiKeyRepository extends JpaRepository<PromoterApiKey, 
             + ADMIN_FROM + " ORDER BY k.created_at DESC, k.id DESC",
             countQuery = "SELECT COUNT(*)" + ADMIN_FROM,
             nativeQuery = true)
-    Page<AdminRow> findAllForAdmin(@Param("q") String q, @Param("status") String status,
-                                   @Param("now") Instant now, Pageable pageable);
+    Page<AdminRow> findAllForAdmin(@Param("q") String q, @Param("keyHash") String keyHash,
+                                   @Param("status") String status, @Param("now") Instant now, Pageable pageable);
 
     /** One key as the super-admin listing shows it, whatever its organisation. */
     @Query(value = "SELECT k.id AS id, k.tenant_id AS tenantId, o.name AS orgName, k.user_id AS promoterUserId,"

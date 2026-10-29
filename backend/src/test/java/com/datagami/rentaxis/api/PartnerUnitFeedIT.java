@@ -136,6 +136,23 @@ class PartnerUnitFeedIT extends AbstractPromoterIT {
         assertThat(get(key, UNITS + "?page=3&size=2").body().get("content")).isEmpty();
     }
 
+    /**
+     * Final review M1: a malformed query parameter is the global handler's 400, not a
+     * partner error code. The developer guide documents exactly this shape.
+     */
+    @Test
+    void malformedQueryParameterIsDocumented400() {
+        User promoter = promoter(orgA, false, List.of(), List.of());
+        String key = keyFor(promoter);
+        for (String[] c : new String[][]{{"propertyId=abc", "propertyId"}, {"page=x", "page"}, {"size=big", "size"}}) {
+            PartnerApiKeyAuthIT.PartnerResp res = get(key, UNITS + "?" + c[0]);
+            assertThat(res.status()).as(c[0]).isEqualTo(400);
+            assertThat(res.body().get("error").asBoolean()).as(c[0]).isTrue();
+            assertThat(res.body().get("status").asInt()).as(c[0]).isEqualTo(400);
+            assertThat(res.text("message")).as(c[0]).isEqualTo("Invalid value for parameter '" + c[1] + "'");
+        }
+    }
+
     @Test
     void sizeIsClampedTo500() {
         Property p = property(orgA, "Big");

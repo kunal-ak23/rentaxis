@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.FiguresChangedException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.ApiKeySecrets;
+import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.PromoterApiKeyService;
 import com.datagami.rentaxis.core.service.PromoterApiKeyService.AdminKeyRow;
 import com.datagami.rentaxis.core.service.PromoterApiKeyService.AuthenticatedKey;
@@ -37,6 +38,7 @@ import static org.assertj.core.api.Assertions.within;
 class PromoterApiKeyServiceIT extends AbstractPromoterIT {
 
     @Autowired PromoterApiKeyService keys;
+    @Autowired LandlordOrgService orgService;
 
     private User newPromoter() {
         return promoter(org(), false, List.of(), List.of());
@@ -226,6 +228,39 @@ class PromoterApiKeyServiceIT extends AbstractPromoterIT {
 
         jdbc.update("UPDATE users SET role = 'PROMOTER', tenant_id = ? WHERE id = ?", org(), p.getId());
         assertThat(authenticate(k.secret())).isEmpty();
+    }
+
+    /** Final review I2: an inactive organisation's keys do not authenticate; re-activation restores them. */
+    @Test
+    void keyDoesNotAuthenticateWhileItsOrganisationIsInactive() {
+        User p = newPromoter();
+        IssuedKey k = create(p, "prod");
+        assertThat(authenticate(k.secret())).isPresent();
+
+        orgService.updateLocked(p.getTenantId(), o -> o.setStatus("INACTIVE"));
+        assertThat(authenticate(k.secret())).isEmpty();
+
+        orgService.updateLocked(p.getTenantId(), o -> o.setStatus("ACTIVE"));
+        assertThat(authenticate(k.secret())).isPresent();
+    }
+
+    /** Final review I3: a pasted leaked secret finds exactly its key, whatever the organisation. */
+    @Test
+    void listAllFindsAKeyByItsFullSecret() {
+        User a = newPromoter();
+        User b = newPromoter();
+        // Names unique to this test: the context and database are shared with other ITs that search by name.
+        IssuedKey aKey = create(a, "leak-search one");
+        create(a, "leak-search two");
+        create(b, "leak-search three");
+
+        TenantContextHolder.clear();
+        assertThat(keys.listAll(aKey.secret(), null, PageRequest.of(0, 50)).getContent())
+                .extracting(AdminKeyRow::id).containsExactly(aKey.key().getId());
+        assertThat(keys.listAll("  " + aKey.secret() + "  ", null, PageRequest.of(0, 50)).getContent())
+                .extracting(AdminKeyRow::id).containsExactly(aKey.key().getId());
+        assertThat(keys.listAll(aKey.secret(), "revoked", PageRequest.of(0, 50)).getContent()).isEmpty();
+        assertThat(keys.listAll(ApiKeySecrets.generate(), null, PageRequest.of(0, 50)).getContent()).isEmpty();
     }
 
     @Test

@@ -127,7 +127,8 @@ class PromoterApiKeyManagementIT extends AbstractPromoterIT {
         User p1 = newPromoter();
         User p2 = newPromoter();
         String id1 = post(p1, KEYS, body("name", "alpha")).body().get("key").get("id").asText();
-        String id2 = post(p2, KEYS, body("name", "beta")).body().get("key").get("id").asText();
+        Resp created2 = post(p2, KEYS, body("name", "beta"));
+        String id2 = created2.body().get("key").get("id").asText();
 
         Resp all = get(admin, ADMIN + "?size=100");
         assertThat(all.status()).isEqualTo(200);
@@ -139,6 +140,9 @@ class PromoterApiKeyManagementIT extends AbstractPromoterIT {
         assertThat(all.body().toString()).doesNotContain("keyHash").doesNotContain("secret");
 
         assertThat(ids(get(admin, ADMIN + "?q=beta&size=100"))).containsExactly(id2);
+        // Final review I3: a pasted leaked secret finds exactly its key.
+        String leaked = java.net.URLEncoder.encode(created2.text("secret"), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(ids(get(admin, ADMIN + "?q=" + leaked + "&size=100"))).containsExactly(id2);
         assertThat(ids(get(admin, ADMIN + "?status=revoked&size=100"))).doesNotContain(id1, id2);
         assertThat(get(admin, ADMIN + "?status=bogus").status()).isEqualTo(400);
 

@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.security.ApiKeySecrets;
+import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.PromoterApiKeyService;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -39,6 +40,7 @@ class PartnerApiKeyAuthIT extends AbstractPromoterIT {
     static final String INVALID = "invalid_api_key";
 
     @Autowired PromoterApiKeyService keys;
+    @Autowired LandlordOrgService orgService;
 
     UUID orgA;
     User promoterA;
@@ -116,6 +118,24 @@ class PartnerApiKeyAuthIT extends AbstractPromoterIT {
         PartnerResp moved = partner(secret, PING, Map.of(), freshIp());
         assertThat(moved.status()).as("moved org").isEqualTo(401);
         assertThat(moved.text("error")).isEqualTo(INVALID);
+    }
+
+    /**
+     * Final review I2: a key is refused while its organisation is not ACTIVE, the same
+     * rule the JWT and X-User-* paths apply, and works again once it is re-activated.
+     */
+    @Test
+    void keyDiesWithItsOrganisation() {
+        String secret = keys.create(promoterA.getId(), "Feed").secret();
+        assertThat(partner(secret, PING, Map.of(), freshIp()).status()).isEqualTo(200);
+
+        orgService.updateLocked(orgA, o -> o.setStatus("INACTIVE"));
+        PartnerResp suspended = partner(secret, PING, Map.of(), freshIp());
+        assertThat(suspended.status()).as("org suspended").isEqualTo(401);
+        assertThat(suspended.text("error")).isEqualTo(INVALID);
+
+        orgService.updateLocked(orgA, o -> o.setStatus("ACTIVE"));
+        assertThat(partner(secret, PING, Map.of(), freshIp()).status()).as("org restored").isEqualTo(200);
     }
 
     /** Review focus 3: a signed-in promoter's JWT or the proxy's headers are not a partner credential. */
