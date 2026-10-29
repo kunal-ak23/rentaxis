@@ -2062,7 +2062,7 @@
     "devIntro": "تتيح مفاتيح API لأنظمتك قراءة وحدات العقارات المشاركة معك. أبقِها سرّية: كل من يحمل مفتاحًا يستطيع قراءة هذه البيانات.",
     "devDocsLink": "اقرأ وثائق المطوّرين",
     "devCreateKey": "إنشاء مفتاح",
-    "devCreateLimitHint": "لديك مفتاحان نشطان. بدّل أحدهما أو ألغِه لإنشاء مفتاح آخر.",
+    "devCreateLimitHint": "لديك مفتاحان نشطان. بدّل أحدهما أو أبطِله لإنشاء مفتاح آخر.",
     "devKeyNameLabel": "اسم المفتاح",
     "devKeyNamePlaceholder": "مثال: مزامنة الإنتاج",
     "devCreateSubmit": "إنشاء",
@@ -2076,16 +2076,16 @@
     "devEmpty": "لا توجد مفاتيح API بعد. أنشئ مفتاحًا للبدء.",
     "devStatusActive": "نشط",
     "devStatusExpiring": "ينتهي قريبًا",
-    "devStatusRevoked": "ملغى",
+    "devStatusRevoked": "مُبطَل",
     "devStatusExpired": "منتهي",
     "devExpiresOn": "يتوقف عن العمل {date}",
     "devRotate": "تبديل",
     "devRevoke": "إبطال",
-    "devRevokedByAdmin": "ألغاه مسؤول Miftah: {reason}",
-    "devRevokedByYou": "ألغيته أنت",
-    "devRevokedReason": "ملغى: {reason}",
+    "devRevokedByAdmin": "أبطله مسؤول Miftah: {reason}",
+    "devRevokedByYou": "أبطلته أنت",
+    "devRevokedReason": "مُبطَل: {reason}",
     "devLoadError": "تعذّر تحميل مفاتيح API. حاول مرة أخرى.",
-    "devErrorLimit": "لديك بالفعل مفتاحان نشطان. ألغِ أحدهما أو بدّله أولًا.",
+    "devErrorLimit": "لديك بالفعل مفتاحان نشطان. أبطِل أحدهما أو بدّله أولًا.",
     "devErrorNotActive": "لم يعد بالإمكان تبديل هذا المفتاح.",
     "devActionError": "لم تنجح العملية. حاول مرة أخرى.",
     "devRevealTitle": "مفتاح API الجديد",
@@ -6044,7 +6044,7 @@
     "tlRemoveAccount": "إزالة {name}"
   },
   "SuperadminApiKeys": {
-    "subtitle": "ابحث عن مفتاح API لأي مروّج عبر جميع المؤسسات وألغِه إذا تسرّب.",
+    "subtitle": "ابحث عن مفتاح API لأي مروّج عبر جميع المؤسسات وأبطِله إذا تسرّب.",
     "searchPlaceholder": "ابحث بالمؤسسة أو المروّج أو اسم المفتاح أو بادئته",
     "filterStatus": "تصفية حسب الحالة",
     "allStatuses": "كل الحالات",
@@ -6062,7 +6062,7 @@
     "status": {
       "active": "نشط",
       "expiring": "ينتهي قريبًا",
-      "revoked": "ملغى",
+      "revoked": "مُبطَل",
       "expired": "منتهي"
     },
     "col": {

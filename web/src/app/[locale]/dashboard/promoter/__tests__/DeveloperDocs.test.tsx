@@ -72,4 +72,16 @@ describe('promoter developer docs page', () => {
         expect(ar.SuperadminApiKeys.revoke).toBe('إبطال')
         expect(ar.Promoter.devCancel).toBe('إلغاء')
     })
+
+    it('never writes the revoke sense with the cancel word in the API key namespaces', () => {
+        const flat = (o: unknown, p: string): [string, string][] =>
+            typeof o === 'string' ? [[p, o]] : Object.entries(o as Record<string, unknown>).flatMap(([k, v]) => flat(v, `${p}.${k}`))
+        const cancelKeys = new Set(['Promoter.devCancel', 'SuperadminApiKeys.cancel'])
+        const entries = [
+            ...flat(ar.SuperadminApiKeys, 'SuperadminApiKeys'),
+            ...flat(ar.PromoterDocs, 'PromoterDocs'),
+            ...Object.entries(ar.Promoter).filter(([k]) => k.startsWith('dev')).map(([k, v]) => [`Promoter.${k}`, v] as [string, string]),
+        ].filter(([k]) => !cancelKeys.has(k))
+        expect(entries.filter(([, v]) => /ملغى|ألغ|إلغاء/.test(v)).map(([k]) => k)).toEqual([])
+    })
 })
