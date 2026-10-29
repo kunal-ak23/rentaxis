@@ -1104,9 +1104,9 @@ export default function VoucherForm({
                             <div>
                                 <span className={fieldLabel}>{t("paymentAccount")}</span>
                                 {isRefund ? (
-                                    // F14-36: a refund pays from cash, or a bank leaf some
-                                    // bank account actually owns (F14-55) — never any BANK
-                                    // leaf the plain BANK/CASH subtype filter would allow.
+                                    // F14-36: a refund pays from cash, or a bank leaf — once
+                                    // the organisation has a bank account, only one a bank
+                                    // account owns (F14-55), as the server's refund rule says.
                                     <RefundPaymentAccountPicker
                                         value={paymentAccountId}
                                         onChange={setPaymentAccountId}
