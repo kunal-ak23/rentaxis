@@ -27,10 +27,10 @@ const MARINA_BANK = leaf("acc-bank-marina", "100004", "Bank - Marina Heights", "
 const INACTIVE_BANK = leaf("acc-bank-old", "100009", "Bank - closed", "BANK", { active: false });
 const RECEIVABLE = leaf("acc-rr", "A-02-01-001", "Rent Receivable", "RECEIVABLE");
 
-function renderPicker() {
+function renderPicker(value: string | null = null) {
     return render(
         <NextIntlClientProvider locale="en" messages={en}>
-            <RefundPaymentAccountPicker value={null} onChange={() => {}} />
+            <RefundPaymentAccountPicker value={value} onChange={() => {}} />
         </NextIntlClientProvider>,
     );
 }
@@ -53,5 +53,18 @@ describe("Pay from on a deposit refund", () => {
         data.banks = [{ id: "b1", bankName: "Emirates NBD", leaves: [{ id: "acc-bank-tower" }] }];
         renderPicker();
         await waitFor(() => expect(optionIds()).toEqual(["acc-cash", "acc-bank-tower"]));
+    });
+
+    // Review of #453: a draft saved before a bank account was set up keeps a leaf the
+    // picker no longer offers. Showing it (rather than a blank box over a hidden value)
+    // tells the user what Post would send; the server still decides.
+    it("still shows a saved choice it no longer offers, so nothing hidden is posted", async () => {
+        data.accounts = [CASH, TOWER_BANK, MARINA_BANK];
+        data.banks = [{ id: "b1", bankName: "Emirates NBD", leaves: [{ id: "acc-bank-tower" }] }];
+        renderPicker("acc-bank-marina");
+        await waitFor(() => expect(optionIds()).toEqual(["acc-cash", "acc-bank-tower", "acc-bank-marina"]));
+        const select = screen.getByTestId("refund-payment-account") as HTMLSelectElement;
+        expect(select.value).toBe("acc-bank-marina");
+        expect(select.selectedOptions[0].textContent).toContain("Bank - Marina Heights");
     });
 });

@@ -6,18 +6,18 @@ import { loadAccounts } from "./AccountPicker";
 import { bankRecApi } from "@/lib/api/bankRec";
 
 /**
- * F14-36: the "Pay from" field on a deposit-refund BPV. Narrower than
- * {@link SettlementAccountPicker}'s plain BANK/CASH-subtype filter: a BANK
- * leaf only qualifies once some bank account actually owns it (reconciled
- * against a real statement, per F14-55's ownership check) — any cash leaf
- * still qualifies outright, since cash has no statement to reconcile
- * against.
+ * F14-36: the "Pay from" field on a deposit-refund BPV — cash, or a bank leaf,
+ * by the server's own rule (`VoucherService`'s refund checks, `OwnedBankLeaf`):
+ * - any active cash leaf qualifies, since cash has no statement to reconcile against;
+ * - once the organisation has set up a bank account in Bank Reconciliation, a bank
+ *   leaf qualifies only if some bank account owns it (F14-55's ownership check);
+ * - before any has, every active bank leaf qualifies. Requiring an owner then left
+ *   cash as the only choice while the voucher defaults to a bank transfer, so a
+ *   refund could not be paid from a bank at all (client report 2026-10-29).
  *
- * The ownership check applies, as on the server (`VoucherService`'s refund
- * rule, `OwnedBankLeaf.anyOwned`), only once the organisation has set up some
- * bank account. Before that every bank leaf qualifies: requiring an owner then
- * left cash as the only choice while the voucher defaults to a bank transfer,
- * so a refund could not be posted at all (client report 2026-10-29).
+ * A saved choice the rule no longer offers (a draft from before a bank account was
+ * set up) stays visible, so Post never sends an account the user cannot see; the
+ * server refuses it with its reason.
  */
 export default function RefundPaymentAccountPicker({
     value,
@@ -30,11 +30,13 @@ export default function RefundPaymentAccountPicker({
 }) {
     const t = useTranslations("Vouchers");
     const [options, setOptions] = useState<{ id: string; code: string; name: string }[]>([]);
+    const [byId, setById] = useState<Record<string, { code: string; name: string }>>({});
 
     useEffect(() => {
         let alive = true;
         Promise.all([loadAccounts(), bankRecApi.accounts().catch(() => [])]).then(([accounts, bankRows]) => {
             if (!alive) return;
+            setById(Object.fromEntries(accounts.map(a => [a.id, { code: a.code, name: a.name }])));
             const ownedLeafIds = new Set(bankRows.flatMap(b => b.leaves.map(l => l.id)));
             const bankQualifies = (id: string) => ownedLeafIds.size === 0 || ownedLeafIds.has(id);
             setOptions(
@@ -64,6 +66,11 @@ export default function RefundPaymentAccountPicker({
                     {o.code} {o.name}
                 </option>
             ))}
+            {value && byId[value] && !options.some(o => o.id === value) && (
+                <option value={value}>
+                    {byId[value].code} {byId[value].name}
+                </option>
+            )}
         </select>
     );
 }
