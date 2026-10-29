@@ -332,6 +332,15 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
      * closed onto the raw value rather than waved through.
      */
     private PathContainer resolvePath(HttpServletRequest request) {
+        return requestPath(request);
+    }
+
+    /**
+     * {@link #resolvePath}, shared: the path a request filter must match its patterns
+     * against so it agrees with the dispatcher (also used by {@code PartnerApiKeyFilter}
+     * and {@code ApiSecurityFilter} for the partner prefix).
+     */
+    public static PathContainer requestPath(HttpServletRequest request) {
         try {
             return ServletRequestPathUtils.parseAndCache(request).pathWithinApplication();
         } catch (RuntimeException ex) {
@@ -340,6 +349,11 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     }
 
     private String resolveClientIp(HttpServletRequest request) {
+        return clientIp(request);
+    }
+
+    /** The client address a per-IP bucket is keyed on (see {@link #clientIp(String, String)}); shared. */
+    public static String clientIp(HttpServletRequest request) {
         return clientIp(request.getRemoteAddr(), request.getHeader("X-Forwarded-For"));
     }
 

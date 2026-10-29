@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.core.security.PartnerApiKeyFilter;
 import com.datagami.rentaxis.core.security.PromoterFenceFilter;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -65,6 +66,7 @@ class PromoterFenceSweepIT extends AbstractPromoterIT {
     void everyRouteOutsideTheAllowlistIs403ForAPromoter() {
         List<String> leaks = new ArrayList<>();
         int checked = 0;
+        int partnerChecked = 0;
         Set<String> allowlistedSeen = new TreeSet<>();
         for (Map.Entry<RequestMappingInfo, HandlerMethod> e : mappings.getHandlerMethods().entrySet()) {
             RequestMappingInfo info = e.getKey();
@@ -86,7 +88,13 @@ class PromoterFenceSweepIT extends AbstractPromoterIT {
                     Object body = method == HttpMethod.GET || method == HttpMethod.DELETE ? null : Map.of();
                     int viaBearer = bearer(promoter, method, path, body).status();
                     int viaHeaders = call(promoter, method, path, body).status();
-                    if (viaBearer != 403 || viaHeaders != 403) {
+                    // The partner API takes an X-Api-Key and nothing else: a promoter's JWT or
+                    // the proxy's headers there are no credential at all, so 401, not the fence's 403.
+                    int expected = path.startsWith(PartnerApiKeyFilter.PARTNER_PREFIX) ? 401 : 403;
+                    if (path.startsWith(PartnerApiKeyFilter.PARTNER_PREFIX)) {
+                        partnerChecked++;
+                    }
+                    if (viaBearer != expected || viaHeaders != expected) {
                         leaks.add(method + " " + pattern + " -> bearer " + viaBearer + ", headers " + viaHeaders
                                 + " (" + e.getValue().getShortLogMessage() + ")");
                     }
@@ -98,6 +106,8 @@ class PromoterFenceSweepIT extends AbstractPromoterIT {
         assertThat(leaks).as("routes a PROMOTER reached outside the allowlist").isEmpty();
         // Sanity: the sweep really walked the application, not an empty mapping.
         assertThat(checked).isGreaterThan(300);
+        // The partner routes were swept too (at least the key-check ping).
+        assertThat(partnerChecked).isGreaterThan(0);
         // And the allowlist it skipped is exactly the shell's reads, the promoter's own
         // routes and the caller's own profile and notifications.
         assertThat(allowlistedSeen).as("allowlisted: %s", allowlistedSeen).allMatch(s -> s.contains("/api/v1/promoter")

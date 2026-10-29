@@ -74,6 +74,19 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         this.legacyHeadersMode = legacyHeadersMode == null ? "allow" : legacyHeadersMode;
     }
 
+    /**
+     * The partner API ({@code /api/v1/partner/**}) is {@link PartnerApiKeyFilter}'s
+     * alone: a key is its only credential, so a bearer token or X-User-* headers there
+     * must never be judged — let alone replace the key's principal. Skipped here rather
+     * than in {@link #authenticate}'s skip list because {@link #doFilterInternal} clears
+     * the tenant context first, which would wipe the key's organisation. Same matcher as
+     * the key filter (decoded path), so the two cannot disagree about an encoded spelling.
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return PartnerApiKeyFilter.isPartnerPath(request);
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {

@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.config.SecurityConfig;
 import com.datagami.rentaxis.core.security.ApiSecurityFilter;
 import com.datagami.rentaxis.core.service.AccountDeletionService;
+import com.datagami.rentaxis.core.service.PromoterApiKeyService;
 import com.datagami.rentaxis.security.PublicRateLimitFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,10 @@ class SelfAccountControllerTest {
 
     @MockitoBean
     private PublicRateLimitFilter publicRateLimitFilter;
+
+    /** SecurityConfig builds the partner key filter from it; untouched off /api/v1/partner/. */
+    @MockitoBean
+    private PromoterApiKeyService promoterApiKeyService;
 
     @BeforeEach
     void passThroughFilters() throws Exception {
