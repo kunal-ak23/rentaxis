@@ -179,7 +179,13 @@ describe('RedirectSummary marks app links for the reviewer', () => {
         const msgs = (locale === 'en' ? en : ar).Promotions
         const badge = screen.getByTestId('redirect-app-link-redirectUrlAndroid')
         expect(badge).toHaveTextContent(msgs.redirectAppLinkBadge)
-        expect(badge).toHaveAttribute('title', msgs.redirectAppLinkReview)
+        // The review note is visible text beside the label, and describes it.
+        const hint = screen.getByTestId('redirect-app-link-hint-redirectUrlAndroid')
+        expect(hint).toBeVisible()
+        expect(hint).toHaveTextContent(msgs.redirectAppLinkReview)
+        expect(badge.getAttribute('aria-describedby')).toBe(hint.id)
+        expect(badge).toHaveAccessibleDescription(msgs.redirectAppLinkReview)
+        expect(screen.queryByTestId('redirect-app-link-hint-redirectUrl')).toBeNull()
         expect(screen.getByTestId('redirect-summary-redirectUrlAndroid')).toContainElement(badge)
         expect(screen.queryByTestId('redirect-app-link-redirectUrl')).toBeNull()
         // The URL itself is still the only left-to-right isolate on that line.

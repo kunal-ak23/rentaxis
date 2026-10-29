@@ -320,12 +320,21 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
             const onSave = startCoupon(mode)
             for (const value of ['javascript:alert(1)', 'JavaScript:x', 'data:text/html,x', 'file:///etc/passwd',
                 'intent://x#Intent;end', 'glidewash:', 'glide wash://x', 'glidewash://re deem', '1app://x',
-                'tel:+97150', 'glidewash://x\u200Ey']) {
+                'tel:+97150', 'glidewash://x\u200Ey', 'glidewash://x\uFE00', 'glidewash://\u3164',
+                'glidewash://x\u00A0y', 'googlechromes://quickwash.example.test/r', 'x-safari-https://evil.example.test/r',
+                'firefox://open-url?url=https://evil.example.test', 'microsoft-edge-https://evil.example.test/r']) {
                 fireEvent.change(linkField(), { target: { value } })
                 save()
                 expect(document.getElementById('err-redirectUrl'), value).toHaveTextContent(L.redirectLinkInvalid)
             }
             expect(onSave).not.toHaveBeenCalled()
+        })
+
+        it('sends a mixed-case app link exactly as typed', () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(androidField(), { target: { value: 'GlideWash://Redeem/a/../b?x=%7e' } })
+            save()
+            expect(onSave.mock.calls[0][0].redirectUrlAndroid).toBe('GlideWash://Redeem/a/../b?x=%7e')
         })
 
         it('still refuses an https link off the allowlist as a domain problem', () => {

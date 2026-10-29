@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { useTranslations } from "next-intl";
 import type { PromoAdDTO } from "@/types/promotion";
 import { REDIRECT_LINK_KEYS, REDIRECT_LINK_LABEL, isAppLink, sharesRenterData } from "./RedirectLinkFields";
@@ -10,7 +11,8 @@ import { REDIRECT_LINK_KEYS, REDIRECT_LINK_LABEL, isAppLink, sharesRenterData } 
  * list. This is what an admin reads before approving: it says exactly what the app
  * will append to each link and whether tenant details are in it. An app link
  * (`yourapp://…`) is not checked against the business's allowed domains, so it
- * carries a visible "App link" label for the reviewer to check it by eye.
+ * carries a visible "App link" label and a short review note beside it (linked to
+ * the label with aria-describedby) for the reviewer to check it by eye.
  *
  * The sentences are translated and run in the page's direction; only the URLs and
  * the parameter names, which are always left-to-right, are isolated (`<bdi dir="ltr">`),
@@ -20,6 +22,7 @@ export function RedirectSummary({ ad }: {
     ad: Pick<PromoAdDTO, "redirectUrl" | "redirectUrlAndroid" | "redirectUrlIos" | "redirectParams">;
 }) {
     const t = useTranslations("Promotions");
+    const hintId = useId();
     const links = REDIRECT_LINK_KEYS.flatMap(key => {
         const url = ad[key]?.trim();
         return url ? [{ key, url }] : [];
@@ -35,10 +38,17 @@ export function RedirectSummary({ ad }: {
                         url: () => <bdi dir="ltr">{url}</bdi>,
                     })}
                     {isAppLink(url) && (
-                        <span data-testid={`redirect-app-link-${key}`} title={t("redirectAppLinkReview")}
-                            className="ms-1 inline-block rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800">
-                            {t("redirectAppLinkBadge")}
-                        </span>
+                        <>
+                            <span data-testid={`redirect-app-link-${key}`}
+                                aria-describedby={`${hintId}-${key}`}
+                                className="ms-1 inline-block rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800">
+                                {t("redirectAppLinkBadge")}
+                            </span>
+                            <span id={`${hintId}-${key}`} data-testid={`redirect-app-link-hint-${key}`}
+                                className="ms-1 text-[11px] text-sky-800">
+                                {t("redirectAppLinkReview")}
+                            </span>
+                        </>
                     )}
                 </span>
             ))}

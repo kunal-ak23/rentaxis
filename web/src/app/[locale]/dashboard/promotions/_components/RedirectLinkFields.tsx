@@ -33,29 +33,47 @@ const APP_SCHEME = /^[a-z][a-z0-9+.-]{1,31}$/i;
 
 /**
  * Schemes an app link may never use. https and http stay under the allowlist rule
- * (an https link off the allowed domains is still refused); the rest run script,
- * read local data, reach system handlers or place calls and messages.
+ * (an https link off the allowed domains is still refused). Browser-opening schemes
+ * (`googlechromes://host/path`, `firefox://open-url?url=…`) are refused because they
+ * hand a web address to a browser and would get around the domain allowlist; see
+ * also `isRefusedAppScheme` for the `-http`/`-https`/`x-safari-` families. The rest
+ * run script, read local data, reach system handlers or place calls and messages.
+ * Mirrors `PromotionUrlValidator.REFUSED_APP_SCHEMES`.
  */
 export const REFUSED_APP_SCHEMES: ReadonlySet<string> = new Set([
     "http", "https", "javascript", "vbscript", "data", "file", "blob", "about",
     "content", "ftp", "ws", "wss", "intent", "itms-services", "chrome",
     "chrome-extension", "mailto", "tel", "sms", "facetime", "facetime-audio",
+    // Browsers: these open a web address and would get around the allowlist.
+    "googlechrome", "googlechromes", "firefox", "focus", "brave", "opera", "opera-http",
+    "microsoft-edge", "duckduckgo", "edge",
+    // Calls and messages.
+    "telprompt", "facetime-prompt", "facetime-audio-prompt", "smsto", "mms", "mmsto",
 ]);
+
+/** A refused scheme (any case): named, or a browser bridge ending in -http/-https or starting with x-safari-. */
+export function isRefusedAppScheme(scheme: string): boolean {
+    const s = scheme.toLowerCase();
+    return REFUSED_APP_SCHEMES.has(s) || s.endsWith("-http") || s.endsWith("-https") || s.startsWith("x-safari-");
+}
+
+/** Printable ASCII only (`!` to `~`): no space, control, non-ASCII or invisible character. */
+const PRINTABLE_ASCII = /^[\x21-\x7E]+$/;
 
 /**
  * A coupon redirect link may be an app deep link with a custom scheme
  * (`glidewash://redeem`, owner ruling 2026-10-29) as well as an allowlisted https
  * link. Mirrors `PromotionUrlValidator.isAppLink` — change both together: a valid
- * scheme, something after `scheme:`, no whitespace, control or format character
- * anywhere (so the link reads on the review screen as the phone opens it), and not
- * a refused scheme. The allowed domains do not apply; admins check app links on review.
+ * scheme, something after `scheme:`, printable ASCII only (so the link reads on
+ * the review screen exactly as the phone opens it), and not a refused scheme.
+ * The allowed domains do not apply; admins check app links on review.
  */
 export function isAppLink(url: string): boolean {
-    if (url === "" || /[\s\p{Cc}\p{Cf}]/u.test(url)) return false;
+    if (!PRINTABLE_ASCII.test(url)) return false;
     const colon = url.indexOf(":");
     if (colon < 0 || colon === url.length - 1) return false;
     const scheme = url.slice(0, colon);
-    return APP_SCHEME.test(scheme) && !REFUSED_APP_SCHEMES.has(scheme.toLowerCase());
+    return APP_SCHEME.test(scheme) && !isRefusedAppScheme(scheme);
 }
 
 /** The label each link carries wherever the three appear together (the example, the ad list). */
