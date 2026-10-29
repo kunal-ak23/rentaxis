@@ -266,6 +266,31 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
                   and c.row_kind = 'FEE' and c.amount = 1050""", Integer.class, f.tenantId())).isEqualTo(4);
     }
 
+    /**
+     * Review of #452 round 2: the usual contract carries payment terms (the wizard sets them),
+     * which takes {@code gridFor}'s other branch — the fee must stand alone there too.
+     */
+    @Test
+    void aRenewalOfAContractWithPaymentTermsGetsItsFeeOnAChequeOfItsOwn() {
+        UUID id = posted(false);
+        jdbc.update("update leases set payment_terms = 4 where id = ?", id);
+
+        LeaseBatch.RenewRow row = batch.renew(renewAll(List.of(id),
+                new LeaseBatch.RentRule(LeaseBatch.RentRule.Mode.NONE, null, null), true,
+                List.of(line("RENEWAL_FEE", "1050")))).get(0);
+
+        assertThat(row.ok()).as(row.message()).isTrue();
+        assertThat(jdbc.queryForObject("select payment_terms from leases where id = ?", Integer.class,
+                row.renewalLeaseId())).isEqualTo(4);
+        assertThat(jdbc.queryForObject("select count(*) from cheques where lease_id = ? and row_kind = 'RENT'",
+                Integer.class, row.renewalLeaseId())).isEqualTo(4);
+        assertThat(jdbc.queryForObject("select count(*) from cheques where lease_id = ? and row_kind = 'MIXED'",
+                Integer.class, row.renewalLeaseId())).isZero();
+        assertThat(jdbc.queryForObject("""
+                select count(*) from cheques where lease_id = ? and row_kind = 'FEE' and amount = 1050""",
+                Integer.class, row.renewalLeaseId())).isEqualTo(1);
+    }
+
     @Test
     void aVatableFeeKeepsItsChargeTypesVatAsOnTheSingleRenew() {
         // Review P2-1: the single renew dialog sends the fee with its charge type's VAT default

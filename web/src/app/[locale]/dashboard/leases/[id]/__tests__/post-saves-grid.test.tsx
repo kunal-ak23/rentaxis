@@ -122,6 +122,17 @@ describe("Post on a draft contract with grid edits on screen", () => {
         expect(api.saveCheques).not.toHaveBeenCalled();
     });
 
+    // Review of #452 round 2: as Save cheques does, an amount the field refused is never saved.
+    it("keeps the dialog shut and saves nothing while an amount on the grid is refused", async () => {
+        await renderOnCheques();
+        fireEvent.change(screen.getByLabelText("Amount 2"), { target: { value: "1,5" } });
+        fireEvent.click(screen.getByTestId("lease-post"));
+        await new Promise(r => setTimeout(r, 50));
+        expect(api.saveCheques).not.toHaveBeenCalled();
+        expect(api.dryRunPost).not.toHaveBeenCalled();
+        expect(document.activeElement).toBe(screen.getByLabelText("Amount 2"));
+    });
+
     it("keeps the dialog shut when that save is refused", async () => {
         api.saveCheques.mockRejectedValue(new Error("network"));
         await renderOnCheques();

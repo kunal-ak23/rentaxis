@@ -141,8 +141,11 @@ export default function LeaseLinesGrid({
      * Choosing a charge type carries its defaults onto the row: VAT from the
      * catalogue's `vatApplicableDefault` (for a RENT type, from the lease's
      * `rentVat` flag when the caller passes one), and its account:
-     * - one the user chose by hand stays while the new type can still take it
-     *   (overwriting it would silently undo a deliberate override);
+     * - one the user chose by hand stays while the new type is the same kind of
+     *   charge (overwriting it would silently undo a deliberate override) — the same
+     *   behaviour, and for a fee the same pass-through-or-not, since rent and a
+     *   deposit both credit a liability and the server would take either's account
+     *   for the other (review of #452, round 2);
      * - back on a saved line's own type, the line's own account returns (review
      *   of #452, I3 — an amendment must not move a posted line off it);
      * - otherwise none, so the cell shows the server's pick for the new type (`ledgerOf`).
@@ -154,7 +157,9 @@ export default function LeaseLinesGrid({
             : type.behaviour === "RENT" && rentVat !== undefined
               ? rentVat
               : type.vatApplicableDefault;
-        const fits = accountTypeFor(behaviourOf(row, chargeTypes)) === accountTypeFor(type?.behaviour ?? null);
+        const was = chargeTypes.find(c => c.id === row.chargeTypeId);
+        const passThrough = (c?: ChargeType) => c?.recognition === "PASS_THROUGH";
+        const fits = !!was && !!type && was.behaviour === type.behaviour && passThrough(was) === passThrough(type);
         const own = row.saved?.chargeTypeId === chargeTypeId ? row.saved : null;
         const account: Partial<LineRow> = row.accountTouched && fits
             ? {}

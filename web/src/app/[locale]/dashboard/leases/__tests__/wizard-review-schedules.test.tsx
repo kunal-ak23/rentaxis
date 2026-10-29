@@ -151,7 +151,7 @@ describe("wizard Review: monthly rent and cheques", () => {
 describe("wizard Cheques: a changed count asks before regenerating", () => {
     it("asks, and regenerates only on confirm", async () => {
         await toChequesStep([cheque(1), cheque(2), cheque(3), cheque(4)]);
-        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 12, but 4 are saved");
+        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 12, but the grid was generated for 4");
         expect(api.generateCheques).not.toHaveBeenCalled();
         api.generateCheques.mockResolvedValue({ cheques: Array.from({ length: 12 }, (_, i) => cheque(i + 1)), version: 2 });
         fireEvent.click(screen.getByTestId("wizard-regenerate-confirm"));

@@ -372,9 +372,13 @@ export default function LeaseDetailPage() {
         }
     };
 
-    /** Post: the grid on screen first, if it differs from the saved one; a refused save shows on the grid. */
+    /**
+     * Post: the grid on screen first, if it differs from the saved one; a refused save shows on
+     * the grid. As Save cheques does, an amount the field refused is never saved (it reads as 0).
+     */
     const openPost = async () => {
         if (lease && JSON.stringify(toChequeRows(cheques)) !== JSON.stringify(toChequeRows(savedCheques))) {
+            if (focusFirstInvalidMoney(document)) return;
             if (!(await runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques), lease.version)))) {
                 selectTab("payments", "cheques");
                 return;

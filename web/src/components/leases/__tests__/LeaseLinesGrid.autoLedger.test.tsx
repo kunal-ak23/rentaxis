@@ -35,6 +35,10 @@ const CHARGE_TYPES: ChargeType[] = [
         behaviour: "DEPOSIT", vatApplicableDefault: false, active: true, displayOrder: 2 },
     { id: "ct-fee", code: "ADMIN_FEE", nameEn: "Admin Fee", nameAr: null, role: "ADMIN_FEE",
         behaviour: "FEE", vatApplicableDefault: true, active: true, displayOrder: 3 },
+    { id: "ct-renew", code: "RENEWAL_FEE", nameEn: "Renewal Fee", nameAr: null, role: "ADMIN_FEE",
+        behaviour: "FEE", vatApplicableDefault: true, active: true, displayOrder: 4 },
+    { id: "ct-util", code: "UTILITIES", nameEn: "Utilities (recovered at cost)", nameAr: null, role: "OTHER_INCOME",
+        behaviour: "FEE", recognition: "PASS_THROUGH", vatApplicableDefault: false, active: true, displayOrder: 5 },
 ];
 const SUGGESTED = [
     { chargeTypeId: "ct-rent", accountId: "acc-rent-income" },
@@ -96,14 +100,35 @@ describe("the Ledger column fills itself in", () => {
         expect(latest()[0].creditAccountId).toBeNull();
     });
 
-    it("keeps an account the user picked by hand when the Particulars changes", async () => {
+    it("keeps an account the user picked by hand when the Particulars changes to one of the same kind", async () => {
         api.lineAccounts.mockResolvedValue(SUGGESTED);
-        render(<Harness initial={[{ ...blankLine(0), chargeTypeId: "ct-rent" }]} />);
-        await waitFor(() => expect(ledger(0)).toBe("acc-rent-income"));
+        render(<Harness initial={[{ ...blankLine(0), chargeTypeId: "ct-fee" }]} />);
+        await waitFor(() => expect(api.lineAccounts).toHaveBeenCalled());
         fireEvent.click(screen.getByTestId("pick-by-hand"));
-        fireEvent.change(screen.getByTestId("lease-line-type-0"), { target: { value: "ct-dep" } });
+        fireEvent.change(screen.getByTestId("lease-line-type-0"), { target: { value: "ct-renew" } });
         expect(ledger(0)).toBe("acc-by-hand");
         expect(latest()[0].creditAccountId).toBe("acc-by-hand");
+    });
+
+    // Review of #452 round 2: rent and a deposit both credit a liability, so the server
+    // would take a deposit account for rent — and recognition would then draw it down.
+    it("drops a hand-picked account when a deposit line becomes rent", async () => {
+        api.lineAccounts.mockResolvedValue(SUGGESTED);
+        render(<Harness initial={[{ ...blankLine(0), chargeTypeId: "ct-dep" }]} />);
+        await waitFor(() => expect(ledger(0)).toBe("acc-sd"));
+        fireEvent.click(screen.getByTestId("pick-by-hand"));
+        fireEvent.change(screen.getByTestId("lease-line-type-0"), { target: { value: "ct-rent" } });
+        expect(ledger(0)).toBe("acc-rent-income");
+        expect(latest()[0].creditAccountId).toBeNull();
+    });
+
+    it("drops a hand-picked fee account when the fee becomes one recovered at cost", async () => {
+        api.lineAccounts.mockResolvedValue(SUGGESTED);
+        render(<Harness initial={[{ ...blankLine(0), chargeTypeId: "ct-fee" }]} />);
+        await waitFor(() => expect(api.lineAccounts).toHaveBeenCalled());
+        fireEvent.click(screen.getByTestId("pick-by-hand"));
+        fireEvent.change(screen.getByTestId("lease-line-type-0"), { target: { value: "ct-util" } });
+        expect(latest()[0].creditAccountId).toBeNull();
     });
 
     // Review of #452, I3: amending a posted contract — a line's own account is not lost by

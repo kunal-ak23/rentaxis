@@ -2710,7 +2710,7 @@
     "reviewFirstDueDefaulted": "تاريخ الاستحقاق الأول فارغ، لذا يبدأ الجدول من تاريخ البدء.",
     "reviewUseSchedule": "استخدم هذا الجدول",
     "reviewPreviewFailed": "تعذّر تحميل الجدول. حاول مرة أخرى.",
-    "regenerateChequesPrompt": "أصبح عدد الشيكات {count}، لكن المحفوظ {had}. هل تريد إعادة إنشاء الشيكات للعدد الجديد؟",
+    "regenerateChequesPrompt": "أصبح عدد الشيكات {count}، لكن الجدول أُنشئ لـ {had}. هل تريد إعادة إنشاء الشيكات للعدد الجديد؟",
     "regenerateCheques": "إعادة إنشاء الشيكات",
     "keepCheques": "الإبقاء على هذه الشيكات",
     "errTermTooLong": "لا يمكن أن تتجاوز مدة العقد {max} عامًا. تحقق من تاريخ الانتهاء.",

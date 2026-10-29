@@ -264,7 +264,7 @@ describe("M9: a rent-free period does not make the regenerate prompt reappear", 
 
     it("asks with the generator's count, and regenerates with it", async () => {
         await toChequesStep([cheque(1), cheque(2), cheque(3), cheque(4)], FREE);
-        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 11, but 4 are saved");
+        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 11, but the grid was generated for 4");
         api.generateCheques.mockResolvedValue({ cheques: Array.from({ length: 11 }, (_, i) => cheque(i + 1)), version: 2 });
         fireEvent.click(screen.getByTestId("wizard-regenerate-confirm"));
         await waitFor(() => expect(api.generateCheques).toHaveBeenCalledTimes(1));

@@ -2710,7 +2710,7 @@
     "reviewFirstDueDefaulted": "First due date is empty, so the schedule starts on the start date.",
     "reviewUseSchedule": "Use this schedule",
     "reviewPreviewFailed": "The schedule could not be loaded. Try again.",
-    "regenerateChequesPrompt": "The number of cheques is now {count}, but {had} are saved. Regenerate cheques for the new count?",
+    "regenerateChequesPrompt": "The number of cheques is now {count}, but the grid was generated for {had}. Regenerate cheques for the new count?",
     "regenerateCheques": "Regenerate cheques",
     "keepCheques": "Keep these cheques",
     "errTermTooLong": "A contract can run for at most {max} years. Check the end date.",
