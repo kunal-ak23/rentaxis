@@ -7,13 +7,24 @@ import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
  * The security boundary for ad click-throughs. An admin-entered URL that
  * passes here is one the renter mobile app will open, so this rejects by
- * default: https only, host must be an allowlisted hostname or a subdomain of
- * one, and anything unparseable is refused rather than guessed at.
+ * default: {@link #isAllowed} is https only, host must be an allowlisted
+ * hostname or a subdomain of one, and anything unparseable is refused rather
+ * than guessed at. That is the whole rule for a WEBSITE ad's {@code ctaUrl}.
+ *
+ * <p>A coupon ad's redirect links ({@code redirectUrl}, {@code redirectUrlAndroid},
+ * {@code redirectUrlIos}) also accept an app deep link with a custom scheme
+ * ({@code glidewash://redeem}), see {@link #isAllowedRedirect} and
+ * {@link #isAppLink} (owner ruling 2026-10-29). The domain allowlist cannot
+ * apply to those — they have no web host — so the control is the admin's
+ * review of the ad (promoter-written ads are approved before renters see them;
+ * the review screen marks an app link). What this still refuses is any scheme a
+ * phone would hand to a browser, a script engine, a file or the dialler.
  *
  * <p>Subdomain matching compares label boundaries, not string suffixes —
  * {@code evil-spice-bazaar.ae} ends with {@code spice-bazaar.ae} but is a
@@ -39,6 +50,25 @@ public class PromotionUrlValidator {
      */
     private static final Pattern HOSTNAME = Pattern.compile(
             "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$");
+
+    /**
+     * An app link's scheme: a letter, then 1–31 letters, digits, {@code +}, {@code .}
+     * or {@code -} (RFC 3986's scheme alphabet, length-capped). Case-insensitive.
+     */
+    private static final Pattern APP_SCHEME = Pattern.compile(
+            "^[a-z][a-z0-9+.-]{1,31}$", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Schemes an app link may never use, compared lower-cased. Web schemes stay
+     * under {@link #isAllowed}'s domain rule (so an https link on a domain the
+     * business does not claim is still refused, and plain http never passes);
+     * the rest run script, read local data, reach system handlers (Android
+     * {@code intent:}, iOS enterprise installs) or place calls and messages.
+     */
+    static final Set<String> REFUSED_APP_SCHEMES = Set.of(
+            "http", "https", "javascript", "vbscript", "data", "file", "blob", "about",
+            "content", "ftp", "ws", "wss", "intent", "itms-services", "chrome",
+            "chrome-extension", "mailto", "tel", "sms", "facetime", "facetime-audio");
 
     /** Normalises admin input into bare lowercase hostnames, dropping anything invalid. */
     public List<String> parseDomains(String raw) {
@@ -133,5 +163,48 @@ public class PromotionUrlValidator {
         }
         final String normalizedHost = h;
         return allowed.stream().anyMatch(d -> normalizedHost.equals(d) || normalizedHost.endsWith("." + d));
+    }
+
+    /**
+     * The rule for a coupon redirect link: {@link #isAllowed} (https on the
+     * business's allowed domains) or an {@link #isAppLink app link}. Length is
+     * capped by the caller.
+     */
+    public boolean isAllowedRedirect(String url, String allowedDomainsRaw) {
+        return isAllowed(url, allowedDomainsRaw) || isAppLink(url);
+    }
+
+    /**
+     * An app deep link with a custom scheme: the scheme matches {@link #APP_SCHEME},
+     * something follows {@code scheme:}, nothing anywhere is whitespace or a
+     * control/format character (a zero-width or bidi-override character would let
+     * a link read differently on the review screen than what the phone opens), and
+     * the scheme is not one of {@link #REFUSED_APP_SCHEMES}. Not trimmed: a caller
+     * passes the stored, already-trimmed value.
+     */
+    public boolean isAppLink(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < url.length(); ) {
+            int cp = url.codePointAt(i);
+            if (isWhitespaceOrControl(cp)) {
+                return false;
+            }
+            i += Character.charCount(cp);
+        }
+        int colon = url.indexOf(':');
+        if (colon < 0 || colon == url.length() - 1) {
+            return false;
+        }
+        String scheme = url.substring(0, colon);
+        return APP_SCHEME.matcher(scheme).matches()
+                && !REFUSED_APP_SCHEMES.contains(scheme.toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean isWhitespaceOrControl(int cp) {
+        int type = Character.getType(cp);
+        return Character.isWhitespace(cp) || Character.isSpaceChar(cp) || cp == 0xFEFF
+                || type == Character.CONTROL || type == Character.FORMAT;
     }
 }

@@ -122,6 +122,18 @@ class PromotionRedirectServiceTest {
     }
 
     @Test
+    void anAppLinkGainsTheParametersLikeAnHttpsLink() {
+        assertThat(PromotionRedirectService.withQuery("glidewash://redeem", List.of("b=2", "c=3")))
+                .isEqualTo("glidewash://redeem?b=2&c=3");
+        assertThat(PromotionRedirectService.withQuery("glidewash://redeem?a=1", List.of("b=2")))
+                .isEqualTo("glidewash://redeem?a=1&b=2");
+        assertThat(PromotionRedirectService.withQuery("glidewash://redeem/x?a=1#frag", List.of("b=2")))
+                .isEqualTo("glidewash://redeem/x?a=1&b=2#frag");
+        assertThat(PromotionRedirectService.withQuery("myapp:open", List.of("b=2")))
+                .isEqualTo("myapp:open?b=2");
+    }
+
+    @Test
     void onlyCouponAdsWithARedirectResolve() {
         PromoAd website = ad("https://quickwash.example/r",
                 new PromoRedirectParam("q", PromoRedirectSource.STATIC, "x"));

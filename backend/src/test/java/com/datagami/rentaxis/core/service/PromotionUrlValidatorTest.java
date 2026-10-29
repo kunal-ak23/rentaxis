@@ -142,4 +142,44 @@ class PromotionUrlValidatorTest {
         assertThat(validator.isAllowed(null, "spice-bazaar.ae")).isFalse();
         assertThat(validator.isAllowed("https://", "spice-bazaar.ae")).isFalse();
     }
+
+    // ---------------------------------------------- coupon redirects: app links
+
+    @Test
+    void isAppLink_acceptsCustomSchemes() {
+        assertThat(validator.isAppLink("glidewash://redeem")).isTrue();
+        assertThat(validator.isAppLink("glidewash://redeem?x=1")).isTrue();
+        assertThat(validator.isAppLink("myapp:open")).isTrue();
+        assertThat(validator.isAppLink("GlideWash://x")).isTrue();
+        assertThat(validator.isAppLink("com.glide-wash+v2.app://x")).isTrue();
+    }
+
+    @Test
+    void isAppLink_refusesDangerousAndMalformedLinks() {
+        for (String bad : new String[]{
+                "javascript:alert(1)", "JavaScript:x", "data:text/html,x", "http://a.example",
+                "https://a.example", "intent://x#Intent;end", "file:///etc/passwd", "glidewash:",
+                "glide wash://x", "glidewash://re deem", "glidewash://x\n", "glidewash://x\u200Ey",
+                "glidewash://x\u00A0", "1app://x", "a://x", "a".repeat(33) + "://x", "://x", "glidewash",
+                "", "tel:+971500000000", "sms:1", "mailto:a@b.example", "itms-services://?action=download",
+                "chrome-extension://x", "vbscript:x", "blob:x", "about:blank", "content://x",
+                "facetime-audio:1", "ws://x", "wss://x", "ftp://x"}) {
+            assertThat(validator.isAppLink(bad)).as(bad).isFalse();
+        }
+        assertThat(validator.isAppLink(null)).isFalse();
+    }
+
+    @Test
+    void isAllowedRedirect_isTheHttpsRuleOrAnAppLink() {
+        assertThat(validator.isAllowedRedirect("https://spice-bazaar.ae/r", "spice-bazaar.ae")).isTrue();
+        assertThat(validator.isAllowedRedirect("glidewash://redeem", "spice-bazaar.ae")).isTrue();
+        // The allowlist does not apply to an app link — not even an empty one.
+        assertThat(validator.isAllowedRedirect("glidewash://redeem", null)).isTrue();
+        // An https link off the allowlist is still refused; https never counts as an app scheme.
+        assertThat(validator.isAllowedRedirect("https://evil.example/r", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowedRedirect("http://spice-bazaar.ae/r", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowedRedirect("javascript:alert(1)", "spice-bazaar.ae")).isFalse();
+        // ctaUrl's rule is unchanged.
+        assertThat(validator.isAllowed("glidewash://redeem", "spice-bazaar.ae")).isFalse();
+    }
 }
