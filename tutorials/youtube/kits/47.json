@@ -1,0 +1,72 @@
+{
+  "id": "47",
+  "slug": "a-tenancy-contract-from-draft-to-cleared-cheques",
+  "title": "Miftah tutorial 47 · A tenancy contract from draft to cleared cheques",
+  "description": "Follow one contract end to end: draft it with a cheque of its own for the deposit and the fee, post it, bank the cheques that are due and clear them when the bank confirms.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 Draft a Tenancy Contract\n0:15 Step 2 · Terms\n0:28 Step 3 · Charges\n0:42 Save the Draft, Then Generate Cheques\n1:00 Number, Review and Post\n1:11 Its Cheques, Then Bank the Ones Due\n1:31 Clear When the Bank Confirms\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nتابع عقدًا واحدًا من البداية إلى النهاية: صُغه مع شيك مستقل للتأمين وآخر للرسوم، ثم رحّله، وأودع الشيكات المستحقة، وسجّل صرفها عند تأكيد البنك.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "tenancy contract",
+    "lease agreement",
+    "tenant management",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Leasing",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Draft a Tenancy Contract"
+    },
+    {
+      "startSec": 15.8,
+      "start": "0:15",
+      "label": "Step 2 · Terms"
+    },
+    {
+      "startSec": 28.1,
+      "start": "0:28",
+      "label": "Step 3 · Charges"
+    },
+    {
+      "startSec": 42.9,
+      "start": "0:42",
+      "label": "Save the Draft, Then Generate Cheques"
+    },
+    {
+      "startSec": 60.5,
+      "start": "1:00",
+      "label": "Number, Review and Post"
+    },
+    {
+      "startSec": 71.0,
+      "start": "1:11",
+      "label": "Its Cheques, Then Bank the Ones Due"
+    },
+    {
+      "startSec": 91.4,
+      "start": "1:31",
+      "label": "Clear When the Bank Confirms"
+    }
+  ],
+  "durationSec": 104,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER"
+  ],
+  "topic": "leasing",
+  "captionsFile": "tutorials/output/47-a-tenancy-contract-from-draft-to-cleared-cheques.srt",
+  "videoFile": "tutorials/output/47-a-tenancy-contract-from-draft-to-cleared-cheques.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/47.png"
+}

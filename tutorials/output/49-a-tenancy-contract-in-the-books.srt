@@ -1,0 +1,177 @@
+1
+00:00:00,000 --> 00:00:04,234
+This tutorial follows the contract from
+tutorial 47 into the books.
+
+2
+00:00:04,234 --> 00:00:08,468
+Open Rajesh Kumar's contract for A-202,
+and select View posting journal.
+
+3
+00:00:08,468 --> 00:00:10,007
+Posting wrote journal TCO-26/7.
+
+4
+00:00:10,007 --> 00:00:13,087
+Rent Receivable is debited with each part
+of
+
+5
+00:00:13,087 --> 00:00:16,166
+the contract, 47,000 in all: what Rajesh
+owes.
+
+6
+00:00:16,166 --> 00:00:20,785
+Against it, the rent of 42,000 is credited
+to Advance Rent, not
+
+7
+00:00:20,785 --> 00:00:25,404
+to income, because rent is earned day by
+day over the term.
+
+8
+00:00:25,404 --> 00:00:28,868
+The deposit of 4,000 is credited to
+Security Deposit:
+
+9
+00:00:28,868 --> 00:00:32,332
+it is held for Rajesh, and is never
+income.
+
+10
+00:00:32,332 --> 00:00:36,951
+The admin fee of 1,000 is income the day
+it is charged.
+
+11
+00:00:36,951 --> 00:00:40,030
+Back on the contract, the Cheques tab
+lists
+
+12
+00:00:40,030 --> 00:00:43,109
+every journal it has written, under
+Journal Vouchers.
+
+13
+00:00:43,109 --> 00:00:45,803
+Posting also wrote one PDR for each
+
+14
+00:00:45,803 --> 00:00:48,113
+of the six cheques in hand.
+
+15
+00:00:48,113 --> 00:00:51,192
+Each moves its amount from Rent Receivable
+to
+
+16
+00:00:51,192 --> 00:00:53,886
+PDC Receivable: the cheques the landlord
+holds.
+
+17
+00:00:53,886 --> 00:00:54,656
+Open CRT-26/12.
+
+18
+00:00:54,656 --> 00:00:56,966
+Clearing the deposit cheque wrote
+CRT-26/12.
+
+19
+00:00:56,966 --> 00:01:01,200
+The building's bank account is debited
+4,000, and PDC Receivable is
+
+20
+00:01:01,200 --> 00:01:05,433
+credited the same: the cheque is now money
+in the bank.
+
+21
+00:01:05,433 --> 00:01:09,283
+Below the list are the same entries,
+account by account.
+
+22
+00:01:09,283 --> 00:01:13,516
+Advance Rent holds the full 42,000, none
+of it earned yet.
+
+23
+00:01:13,516 --> 00:01:15,826
+The bank holds the 4,000 deposit.
+
+24
+00:01:15,826 --> 00:01:19,290
+PDC Receivable holds 43,000: the cheques
+still to clear.
+
+25
+00:01:19,290 --> 00:01:22,754
+And Rent Receivable is back to zero: with
+every
+
+26
+00:01:22,754 --> 00:01:25,833
+cheque in hand, Rajesh owes nothing on
+account.
+
+27
+00:01:25,833 --> 00:01:29,297
+Revenue recognition shows how the rent
+will be earned:
+
+28
+00:01:29,297 --> 00:01:32,377
+twelve monthly slices, worked out by the
+day.
+
+29
+00:01:32,377 --> 00:01:36,226
+At each month-end, that month's slice
+moves from Advance Rent
+
+30
+00:01:36,226 --> 00:01:40,075
+to Rental Income: 3,452.05 for the thirty
+days of November.
+
+31
+00:01:40,075 --> 00:01:43,154
+The last month absorbs the rounding, and
+the
+
+32
+00:01:43,154 --> 00:01:45,848
+schedule matches the contract rent of
+42,000.
+
+33
+00:01:45,848 --> 00:01:49,697
+Nobody posts these by hand: every night,
+each month that
+
+34
+00:01:49,697 --> 00:01:53,161
+has ended is posted on its own, and its
+
+35
+00:01:53,161 --> 00:01:56,626
+row turns from Planned to Posted, with its
+journal.
+
+36
+00:01:56,626 --> 00:01:59,705
+Tutorial 51 shows it happening on these
+contracts,
+
+37
+00:01:59,705 --> 00:02:02,784
+and how to check that nothing was missed.

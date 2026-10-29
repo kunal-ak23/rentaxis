@@ -1,0 +1,68 @@
+{
+  "id": "49",
+  "slug": "a-tenancy-contract-in-the-books",
+  "title": "Miftah tutorial 49 · A tenancy contract in the books",
+  "description": "What posting a contract writes: the receivable against Advance Rent, Security Deposit and fees, one entry per cheque in hand, the receipt when a cheque clears, and the per-day recognition schedule.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Rajesh's Contract\n0:10 The Posting Journal, TCO-26/7\n0:36 Every Journal the Contract Wrote\n1:05 Account by Account\n1:26 Revenue Recognition\n1:46 Posted Every Night\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nما يسجّله ترحيل العقد: الذمة المدينة مقابل الإيجار المقدّم والتأمين والرسوم، وقيد لكل شيك مستلم، وسند القبض عند صرف الشيك، وجدول الاعتراف بالإيراد يومًا بيوم.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Rajesh's Contract"
+    },
+    {
+      "startSec": 10.0,
+      "start": "0:10",
+      "label": "The Posting Journal, TCO-26/7"
+    },
+    {
+      "startSec": 36.5,
+      "start": "0:36",
+      "label": "Every Journal the Contract Wrote"
+    },
+    {
+      "startSec": 65.5,
+      "start": "1:05",
+      "label": "Account by Account"
+    },
+    {
+      "startSec": 86.2,
+      "start": "1:26",
+      "label": "Revenue Recognition"
+    },
+    {
+      "startSec": 106.6,
+      "start": "1:46",
+      "label": "Posted Every Night"
+    }
+  ],
+  "durationSec": 123,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/49-a-tenancy-contract-in-the-books.srt",
+  "videoFile": "tutorials/output/49-a-tenancy-contract-in-the-books.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/49.png"
+}

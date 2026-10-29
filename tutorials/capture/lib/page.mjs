@@ -115,10 +115,10 @@ export async function revealCursor(page) {
  *   are hidden for the accounting tutorials, the contract lifecycle ones (11-13) and for tutorial 10 (which ends on
  *   the draft it creates), the ones that hold on that page. The renter's NAME
  *   stays: it is what names the contract. Tutorial 02 opens the same page
- *   from global search.
+ *   from global search; the contract journey ones (47-51) pass through it.
  */
 export const PRIVACY_SENSITIVE_TUTORIALS = new Set(['02', '10', '11', '12', '13', '14', '17', '18', '19', '20', '34', '35', '36',
-  '37', '38', '39', '40', '41', '42', '43', '44', '45', '46']);
+  '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '50', '51']);
 
 export const CAPTURE_STYLE_RULES = [
   'nextjs-portal, [data-nextjs-toast], #__next-build-watcher { display: none !important; }',
@@ -126,10 +126,12 @@ export const CAPTURE_STYLE_RULES = [
     ? ['div.justify-between:has(> span > svg.lucide-mail),'
        + ' div.justify-between:has(> span > svg.lucide-phone) { visibility: hidden !important; }']
     : []),
-  // The Tenant Ledger's tenant picker prints each tenant's email beside the
-  // name, in the closed combobox and in every option (accounting track).
+  // The tenant pickers print each tenant's email beside the name, in the
+  // closed combobox and in every option: the Tenant Ledger's (accounting
+  // track) and the contract wizard's (10, 47).
   ...(PRIVACY_SENSITIVE_TUTORIALS.has(tutorialId)
-    ? ['#ledger-renter span.text-muted, [role="listbox"] > [role="option"] > span.text-muted { visibility: hidden !important; }']
+    ? ['#ledger-renter span.text-muted, [data-testid="wizard-renter"] span > span.text-muted,'
+       + ' [role="listbox"] > [role="option"] > span.text-muted { visibility: hidden !important; }']
     : []),
   // Bank Accounts (tutorial 19): the ACCOUNT NUMBER and IBAN columns, and the
   // same two inputs in the bank account form (the only form with selects).
