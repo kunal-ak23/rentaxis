@@ -213,6 +213,18 @@ public class PromoterApiKeyService {
                         PromoterApiKey.statusAt(now, r.getRevokedAt(), r.getExpiresAt())));
     }
 
+    /** One key in the super-admin listing's shape (404 if there is none); for the revoke response. */
+    @Transactional(readOnly = true)
+    public AdminKeyRow adminRow(UUID keyId) {
+        Instant now = now();
+        return keyRepository.findAdminRow(keyId)
+                .map(r -> new AdminKeyRow(r.getId(), r.getTenantId(), r.getOrgName(), r.getPromoterUserId(),
+                        r.getPromoterName(), r.getPromoterEmail(), r.getName(), r.getKeyPrefix(), r.getCreatedAt(),
+                        r.getLastUsedAt(), r.getExpiresAt(), r.getRevokedAt(), r.getRevokedReason(),
+                        PromoterApiKey.statusAt(now, r.getRevokedAt(), r.getExpiresAt())))
+                .orElseThrow(() -> new NotFoundException("API key not found"));
+    }
+
     // ------------------------------------------------------------ helpers
 
     /**

@@ -86,4 +86,13 @@ public interface PromoterApiKeyRepository extends JpaRepository<PromoterApiKey, 
             nativeQuery = true)
     Page<AdminRow> findAllForAdmin(@Param("q") String q, @Param("status") String status,
                                    @Param("now") Instant now, Pageable pageable);
+
+    /** One key as the super-admin listing shows it, whatever its organisation. */
+    @Query(value = "SELECT k.id AS id, k.tenant_id AS tenantId, o.name AS orgName, k.user_id AS promoterUserId,"
+            + " u.name AS promoterName, u.email AS promoterEmail, k.name AS name, k.key_prefix AS keyPrefix,"
+            + " k.created_at AS createdAt, k.last_used_at AS lastUsedAt, k.expires_at AS expiresAt,"
+            + " k.revoked_at AS revokedAt, k.revoked_reason AS revokedReason"
+            + " FROM promoter_api_key k JOIN users u ON u.id = k.user_id JOIN landlord_org o ON o.id = k.tenant_id"
+            + " WHERE k.id = :id", nativeQuery = true)
+    Optional<AdminRow> findAdminRow(@Param("id") UUID id);
 }

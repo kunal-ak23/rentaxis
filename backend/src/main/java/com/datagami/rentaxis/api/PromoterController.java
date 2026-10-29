@@ -5,9 +5,14 @@ import com.datagami.rentaxis.api.dto.PromoAdRequest;
 import com.datagami.rentaxis.api.dto.PromoAdStatsDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessRequest;
+import com.datagami.rentaxis.api.dto.PromoterApiKeyDtos.ApiKeyDTO;
+import com.datagami.rentaxis.api.dto.PromoterApiKeyDtos.CreateKeyRequest;
+import com.datagami.rentaxis.api.dto.PromoterApiKeyDtos.IssuedKeyDTO;
+import com.datagami.rentaxis.api.dto.PromoterApiKeyDtos.RevokeKeyRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.BlobStorageService;
+import com.datagami.rentaxis.core.service.PromoterApiKeyService;
 import com.datagami.rentaxis.core.service.PromoterService;
 import com.datagami.rentaxis.core.service.PromotionImageService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -34,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -52,11 +58,16 @@ public class PromoterController {
     private final PromoterService promoters;
     private final PromotionImageService images;
     private final BlobStorageService blobs;
+    private final PromoterApiKeyService apiKeys;
+    private final Clock clock;
 
-    public PromoterController(PromoterService promoters, PromotionImageService images, BlobStorageService blobs) {
+    public PromoterController(PromoterService promoters, PromotionImageService images, BlobStorageService blobs,
+                              PromoterApiKeyService apiKeys, Clock clock) {
         this.promoters = promoters;
         this.images = images;
         this.blobs = blobs;
+        this.apiKeys = apiKeys;
+        this.clock = clock;
     }
 
     @GetMapping("/me")
@@ -121,6 +132,36 @@ public class PromoterController {
     @GetMapping("/ads/{id}/stats")
     public ResponseEntity<PromoAdStatsDTO> stats(@PathVariable UUID id) {
         return ResponseEntity.ok(promoters.stats(caller(), id));
+    }
+
+    // --------------------------------------------------------------- api keys
+
+    @GetMapping("/api-keys")
+    public ResponseEntity<List<ApiKeyDTO>> apiKeys() {
+        return ResponseEntity.ok(apiKeys.listForPromoter(caller().userId()).stream()
+                .map(k -> ApiKeyDTO.of(k, clock)).toList());
+    }
+
+    /** The secret is in this response only; never cached. */
+    @PostMapping("/api-keys")
+    public ResponseEntity<IssuedKeyDTO> createApiKey(@RequestBody CreateKeyRequest req) {
+        return noStore(HttpStatus.CREATED, IssuedKeyDTO.of(apiKeys.create(caller().userId(), req.name()), clock));
+    }
+
+    @PostMapping("/api-keys/{id}/rotate")
+    public ResponseEntity<IssuedKeyDTO> rotateApiKey(@PathVariable UUID id) {
+        return noStore(HttpStatus.CREATED, IssuedKeyDTO.of(apiKeys.rotate(caller().userId(), id), clock));
+    }
+
+    @PostMapping("/api-keys/{id}/revoke")
+    public ResponseEntity<ApiKeyDTO> revokeApiKey(@PathVariable UUID id,
+                                                  @RequestBody(required = false) RevokeKeyRequest req) {
+        return ResponseEntity.ok(ApiKeyDTO.of(
+                apiKeys.revokeByPromoter(caller().userId(), id, req == null ? null : req.reason()), clock));
+    }
+
+    private static <T> ResponseEntity<T> noStore(HttpStatus status, T body) {
+        return ResponseEntity.status(status).header(HttpHeaders.CACHE_CONTROL, "no-store").body(body);
     }
 
     // ----------------------------------------------------------------- images
