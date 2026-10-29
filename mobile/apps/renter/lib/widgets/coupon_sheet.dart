@@ -17,7 +17,9 @@ import 'coupon_redirect_sheet.dart';
 ///
 /// Nothing leaves the app unless the ad has a redirect link (`redirectUrl`, or
 /// one for this phone's platform): **Copy code** then also opens that link in
-/// the business's own app or browser (see [_copyAndRedirect]).
+/// the business's own app or browser (see [_copyAndRedirect]). The link is an
+/// https link or an app link (`yourapp://…`); an app link the phone cannot
+/// open falls back to the ad's main https link.
 class CouponSheet extends StatelessWidget {
   const CouponSheet({
     super.key,
@@ -71,14 +73,18 @@ class CouponSheet extends StatelessWidget {
     ).showSnackBar(SnackBar(content: Text(l.copied)));
 
     // The link for this phone, then checked before asking for consent, so the
-    // renter is never asked to approve a hop that would then be refused. An
-    // absent or unsafe link (http, no host, userinfo) ends here: plain copy,
+    // renter is never asked to approve a hop that would then be refused. It is
+    // a safe https link or an app link (`yourapp://…`). An absent or unsafe
+    // link (http, no host, userinfo, a refused scheme) ends here: plain copy,
     // exactly as before. Unsafe is final — a refused platform link does not
     // fall back to the general one (see `chooseRedirectUrl`).
-    final target = parseSafePromoUri(
+    final target = parseSafeCouponRedirectUri(
       chooseRedirectUrl(ad, platform ?? defaultTargetPlatform),
     );
     if (target == null) return;
+    // Only for an app link: the main https link, if the business's app turns
+    // out not to be installed. Same parameters, covered by the same consent.
+    final fallback = couponRedirectFallback(ad, target);
 
     if (ad.sharedFields.isNotEmpty) {
       final confirmed = await CouponRedirectSheet.show(
@@ -90,12 +96,17 @@ class CouponSheet extends StatelessWidget {
     }
 
     // externalApplication, not the in-app browser the WEBSITE CTA uses: it is
-    // what lets an https universal link open the business's own app.
-    await launchPromoUri(
-      launcher ?? launchUrl,
+    // what lets an https universal link open the business's own app, and what
+    // an app link needs anyway.
+    final launch = launcher ?? launchUrl;
+    final opened = await launchPromoUri(
+      launch,
       target,
       LaunchMode.externalApplication,
     );
+    if (!opened && fallback != null) {
+      await launchPromoUri(launch, fallback, LaunchMode.externalApplication);
+    }
   }
 
   @override

@@ -18,7 +18,8 @@ export '../utils/promo_url.dart' show PromoUrlLauncher;
 /// last point before a renter is sent somewhere.
 ///
 /// The client-side checks live in `parseSafePromoUri` (`utils/promo_url.dart`),
-/// shared with the coupon's redirect link.
+/// whose https check the coupon redirect shares (`parseSafeCouponRedirectUri`,
+/// which also accepts app links such as `yourapp://redeem`).
 class PromoActions {
   PromoActions({PromoUrlLauncher? launcher, TargetPlatform? platform})
     : _launch = launcher ?? launchUrl,
