@@ -2160,6 +2160,7 @@
     "sectionOperations": "العمليات",
     "sectionSupport": "الدعم",
     "sectionWorkspace": "مساحة العمل",
+    "apiKeys": "مفاتيح API",
     "tenants": "المؤسسات",
     "tickets": "التذاكر",
     "users": "المستخدمون",
@@ -6041,5 +6042,37 @@
     "tlPickScope": "اختر مستأجرًا أو عقارًا أو حسابًا لعرض الدفتر",
     "tlGroups": "مجموعات الحساب والمستأجر {from}–{to} من {total}",
     "tlRemoveAccount": "إزالة {name}"
+  },
+  "SuperadminApiKeys": {
+    "subtitle": "ابحث عن مفتاح API لأي مروّج عبر جميع المؤسسات وألغِه إذا تسرّب.",
+    "searchPlaceholder": "ابحث بالمؤسسة أو المروّج أو اسم المفتاح أو بادئته",
+    "filterStatus": "تصفية حسب الحالة",
+    "allStatuses": "كل الحالات",
+    "loading": "جارٍ التحميل",
+    "loadFailed": "تعذّر تحميل مفاتيح API. يرجى المحاولة مرة أخرى.",
+    "empty": "لا توجد مفاتيح مطابقة.",
+    "never": "أبدًا",
+    "revoke": "إلغاء",
+    "cancel": "إلغاء الأمر",
+    "revoked": "تم إلغاء المفتاح",
+    "revokeTitle": "إلغاء مفتاح API هذا؟",
+    "revokeDescription": "يتوقف المفتاح عن العمل فورًا ولا يمكن استعادته. يتم تسجيل السبب.",
+    "reasonLabel": "السبب (مطلوب)",
+    "revokeFailed": "تعذّر إلغاء المفتاح. يرجى المحاولة مرة أخرى.",
+    "status": {
+      "active": "نشط",
+      "expiring": "ينتهي قريبًا",
+      "revoked": "ملغى",
+      "expired": "منتهي"
+    },
+    "col": {
+      "org": "المؤسسة",
+      "promoter": "المروّج",
+      "keyName": "اسم المفتاح",
+      "prefix": "بادئة المفتاح",
+      "created": "تاريخ الإنشاء",
+      "lastUsed": "آخر استخدام",
+      "statusCol": "الحالة"
+    }
   }
 }

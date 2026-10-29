@@ -76,6 +76,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${D}/renter-portal/penalties`, "canViewRenterPortal"), r(`${D}/renter-portal/facilities`, "canViewRenterPortal"),
     r(`${D}/renter-portal/renewals`, "canViewRenterPortal"), r(`${D}/renter-portal/renewal-intent`, "canViewRenterPortal"),
     r("/superadmin/tenants", "canManageTenants"), r("/superadmin/users", "canManageUsers"),
+    r("/superadmin/api-keys", "canManageTenants"),
 ];
 
 export function routeAllows(entry: RouteEntry, role: UserRole): boolean {

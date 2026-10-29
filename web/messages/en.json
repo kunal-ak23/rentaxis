@@ -2160,6 +2160,7 @@
     "sectionOperations": "Operations",
     "sectionSupport": "Support",
     "sectionWorkspace": "Workspace",
+    "apiKeys": "API keys",
     "tenants": "Organisations",
     "tickets": "Tickets",
     "users": "Users",
@@ -6041,5 +6042,37 @@
     "tlPickScope": "Pick a tenant, a property or an account to run the ledger",
     "tlGroups": "Account–tenant groups {from}–{to} of {total}",
     "tlRemoveAccount": "Remove {name}"
+  },
+  "SuperadminApiKeys": {
+    "subtitle": "Find a promoter API key across every organisation and revoke it if it has leaked.",
+    "searchPlaceholder": "Search organisation, promoter, key name or prefix",
+    "filterStatus": "Filter by status",
+    "allStatuses": "All statuses",
+    "loading": "Loading",
+    "loadFailed": "Could not load API keys. Please try again.",
+    "empty": "No API keys match.",
+    "never": "Never",
+    "revoke": "Revoke",
+    "cancel": "Cancel",
+    "revoked": "Key revoked",
+    "revokeTitle": "Revoke this API key?",
+    "revokeDescription": "The key stops working immediately and cannot be restored. The reason is recorded.",
+    "reasonLabel": "Reason (required)",
+    "revokeFailed": "Could not revoke the key. Please try again.",
+    "status": {
+      "active": "Active",
+      "expiring": "Expiring",
+      "revoked": "Revoked",
+      "expired": "Expired"
+    },
+    "col": {
+      "org": "Organisation",
+      "promoter": "Promoter",
+      "keyName": "Key name",
+      "prefix": "Key prefix",
+      "created": "Created",
+      "lastUsed": "Last used",
+      "statusCol": "Status"
+    }
   }
 }
