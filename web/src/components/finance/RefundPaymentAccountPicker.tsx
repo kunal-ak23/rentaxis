@@ -12,6 +12,12 @@ import { bankRecApi } from "@/lib/api/bankRec";
  * against a real statement, per F14-55's ownership check) — any cash leaf
  * still qualifies outright, since cash has no statement to reconcile
  * against.
+ *
+ * The ownership check applies, as on the server (`VoucherService`'s refund
+ * rule, `OwnedBankLeaf.anyOwned`), only once the organisation has set up some
+ * bank account. Before that every bank leaf qualifies: requiring an owner then
+ * left cash as the only choice while the voucher defaults to a bank transfer,
+ * so a refund could not be posted at all (client report 2026-10-29).
  */
 export default function RefundPaymentAccountPicker({
     value,
@@ -30,10 +36,11 @@ export default function RefundPaymentAccountPicker({
         Promise.all([loadAccounts(), bankRecApi.accounts().catch(() => [])]).then(([accounts, bankRows]) => {
             if (!alive) return;
             const ownedLeafIds = new Set(bankRows.flatMap(b => b.leaves.map(l => l.id)));
+            const bankQualifies = (id: string) => ownedLeafIds.size === 0 || ownedLeafIds.has(id);
             setOptions(
                 accounts
                     .filter(a => !a.group && a.active && a.accountType === "ASSET"
-                        && (a.accountSubType === "CASH" || (a.accountSubType === "BANK" && ownedLeafIds.has(a.id))))
+                        && (a.accountSubType === "CASH" || (a.accountSubType === "BANK" && bankQualifies(a.id))))
                     .map(a => ({ id: a.id, code: a.code, name: a.name })),
             );
         });
