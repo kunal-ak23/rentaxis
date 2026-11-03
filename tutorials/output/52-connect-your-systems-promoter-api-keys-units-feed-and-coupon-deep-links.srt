@@ -1,0 +1,265 @@
+1
+00:00:00,000 --> 00:00:02,426
+Your own systems can read the units
+
+2
+00:00:02,426 --> 00:00:04,851
+you promote to, through the promoter API.
+
+3
+00:00:04,851 --> 00:00:07,623
+In the promoter portal, open the Developer
+tab.
+
+4
+00:00:07,623 --> 00:00:11,088
+Select Create key, name it Production
+sync, and select Create.
+
+5
+00:00:11,088 --> 00:00:14,900
+The full key is shown now, and only now:
+Miftah keeps
+
+6
+00:00:14,900 --> 00:00:18,365
+a fingerprint of it and can never show it
+again.
+
+7
+00:00:18,365 --> 00:00:20,790
+Select Copy, put it in your secret
+
+8
+00:00:20,790 --> 00:00:22,869
+manager, then select I've saved it.
+
+9
+00:00:22,869 --> 00:00:26,681
+The key is listed as Active, by its first
+characters only.
+
+10
+00:00:26,681 --> 00:00:30,839
+On your server, every call sends the key
+in the X-Api-Key header.
+
+11
+00:00:30,839 --> 00:00:33,958
+Ping checks that the key works, and
+answers with
+
+12
+00:00:33,958 --> 00:00:36,730
+the promoter and the organisation it acts
+for.
+
+13
+00:00:36,730 --> 00:00:39,848
+Units count is the cheap call: two
+properties, eight
+
+14
+00:00:39,848 --> 00:00:42,620
+units, and a fingerprint of the whole
+list.
+
+15
+00:00:42,620 --> 00:00:46,432
+Units returns the list itself, a page at a
+time: each
+
+16
+00:00:46,432 --> 00:00:49,897
+unit's ID and number, and its property's
+ID and name.
+
+17
+00:00:49,897 --> 00:00:53,015
+Nothing about tenants, contracts or
+payments is ever included.
+
+18
+00:00:53,015 --> 00:00:55,094
+Every page carries the same fingerprint.
+
+19
+00:00:55,094 --> 00:00:57,867
+That fingerprint keeps your copy in sync
+cheaply.
+
+20
+00:00:57,867 --> 00:00:59,946
+Every fifteen minutes, call units count.
+
+21
+00:00:59,946 --> 00:01:03,757
+If the fingerprint is the one you stored,
+nothing has changed.
+
+22
+00:01:03,757 --> 00:01:06,529
+If it differs, fetch every page of units
+
+23
+00:01:06,529 --> 00:01:08,955
+and replace your list in one step.
+
+24
+00:01:08,955 --> 00:01:11,380
+Now let the coupon carry the unit.
+
+25
+00:01:11,380 --> 00:01:13,459
+Open Ads and edit the coupon.
+
+26
+00:01:13,459 --> 00:01:15,538
+Its link already passes the code.
+
+27
+00:01:15,538 --> 00:01:17,964
+Select Add parameter: unitId, from Unit
+ID.
+
+28
+00:01:17,964 --> 00:01:20,043
+Add another: propertyId, from Property ID.
+
+29
+00:01:20,043 --> 00:01:22,815
+Tenants are asked before their details are
+shared,
+
+30
+00:01:22,815 --> 00:01:25,240
+and the example shows the finished link.
+
+31
+00:01:25,240 --> 00:01:29,052
+Save, and the ad goes back to an
+administrator for approval.
+
+32
+00:01:29,052 --> 00:01:33,210
+On the tenant's phone, they tap Copy and
+the code is copied.
+
+33
+00:01:33,210 --> 00:01:37,368
+Because the link carries their unit, they
+are asked to agree first.
+
+34
+00:01:37,368 --> 00:01:40,487
+Then the phone itself opens the https
+link: in
+
+35
+00:01:40,487 --> 00:01:43,605
+your app, if it has verified Universal
+Links or
+
+36
+00:01:43,605 --> 00:01:46,724
+App Links for your domain, otherwise on
+your website.
+
+37
+00:01:46,724 --> 00:01:48,456
+Custom app schemes are refused.
+
+38
+00:01:48,456 --> 00:01:50,882
+Once the ad is approved again, a
+
+39
+00:01:50,882 --> 00:01:52,961
+tenant in A-102 opens this link.
+
+40
+00:01:52,961 --> 00:01:57,119
+Take the unitId and look it up in your
+synced units: it
+
+41
+00:01:57,119 --> 00:02:00,931
+is A-102 in Oasis Crest Residence Tower,
+one of your units.
+
+42
+00:02:00,931 --> 00:02:03,356
+An ID that is not in your
+
+43
+00:02:03,356 --> 00:02:05,435
+list is not one of yours.
+
+44
+00:02:05,435 --> 00:02:08,207
+Whether a code was already used is your
+
+45
+00:02:08,207 --> 00:02:10,633
+own rule: Miftah does not track
+redemptions.
+
+46
+00:02:10,633 --> 00:02:13,405
+To replace a key without downtime, select
+Rotate.
+
+47
+00:02:13,405 --> 00:02:16,523
+The new key is shown once, like the first.
+
+48
+00:02:16,523 --> 00:02:19,642
+The old key is now Expiring: it keeps
+working
+
+49
+00:02:19,642 --> 00:02:22,760
+for twenty-four hours while you move your
+servers over.
+
+50
+00:02:22,760 --> 00:02:26,226
+When everything uses the new key, revoke
+the old one.
+
+51
+00:02:26,226 --> 00:02:30,037
+The reason is optional, and the key stops
+working at once.
+
+52
+00:02:30,037 --> 00:02:33,156
+If a key leaks, Miftah can stop it too.
+
+53
+00:02:33,156 --> 00:02:36,967
+A super admin opens API keys and pastes
+the leaked key
+
+54
+00:02:36,967 --> 00:02:40,779
+into the search, which finds that one key
+in any organisation.
+
+55
+00:02:40,779 --> 00:02:44,590
+Select Revoke, give the reason, which is
+required here, and confirm.
+
+56
+00:02:44,590 --> 00:02:47,362
+Back in the Developer tab, the key shows
+
+57
+00:02:47,362 --> 00:02:49,788
+Revoked by Miftah admin, with that reason.
+
+58
+00:02:49,788 --> 00:02:52,560
+Create a new key whenever you need one.

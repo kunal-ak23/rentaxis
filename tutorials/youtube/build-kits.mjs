@@ -65,6 +65,7 @@ const ROLE_NAMES = {
     TENANT_USER: "Company User",
     RENTER: "Tenant",
     SECURITY_GUARD: "Security Guard",
+    PROMOTER: "Promoter",
 };
 
 const TOPIC_PLAYLISTS = {

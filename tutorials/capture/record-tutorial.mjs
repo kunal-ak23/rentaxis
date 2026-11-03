@@ -74,6 +74,9 @@ async function authenticatedStorageState(role) {
         ? seed.operatorLogins?.find((login) => login.role === 'PROPERTY_MANAGER')
         : role === 'securityGuard'
           ? seed.operatorLogins?.find((login) => login.role === 'SECURITY_GUARD')
+    // Tutorial 52's outside promoter (tutorials/seed/seed_promoter_52.py).
+    : role === 'promoter'
+      ? seed.promoterLogin
       : null;
   if (!credentials?.email || !credentials?.password) {
     throw new Error(`The seed manifest does not include credentials for ${role}.`);

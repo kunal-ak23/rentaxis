@@ -1,0 +1,94 @@
+{
+  "id": "52",
+  "slug": "connect-your-systems-promoter-api-keys-units-feed-and-coupon-deep-links",
+  "title": "Miftah tutorial 52 · Connect your systems: API keys, the units feed and coupon deep links",
+  "description": "Create a promoter API key, read your units feed, put the unit ID on a coupon link that opens your own app, and rotate or revoke keys.\n\nWho this is for: Promoter, System Admin.\n\nChapters:\n0:00 Create an API key\n0:12 Shown once\n0:26 Ping and count\n0:42 The units feed\n0:55 Sync only when it changes\n1:09 Unit ID on the coupon\n1:29 On the tenant's phone\n1:49 Validate the redemption\n2:11 Rotate a key\n2:23 Revoke the old key\n2:31 A leaked key\n\nPart of the Miftah web course — playlist: Miftah · Operations\n\nأنشئ مفتاح API للمروّج، واقرأ قائمة وحداتك، وأضف معرّف الوحدة إلى رابط القسيمة الذي يفتح تطبيقك، ثم بدّل المفاتيح أو أبطلها.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "API keys",
+    "REST API",
+    "developer integration",
+    "coupon deep links",
+    "universal links",
+    "app links",
+    "promotions"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Operations",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Create an API key"
+    },
+    {
+      "startSec": 12.0,
+      "start": "0:12",
+      "label": "Shown once"
+    },
+    {
+      "startSec": 26.6,
+      "start": "0:26",
+      "label": "Ping and count"
+    },
+    {
+      "startSec": 42.5,
+      "start": "0:42",
+      "label": "The units feed"
+    },
+    {
+      "startSec": 55.1,
+      "start": "0:55",
+      "label": "Sync only when it changes"
+    },
+    {
+      "startSec": 69.2,
+      "start": "1:09",
+      "label": "Unit ID on the coupon"
+    },
+    {
+      "startSec": 89.9,
+      "start": "1:29",
+      "label": "On the tenant's phone"
+    },
+    {
+      "startSec": 109.1,
+      "start": "1:49",
+      "label": "Validate the redemption"
+    },
+    {
+      "startSec": 131.6,
+      "start": "2:11",
+      "label": "Rotate a key"
+    },
+    {
+      "startSec": 143.8,
+      "start": "2:23",
+      "label": "Revoke the old key"
+    },
+    {
+      "startSec": 151.7,
+      "start": "2:31",
+      "label": "A leaked key"
+    }
+  ],
+  "durationSec": 173,
+  "roles": [
+    "PROMOTER",
+    "SUPER_ADMIN"
+  ],
+  "topic": "operations",
+  "captionsFile": "tutorials/output/52-connect-your-systems-promoter-api-keys-units-feed-and-coupon-deep-links.srt",
+  "videoFile": "tutorials/output/52-connect-your-systems-promoter-api-keys-units-feed-and-coupon-deep-links.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/52.png"
+}

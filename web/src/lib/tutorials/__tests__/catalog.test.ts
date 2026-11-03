@@ -18,7 +18,7 @@ import {
     type Tutorial,
 } from "../catalog";
 
-const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "SECURITY_GUARD", "TENANT_USER", "RENTER", "ACCOUNTANT"];
+const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "SECURITY_GUARD", "TENANT_USER", "RENTER", "ACCOUNTANT", "PROMOTER"];
 const ARABIC = /[؀-ۿ]/;
 
 const tut = (over: Partial<Tutorial>): Tutorial => ({
@@ -27,11 +27,11 @@ const tut = (over: Partial<Tutorial>): Tutorial => ({
 });
 
 describe("tutorial catalogue shape", () => {
-    it("seeds the web tutorials 01–15, 17–28 and 34–51 (16 dropped), the accounting track in track order", () => {
+    it("seeds the web tutorials 01–15, 17–28 and 34–52 (16 dropped), the accounting track in track order", () => {
         const ids = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => String(from + i).padStart(2, "0"));
         // 47 and 48 follow the contract lifecycle (11–13); 49–51 close the accounting track.
         const track = ["38", "39", "17", "34", "35", "40", "36", "41", "42", "43", "44", "19", "45", "18", "37", "20", "46", "49", "50", "51"];
-        expect(TUTORIALS.map((t) => t.id)).toEqual([...ids(1, 13), "47", "48", "14", "15", ...track, ...ids(21, 28)]);
+        expect(TUTORIALS.map((t) => t.id)).toEqual([...ids(1, 13), "47", "48", "14", "15", ...track, ...ids(21, 28), "52"]);
     });
 
     it("opens the accounting topic with the overview and follows an accountant's year", () => {
