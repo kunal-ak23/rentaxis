@@ -111,8 +111,11 @@ class MultiChequePhotoIT extends AbstractPostgresIT {
                 .withLeaseServices(leaseService, generation, posting);
         tenantId = fixtures.tenantId();
         adminId = TestIdentities.user(userRepo, UserRole.TENANT_ADMIN, tenantId);
-        leaseId = fixtures.postedLeaseUnnumbered(LocalDate.of(2026, 1, 5), LocalDate.of(2026, 2, 1),
-                LocalDate.of(2027, 1, 31), List.of(line("RENT", "51000")), 4).lease().getId();
+        // Dated from today: the retention test needs the first of the four quarterly cheques past
+        // its 90-day cutoff and the third still inside it, whenever this runs.
+        LocalDate start = LocalDate.now().minusMonths(5);
+        leaseId = fixtures.postedLeaseUnnumbered(start.minusDays(27), start,
+                start.plusYears(1).minusDays(1), List.of(line("RENT", "51000")), 4).lease().getId();
         register = tx.execute(s -> chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId));
         assertThat(register).hasSize(4).allSatisfy(c -> assertThat(c.getChequeDate()).isNotNull());
 
