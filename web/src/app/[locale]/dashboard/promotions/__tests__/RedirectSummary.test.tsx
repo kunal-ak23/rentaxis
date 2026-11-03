@@ -161,3 +161,39 @@ describe('urlEncodeLikeServer (the server builds the link with URLEncoder.encode
         expect(urlEncodeLikeServer(input)).toBe(expected)
     })
 })
+
+describe('RedirectSummary marks app links for the reviewer', () => {
+    const appAd = {
+        redirectUrl: 'https://app.quickwash.example.test/open',
+        redirectUrlAndroid: 'glidewash://redeem?src=miftah',
+        redirectUrlIos: null,
+        redirectParams: [],
+    }
+
+    it.each(['en', 'ar'] as const)('labels the app link, and only it (%s)', locale => {
+        render(
+            <NextIntlClientProvider locale={locale} messages={locale === 'en' ? en : ar}>
+                <RedirectSummary ad={appAd} />
+            </NextIntlClientProvider>,
+        )
+        const msgs = (locale === 'en' ? en : ar).Promotions
+        const badge = screen.getByTestId('redirect-app-link-redirectUrlAndroid')
+        expect(badge).toHaveTextContent(msgs.redirectAppLinkBadge)
+        // The review note is visible text beside the label, and describes it.
+        const hint = screen.getByTestId('redirect-app-link-hint-redirectUrlAndroid')
+        expect(hint).toBeVisible()
+        expect(hint).toHaveTextContent(msgs.redirectAppLinkReview)
+        expect(badge.getAttribute('aria-describedby')).toBe(hint.id)
+        expect(badge).toHaveAccessibleDescription(msgs.redirectAppLinkReview)
+        expect(screen.queryByTestId('redirect-app-link-hint-redirectUrl')).toBeNull()
+        expect(screen.getByTestId('redirect-summary-redirectUrlAndroid')).toContainElement(badge)
+        expect(screen.queryByTestId('redirect-app-link-redirectUrl')).toBeNull()
+        // The URL itself is still the only left-to-right isolate on that line.
+        const line = screen.getByTestId('redirect-summary-redirectUrlAndroid')
+        expect(Array.from(line.querySelectorAll('[dir="ltr"]')).map(el => el.textContent)).toEqual([appAd.redirectUrlAndroid])
+    })
+
+    it('has real Arabic for the label', () => {
+        expect(ar.Promotions.redirectAppLinkBadge).toBe('رابط تطبيق')
+    })
+})

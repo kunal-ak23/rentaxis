@@ -43,11 +43,13 @@ import java.util.stream.Collectors;
  * the links (any of them: they share their parameters), so the app can ask before
  * handing them to the business; COUPON_CODE and STATIC are not renter data.
  *
- * <p>Each link is re-checked against the business's allowlist here, at read time,
- * not only when the ad was written: the renter's own data is about to be sent to
- * that host, so an allowlist narrowed since the ad was saved drops that link
- * rather than keeps sending to a domain the business no longer claims. An ad left
- * with no link has no redirect at all.
+ * <p>Each link is re-checked here, at read time, not only when the ad was written:
+ * the renter's own data is about to be sent to that host, so an allowlist narrowed
+ * since the ad was saved drops an https link rather than keeps sending to a domain
+ * the business no longer claims. An app deep link with a custom scheme
+ * ({@link PromotionUrlValidator#isAppLink}) has no web host, so the allowlist does
+ * not apply to it; it is re-checked against the scheme rule only. An ad left with
+ * no link has no redirect at all.
  *
  * <p>PROPERTY_NAME, UNIT_NUMBER, PROPERTY_ID and UNIT_ID come from the renter's active lease at a
  * property the ad targets (for a promoter's ad, one also in that promoter's
@@ -141,9 +143,9 @@ public class PromotionRedirectService {
         return out;
     }
 
-    /** {@code link} if it is on the business's allowlist now, else null. */
+    /** {@code link} if it passes the redirect rule now (allowlisted https, or an app link), else null. */
     private String allowedNow(String link, PromoBusiness business) {
-        return link != null && urlValidator.isAllowed(link, business.getAllowedDomains()) ? link : null;
+        return link != null && urlValidator.isAllowedRedirect(link, business.getAllowedDomains()) ? link : null;
     }
 
     /** The parameters, filled for this renter once, appended to each of the ad's links. */

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 import '../utils/promo_url.dart';
 import 'coupon_sheet.dart';
@@ -18,13 +19,21 @@ export '../utils/promo_url.dart' show PromoUrlLauncher;
 /// last point before a renter is sent somewhere.
 ///
 /// The client-side checks live in `parseSafePromoUri` (`utils/promo_url.dart`),
-/// shared with the coupon's redirect link.
+/// whose https check the coupon redirect shares (`parseSafeCouponRedirect`,
+/// which also accepts app links such as `yourapp://redeem`).
 class PromoActions {
-  PromoActions({PromoUrlLauncher? launcher, TargetPlatform? platform})
-    : _launch = launcher ?? launchUrl,
-      _platform = platform;
+  PromoActions({
+    PromoUrlLauncher? launcher,
+    PromoUrlStringLauncher? stringLauncher,
+    TargetPlatform? platform,
+  }) : _launch = launcher ?? launchUrl,
+       _launchString = stringLauncher ?? launchUrlString,
+       _platform = platform;
 
   final PromoUrlLauncher _launch;
+
+  /// How a coupon's app link is opened, as the exact stored string.
+  final PromoUrlStringLauncher _launchString;
 
   /// Forced platform for a coupon's per-platform redirect link; null (the
   /// real app) means the phone's own. A test seam, like the launcher.
@@ -41,6 +50,7 @@ class PromoActions {
           context,
           ad,
           launcher: _launch,
+          stringLauncher: _launchString,
           platform: _platform,
         );
       case PromoCtaType.call:

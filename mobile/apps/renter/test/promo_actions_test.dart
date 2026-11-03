@@ -9,35 +9,55 @@ import 'support/fake_promotion_service.dart';
 
 class _RecordingLauncher {
   final List<Uri> uris = [];
+  final List<String> strings = [];
   final List<LaunchMode> modes = [];
 
-  Future<bool> call(Uri uri, {LaunchMode mode = LaunchMode.platformDefault}) async {
+  Future<bool> call(
+    Uri uri, {
+    LaunchMode mode = LaunchMode.platformDefault,
+  }) async {
     uris.add(uri);
+    modes.add(mode);
+    return true;
+  }
+
+  Future<bool> callString(
+    String url, {
+    LaunchMode mode = LaunchMode.platformDefault,
+  }) async {
+    strings.add(url);
     modes.add(mode);
     return true;
   }
 }
 
 /// Pumps a button that runs [PromoActions.handleTap] with a real BuildContext.
-Future<void> tapWith(WidgetTester tester, PromoActions actions, PromoAd ad) async {
-  await tester.pumpWidget(MaterialApp(
-    theme: AppTheme.lightTheme,
-    home: Scaffold(
-      body: Builder(
-        builder: (context) => ElevatedButton(
-          onPressed: () => actions.handleTap(context, ad),
-          child: const Text('go'),
+Future<void> tapWith(
+  WidgetTester tester,
+  PromoActions actions,
+  PromoAd ad,
+) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: AppTheme.lightTheme,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () => actions.handleTap(context, ad),
+            child: const Text('go'),
+          ),
         ),
       ),
     ),
-  ));
+  );
   await tester.tap(find.text('go'));
   await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('a website ad opens the url in an in-app browser',
-      (tester) async {
+  testWidgets('a website ad opens the url in an in-app browser', (
+    tester,
+  ) async {
     final launcher = _RecordingLauncher();
     await tapWith(
       tester,
@@ -49,8 +69,9 @@ void main() {
     expect(launcher.modes.single, LaunchMode.inAppBrowserView);
   });
 
-  testWidgets('a non-https url is refused even though the server allowed it',
-      (tester) async {
+  testWidgets('a non-https url is refused even though the server allowed it', (
+    tester,
+  ) async {
     // Defence in depth: the backend validates on write, this re-checks on use.
     final launcher = _RecordingLauncher();
     await tapWith(
@@ -64,8 +85,11 @@ void main() {
 
   testWidgets('a website ad with no url does nothing', (tester) async {
     final launcher = _RecordingLauncher();
-    await tapWith(tester, PromoActions(launcher: launcher.call),
-        testAd(ctaType: 'WEBSITE'));
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WEBSITE'),
+    );
 
     expect(launcher.uris, isEmpty);
   });
@@ -108,7 +132,10 @@ void main() {
   testWidgets('a call ad with no number does nothing', (tester) async {
     final launcher = _RecordingLauncher();
     await tapWith(
-        tester, PromoActions(launcher: launcher.call), testAd(ctaType: 'CALL'));
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'CALL'),
+    );
 
     expect(launcher.uris, isEmpty);
   });
@@ -124,9 +151,11 @@ void main() {
   testWidgets('a failing launch is swallowed', (tester) async {
     await tapWith(
       tester,
-      PromoActions(launcher: (uri, {mode = LaunchMode.platformDefault}) async {
-        throw StateError('no browser');
-      }),
+      PromoActions(
+        launcher: (uri, {mode = LaunchMode.platformDefault}) async {
+          throw StateError('no browser');
+        },
+      ),
       testAd(ctaType: 'WEBSITE', ctaUrl: 'https://spice-bazaar.ae/'),
     );
 
@@ -163,8 +192,9 @@ void main() {
     expect(launcher.uris, isEmpty);
   });
 
-  testWidgets('a whatsapp number keyed with spaces still resolves',
-      (tester) async {
+  testWidgets('a whatsapp number keyed with spaces still resolves', (
+    tester,
+  ) async {
     // wa.me wants bare digits. An admin typing the number the way it appears
     // on a business card used to produce a link with encoded spaces in it.
     final launcher = _RecordingLauncher();
@@ -177,8 +207,9 @@ void main() {
     expect(launcher.uris.single, Uri.parse('https://wa.me/971501234567'));
   });
 
-  testWidgets('a whatsapp number with no digits at all does nothing',
-      (tester) async {
+  testWidgets('a whatsapp number with no digits at all does nothing', (
+    tester,
+  ) async {
     final launcher = _RecordingLauncher();
     await tapWith(
       tester,
@@ -189,4 +220,21 @@ void main() {
     expect(launcher.uris, isEmpty);
   });
 
+  testWidgets(
+    'a website ad with an app link opens nothing: ctaUrl stays https',
+    (tester) async {
+      final launcher = _RecordingLauncher();
+      await tapWith(
+        tester,
+        PromoActions(
+          launcher: launcher.call,
+          stringLauncher: launcher.callString,
+        ),
+        testAd(ctaType: 'WEBSITE', ctaUrl: 'glidewash://redeem'),
+      );
+
+      expect(launcher.uris, isEmpty);
+      expect(launcher.strings, isEmpty);
+    },
+  );
 }

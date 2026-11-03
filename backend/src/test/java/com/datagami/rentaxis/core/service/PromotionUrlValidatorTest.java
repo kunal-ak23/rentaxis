@@ -142,4 +142,78 @@ class PromotionUrlValidatorTest {
         assertThat(validator.isAllowed(null, "spice-bazaar.ae")).isFalse();
         assertThat(validator.isAllowed("https://", "spice-bazaar.ae")).isFalse();
     }
+
+    // ---------------------------------------------- coupon redirects: app links
+
+    @Test
+    void isAppLink_acceptsCustomSchemes() {
+        assertThat(validator.isAppLink("glidewash://redeem")).isTrue();
+        assertThat(validator.isAppLink("glidewash://redeem?x=1")).isTrue();
+        assertThat(validator.isAppLink("myapp:open")).isTrue();
+        assertThat(validator.isAppLink("GlideWash://x")).isTrue();
+        assertThat(validator.isAppLink("com.glide-wash+v2.app://x")).isTrue();
+    }
+
+    @Test
+    void isAppLink_refusesMalformedLinks() {
+        for (String bad : new String[]{
+                "glidewash:", "glide wash://x", "glidewash://re deem", "glidewash://x\n", "glidewash://x\t",
+                "1app://x", "a://x", "a".repeat(33) + "://x", "://x", "glidewash", ""}) {
+            assertThat(validator.isAppLink(bad)).as(bad).isFalse();
+        }
+        assertThat(validator.isAppLink(null)).isFalse();
+    }
+
+    @Test
+    void isAppLink_isPrintableAsciiOnly() {
+        // A variation selector, a Hangul filler, a no-break space, a zero-width
+        // mark and a non-ASCII letter: each could make the link read differently
+        // on the review screen than what the phone opens.
+        for (String bad : new String[]{
+                "glidewash://x\uFE00", "glidewash://\u3164", "glidewash://x\u00A0y",
+                "glidewash://x\u200Ey", "glidewash://caf\u00E9", "glidewash://x\u007F"}) {
+            assertThat(validator.isAppLink(bad)).as(bad).isFalse();
+        }
+        assertThat(validator.isAppLink("glidewash://!~#%7e")).isTrue();
+    }
+
+    @Test
+    void isAppLink_refusesEverySchemeInTheSharedFixture() {
+        for (String scheme : RefusedAppSchemes.all()) {
+            for (String variant : new String[]{scheme, scheme.toUpperCase(java.util.Locale.ROOT)}) {
+                assertThat(validator.isAppLink(variant + "://x")).as(variant).isFalse();
+                assertThat(validator.isAppLink(variant + ":x")).as(variant).isFalse();
+            }
+        }
+        // The fixture covers everything the validator names.
+        assertThat(RefusedAppSchemes.NAMED).containsAll(PromotionUrlValidator.REFUSED_APP_SCHEMES);
+        for (String scheme : RefusedAppSchemes.ALLOWED) {
+            assertThat(validator.isAppLink(scheme + "://x")).as(scheme).isTrue();
+        }
+    }
+
+    @Test
+    void browserBridgesCannotGetAroundTheAllowlist() {
+        for (String bridge : new String[]{
+                "googlechromes://evil.example/r", "googlechrome://navigate?url=https://evil.example",
+                "x-safari-https://evil.example/r", "microsoft-edge-https://evil.example/r",
+                "opera-https://evil.example/r", "firefox://open-url?url=https://evil.example",
+                "brave://open-url?url=https://evil.example", "GoogleChromes://evil.example/r"}) {
+            assertThat(validator.isAllowedRedirect(bridge, "spice-bazaar.ae")).as(bridge).isFalse();
+        }
+    }
+
+    @Test
+    void isAllowedRedirect_isTheHttpsRuleOrAnAppLink() {
+        assertThat(validator.isAllowedRedirect("https://spice-bazaar.ae/r", "spice-bazaar.ae")).isTrue();
+        assertThat(validator.isAllowedRedirect("glidewash://redeem", "spice-bazaar.ae")).isTrue();
+        // The allowlist does not apply to an app link — not even an empty one.
+        assertThat(validator.isAllowedRedirect("glidewash://redeem", null)).isTrue();
+        // An https link off the allowlist is still refused; https never counts as an app scheme.
+        assertThat(validator.isAllowedRedirect("https://evil.example/r", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowedRedirect("http://spice-bazaar.ae/r", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowedRedirect("javascript:alert(1)", "spice-bazaar.ae")).isFalse();
+        // ctaUrl's rule is unchanged.
+        assertThat(validator.isAllowed("glidewash://redeem", "spice-bazaar.ae")).isFalse();
+    }
 }

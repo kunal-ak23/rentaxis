@@ -9,17 +9,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:renter/providers/promotion_provider.dart';
 import 'package:renter/screens/offers_screen.dart';
-import 'package:renter/utils/promo_url.dart' show chooseRedirectUrl;
+import 'package:renter/utils/promo_url.dart'
+    show
+        chooseRedirectUrl,
+        couponRedirectFallback,
+        isPromoAppLink,
+        parseSafeCouponRedirect,
+        refusedAppSchemes;
 import 'package:renter/widgets/coupon_redirect_sheet.dart';
 import 'package:renter/widgets/coupon_sheet.dart';
 import 'package:renter/widgets/promo_actions.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'support/fake_promotion_service.dart';
+import 'support/refused_app_schemes.dart';
 
 /// Records what the app asked the OS to open, instead of opening it.
+///
+/// [opens] says whether the phone could open a link (false = nothing handles
+/// it, as for an app link whose app is not installed); [throws] makes the
+/// launch throw instead, as `url_launcher` can on a platform error.
 class _Launcher {
+  _Launcher({this.opens, this.throws});
+
+  final bool Function(String url)? opens;
+  final bool Function(String url)? throws;
+
+  /// The [Uri] launches (https links), in order.
   final List<Uri> uris = [];
+
+  /// Every launch, in order, as the string the phone was handed: a [Uri]
+  /// launch as `toString()`, an app link exactly as passed.
+  final List<String> launched = [];
   final List<LaunchMode> modes = [];
 
   Future<bool> call(
@@ -27,10 +48,29 @@ class _Launcher {
     LaunchMode mode = LaunchMode.platformDefault,
   }) async {
     uris.add(uri);
+    return _record(uri.toString(), mode);
+  }
+
+  /// The `launchUrlString` seam: how an app link goes out, byte for byte.
+  Future<bool> callString(
+    String url, {
+    LaunchMode mode = LaunchMode.platformDefault,
+  }) async => _record(url, mode);
+
+  bool _record(String url, LaunchMode mode) {
+    launched.add(url);
     modes.add(mode);
-    return true;
+    if (throws?.call(url) ?? false) {
+      throw PlatformException(code: 'ACTIVITY_NOT_FOUND');
+    }
+    return opens?.call(url) ?? true;
   }
 }
+
+/// A launcher on a phone without the business's app: app links fail.
+bool _httpsOnly(String url) => url.startsWith('https://');
+
+const _appLink = 'quickwash://open?code=MIFTAH25&name=Aisha%20Khan';
 
 const _link = 'https://quickwash.example/app?code=MIFTAH25&name=Aisha%20Khan';
 
@@ -44,8 +84,14 @@ const _iosLink =
 /// Links the safety check must refuse, by what is wrong with them.
 const _unsafeLinks = {
   'plain http': 'http://quickwash.example/app?code=MIFTAH25',
-  'an app-scheme deep link': 'quickwash://open?code=MIFTAH25',
   'a javascript url': 'javascript:alert(1)',
+  'a javascript url in mixed case': 'JavaScript:alert(1)',
+  'an Android intent link': 'intent://open#Intent;scheme=quickwash;end',
+  'a file url': 'file:///etc/passwd',
+  'a data url': 'data:text/html,x',
+  'an app link with a space': 'quickwash://op en?code=MIFTAH25',
+  'an app link with nothing after the scheme': 'quickwash:',
+  'a scheme starting with a digit': '1app://open',
   'a relative reference': '/app?code=MIFTAH25',
   'credentials in the authority': 'https://quickwash.example@evil.example/app',
   'an https url with no host': 'https:///app?code=MIFTAH25',
@@ -131,7 +177,12 @@ Future<void> _pump(
         child: child!,
       ),
       home: Scaffold(
-        body: CouponSheet(ad: ad, launcher: launcher.call, platform: platform),
+        body: CouponSheet(
+          ad: ad,
+          launcher: launcher.call,
+          stringLauncher: launcher.callString,
+          platform: platform,
+        ),
       ),
     ),
   );
@@ -167,7 +218,7 @@ void main() {
         expect(copied, ['MIFTAH25']);
         expect(find.text('Code copied'), findsOneWidget);
         expect(find.byType(CouponRedirectSheet), findsNothing);
-        expect(launcher.uris, isEmpty);
+        expect(launcher.launched, isEmpty);
       },
     );
 
@@ -187,7 +238,7 @@ void main() {
       await _tapCopy(tester);
 
       expect(copied, ['MIFTAH25']);
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
     });
 
     testWidgets('shared fields without a url open nothing', (tester) async {
@@ -202,7 +253,7 @@ void main() {
       await _tapCopy(tester);
 
       expect(find.byType(CouponRedirectSheet), findsNothing);
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
     });
   });
 
@@ -237,7 +288,7 @@ void main() {
       // The code is on the clipboard before the question is even asked, and
       // nothing has left the app yet.
       expect(copied, ['MIFTAH25']);
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
     });
 
     testWidgets('names every field the backend can send', (tester) async {
@@ -267,33 +318,34 @@ void main() {
       );
     });
 
-    testWidgets('property and unit ids reuse the property and unit labels, once each', (
-      tester,
-    ) async {
-      _captureClipboard(tester);
-      await _pump(
-        tester,
-        ad: _ad(
-          redirectUrl: _link,
-          sharedFields: const [
-            'PROPERTY_NAME',
-            'PROPERTY_ID',
-            'UNIT_NUMBER',
-            'UNIT_ID',
-          ],
-        ),
-        launcher: _Launcher(),
-      );
+    testWidgets(
+      'property and unit ids reuse the property and unit labels, once each',
+      (tester) async {
+        _captureClipboard(tester);
+        await _pump(
+          tester,
+          ad: _ad(
+            redirectUrl: _link,
+            sharedFields: const [
+              'PROPERTY_NAME',
+              'PROPERTY_ID',
+              'UNIT_NUMBER',
+              'UNIT_ID',
+            ],
+          ),
+          launcher: _Launcher(),
+        );
 
-      await _tapCopy(tester);
+        await _tapCopy(tester);
 
-      expect(
-        tester
-            .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
-            .data,
-        'Property, Unit number',
-      );
-    });
+        expect(
+          tester
+              .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
+              .data,
+          'Property, Unit number',
+        );
+      },
+    );
 
     testWidgets('a field this version does not know is still disclosed', (
       tester,
@@ -361,7 +413,7 @@ void main() {
       await _tapCopy(tester);
       await _tapCancel(tester);
 
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
       expect(find.byType(CouponRedirectSheet), findsNothing);
       expect(copied, ['MIFTAH25']);
       expect(find.byType(CouponSheet), findsOneWidget);
@@ -381,7 +433,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(CouponRedirectSheet), findsNothing);
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
     });
 
     testWidgets('copying again asks again — consent is not remembered', (
@@ -547,7 +599,7 @@ void main() {
           // Not even a question: the renter is never asked to approve a hop
           // that would then be refused. The plain copy still worked.
           expect(find.byType(CouponRedirectSheet), findsNothing);
-          expect(launcher.uris, isEmpty);
+          expect(launcher.launched, isEmpty);
           expect(copied, ['MIFTAH25']);
         });
       }
@@ -644,7 +696,7 @@ void main() {
 
       await _tapCopy(tester);
 
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
       expect(find.byType(CouponRedirectSheet), findsNothing);
       expect(copied, ['MIFTAH25']);
     });
@@ -672,7 +724,7 @@ void main() {
           _ad(redirectUrlAndroid: _androidLink, redirectUrlIos: _iosLink),
         );
 
-        expect(launcher.uris, isEmpty);
+        expect(launcher.launched, isEmpty);
       });
     }
 
@@ -790,7 +842,7 @@ void main() {
               await _tapCopy(tester);
 
               expect(find.byType(CouponRedirectSheet), findsNothing);
-              expect(launcher.uris, isEmpty);
+              expect(launcher.launched, isEmpty);
               expect(copied, ['MIFTAH25']);
             },
           );
@@ -888,7 +940,7 @@ void main() {
         'Name, Phone',
       );
       expect(copied, ['MIFTAH25']);
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
 
       await _tapContinue(tester);
 
@@ -916,7 +968,7 @@ void main() {
       expect(find.byType(CouponRedirectSheet), findsOneWidget);
       await _tapCancel(tester);
 
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
       expect(copied, ['MIFTAH25']);
       expect(find.byType(CouponSheet), findsOneWidget);
     });
@@ -937,7 +989,7 @@ void main() {
 
       await _tapCopy(tester);
       expect(find.byType(CouponRedirectSheet), findsOneWidget);
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
       await _tapContinue(tester);
 
       expect(launcher.uris, [Uri.parse(_link)]);
@@ -982,7 +1034,7 @@ void main() {
         await _tapCopy(tester);
 
         expect(find.byType(CouponRedirectSheet), findsOneWidget);
-        expect(launcher.uris, isEmpty);
+        expect(launcher.launched, isEmpty);
       },
     );
 
@@ -1006,6 +1058,309 @@ void main() {
 
       expect(find.byType(CouponRedirectSheet), findsNothing);
       expect(launcher.uris, [Uri.parse(_iosLink)]);
+    });
+  });
+
+  group('app links', () {
+    Future<_Launcher> copyOn(
+      WidgetTester tester,
+      PromoAd ad, {
+      TargetPlatform platform = TargetPlatform.android,
+      _Launcher? launcher,
+    }) async {
+      _captureClipboard(tester);
+      final l = launcher ?? _Launcher();
+      await _pump(tester, ad: ad, launcher: l, platform: platform);
+      await _tapCopy(tester);
+      return l;
+    }
+
+    testWidgets('a platform app link opens in the business app', (
+      tester,
+    ) async {
+      final launcher = await copyOn(
+        tester,
+        _ad(redirectUrl: _link, redirectUrlAndroid: _appLink),
+      );
+
+      expect(launcher.launched, [_appLink]);
+      expect(launcher.modes, [LaunchMode.externalApplication]);
+    });
+
+    testWidgets('an app link is launched byte for byte as stored, params '
+        'included', (tester) async {
+      // As the feed sends it: the stored link with the parameters appended.
+      const stored = 'GlideWash://Redeem/a/../b?x=%7e&code=MIFTAH25';
+      final launcher = await copyOn(
+        tester,
+        _ad(redirectUrl: _link, redirectUrlAndroid: stored),
+      );
+
+      expect(launcher.launched, [stored]);
+      // Not through Uri at all, which would have rewritten it.
+      expect(launcher.uris, isEmpty);
+      expect(Uri.parse(stored).toString(), isNot(stored));
+    });
+
+    testWidgets('an app link as the main link opens too', (tester) async {
+      final launcher = await copyOn(
+        tester,
+        _ad(redirectUrl: 'quickwash:open'),
+        platform: TargetPlatform.iOS,
+      );
+
+      expect(launcher.launched, ['quickwash:open']);
+    });
+
+    for (final failure in ['returns false', 'throws']) {
+      testWidgets('app not installed (launch $failure): the main https link '
+          'opens instead', (tester) async {
+        final launcher = await copyOn(
+          tester,
+          _ad(redirectUrl: _link, redirectUrlAndroid: _appLink),
+          launcher: failure == 'throws'
+              ? _Launcher(throws: (u) => !_httpsOnly(u))
+              : _Launcher(opens: _httpsOnly),
+        );
+
+        expect(launcher.launched, [_appLink, _link]);
+        expect(launcher.modes, [
+          LaunchMode.externalApplication,
+          LaunchMode.externalApplication,
+        ]);
+      });
+    }
+
+    testWidgets('the fallback needs no second consent', (tester) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher(opens: _httpsOnly);
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlIos: _appLink,
+          sharedFields: const ['RENTER_NAME'],
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.iOS,
+      );
+
+      await _tapCopy(tester);
+      expect(launcher.launched, isEmpty);
+      await _tapContinue(tester);
+
+      expect(find.byType(CouponRedirectSheet), findsNothing);
+      expect(launcher.launched, [_appLink, _link]);
+    });
+
+    testWidgets('declining consent opens neither link', (tester) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher(opens: _httpsOnly);
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlAndroid: _appLink,
+          sharedFields: const ['RENTER_NAME'],
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.android,
+      );
+
+      await _tapCopy(tester);
+      await _tapCancel(tester);
+
+      expect(launcher.launched, isEmpty);
+    });
+
+    testWidgets('an app link that opens does not also open the main link', (
+      tester,
+    ) async {
+      final launcher = await copyOn(
+        tester,
+        _ad(redirectUrl: _link, redirectUrlAndroid: _appLink),
+      );
+
+      expect(launcher.launched, [_appLink]);
+    });
+
+    testWidgets('no https main link: a failed app link opens nothing else', (
+      tester,
+    ) async {
+      for (final main in [
+        null,
+        'quickwash://main',
+        'http://quickwash.example/a',
+      ]) {
+        final launcher = await copyOn(
+          tester,
+          _ad(redirectUrl: main, redirectUrlAndroid: _appLink),
+          launcher: _Launcher(opens: _httpsOnly),
+        );
+
+        expect(launcher.launched, [_appLink], reason: '$main');
+      }
+    });
+
+    testWidgets('a failed app link as the main link does not retry itself', (
+      tester,
+    ) async {
+      final launcher = await copyOn(
+        tester,
+        _ad(redirectUrl: _appLink),
+        launcher: _Launcher(opens: _httpsOnly),
+      );
+
+      expect(launcher.launched, [_appLink]);
+    });
+
+    testWidgets('a failed https link never falls back', (tester) async {
+      final launcher = await copyOn(
+        tester,
+        _ad(redirectUrl: _link, redirectUrlAndroid: _androidLink),
+        launcher: _Launcher(opens: (_) => false),
+      );
+
+      expect(launcher.uris, [Uri.parse(_androidLink)]);
+    });
+
+    testWidgets('an unsafe platform link launches nothing, even with a safe '
+        'https main link', (tester) async {
+      final launcher = await copyOn(
+        tester,
+        _ad(redirectUrl: _link, redirectUrlAndroid: 'intent://open#Intent;end'),
+        launcher: _Launcher(opens: _httpsOnly),
+      );
+
+      expect(launcher.launched, isEmpty);
+    });
+  });
+
+  group('parseSafeCouponRedirect', () {
+    test('accepts safe https links and app links', () {
+      for (final ok in [
+        'https://quickwash.example/r?x=1',
+        'glidewash://redeem',
+        'glidewash://redeem?x=1',
+        'myapp:open',
+        'GlideWash://x',
+        ' glidewash://redeem ',
+      ]) {
+        expect(parseSafeCouponRedirect(ok), isNotNull, reason: ok);
+      }
+      for (final scheme in allowedAppSchemesFixture) {
+        expect(parseSafeCouponRedirect('$scheme://x'), isNotNull);
+      }
+    });
+
+    test('keeps an app link as the exact trimmed string, never a Uri', () {
+      const stored = 'GlideWash://Redeem/a/../b?x=%7e';
+      final t = parseSafeCouponRedirect('  $stored ')!;
+      expect(t.isAppLink, isTrue);
+      expect(t.appLink, stored);
+      expect(t.uri, isNull);
+      // A link Dart's Uri cannot parse, which the server accepts, still goes out.
+      const unparseable = 'glidewash://[x';
+      expect(Uri.tryParse(unparseable), isNull);
+      expect(parseSafeCouponRedirect(unparseable)?.appLink, unparseable);
+      // An https link is a checked Uri.
+      expect(parseSafeCouponRedirect(_link)!.uri, Uri.parse(_link));
+    });
+
+    test('refuses every scheme in the shared fixture, in any case', () {
+      // As an app link: https itself is the https rule's business (the
+      // server's allowlist), so this checks the app-link half directly.
+      for (final scheme in refusedAllFixture) {
+        for (final v in [scheme, scheme.toUpperCase()]) {
+          expect(isPromoAppLink('$v://evil.example/r'), isFalse, reason: v);
+          expect(isPromoAppLink('$v:x'), isFalse, reason: v);
+          if (!{'https', 'HTTPS'}.contains(v)) {
+            expect(
+              parseSafeCouponRedirect('$v://evil.example/r'),
+              isNull,
+              reason: v,
+            );
+          }
+        }
+      }
+      for (final scheme in allowedAppSchemesFixture) {
+        expect(isPromoAppLink('$scheme://x'), isTrue, reason: scheme);
+      }
+      // The fixture covers everything the code names.
+      expect(
+        refusedAppSchemes.where((s) => !refusedNamedFixture.contains(s)),
+        isEmpty,
+      );
+    });
+
+    test('refuses browser bridges that would get around the allowlist', () {
+      for (final bridge in [
+        'googlechromes://evil.example/r',
+        'googlechrome://navigate?url=https://evil.example',
+        'x-safari-https://evil.example/r',
+        'microsoft-edge-https://evil.example/r',
+        'opera-https://evil.example/r',
+        'firefox://open-url?url=https://evil.example',
+        'brave://open-url?url=https://evil.example',
+      ]) {
+        expect(parseSafeCouponRedirect(bridge), isNull, reason: bridge);
+      }
+    });
+
+    test('an app link is printable ASCII only', () {
+      for (final bad in [
+        'glidewash://x\uFE00',
+        'glidewash://\u3164',
+        'glidewash://x\u00A0y',
+        'glidewash://x\u200Ey',
+        'glidewash://caf\u00E9',
+        'glidewash://x\u007F',
+      ]) {
+        expect(parseSafeCouponRedirect(bad), isNull, reason: bad);
+      }
+    });
+
+    test('refuses malformed and unsafe links', () {
+      for (final bad in [
+        null,
+        '',
+        '   ',
+        'glidewash:',
+        'glide wash://x',
+        'glidewash://re deem',
+        '1app://x',
+        'a://x',
+        '${'a' * 33}://x',
+        'https://user@quickwash.example/r',
+        'https:///r',
+      ]) {
+        expect(parseSafeCouponRedirect(bad), isNull, reason: '$bad');
+      }
+    });
+
+    test('isPromoAppLink is false for https, true for a custom scheme', () {
+      expect(isPromoAppLink('https://quickwash.example/'), isFalse);
+      expect(isPromoAppLink('glidewash://redeem'), isTrue);
+    });
+
+    test('couponRedirectFallback: only an app link falls back, only to a '
+        'safe https main link', () {
+      PromoAd ad(String? main) => PromoAd(
+        id: 'ad-1',
+        business: const PromoBusinessRef(id: 'b-1'),
+        ctaType: PromoCtaType.coupon,
+        redirectUrl: main,
+      );
+      final app = parseSafeCouponRedirect(_appLink)!;
+      final https = parseSafeCouponRedirect(_link)!;
+      expect(couponRedirectFallback(ad(_link), app), Uri.parse(_link));
+      expect(couponRedirectFallback(ad(_link), https), isNull);
+      expect(couponRedirectFallback(ad(_appLink), app), isNull);
+      expect(
+        couponRedirectFallback(ad('http://quickwash.example/'), app),
+        isNull,
+      );
+      expect(couponRedirectFallback(ad(null), app), isNull);
     });
   });
 
@@ -1171,7 +1526,7 @@ void main() {
       await _tapCopy(tester);
       await _tapCancel(tester);
 
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
     });
 
     testWidgets('unit id is labelled as the unit number in Arabic', (
@@ -1250,7 +1605,11 @@ void main() {
           'Other details',
         );
         expect(copied, ['MIFTAH25']);
-        expect(launcher.uris, isEmpty, reason: 'nothing opens before consent');
+        expect(
+          launcher.launched,
+          isEmpty,
+          reason: 'nothing opens before consent',
+        );
 
         await _tapContinue(tester);
         expect(launcher.uris, [Uri.parse(_link)]);
@@ -1269,7 +1628,7 @@ void main() {
       await _tapCopy(tester);
       await _tapCancel(tester);
 
-      expect(launcher.uris, isEmpty);
+      expect(launcher.launched, isEmpty);
     });
 
     testWidgets(
@@ -1527,7 +1886,10 @@ void main() {
             overrides: [
               promotionServiceProvider.overrideWithValue(fake),
               promoActionsProvider.overrideWithValue(
-                PromoActions(launcher: launcher.call),
+                PromoActions(
+                  launcher: launcher.call,
+                  stringLauncher: launcher.callString,
+                ),
               ),
             ],
             child: MaterialApp(
@@ -1583,7 +1945,11 @@ void main() {
               overrides: [
                 promotionServiceProvider.overrideWithValue(fake),
                 promoActionsProvider.overrideWithValue(
-                  PromoActions(launcher: launcher.call, platform: platform),
+                  PromoActions(
+                    launcher: launcher.call,
+                    stringLauncher: launcher.callString,
+                    platform: platform,
+                  ),
                 ),
               ],
               child: MaterialApp(

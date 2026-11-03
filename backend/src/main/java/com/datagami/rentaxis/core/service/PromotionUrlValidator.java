@@ -7,13 +7,26 @@ import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
  * The security boundary for ad click-throughs. An admin-entered URL that
  * passes here is one the renter mobile app will open, so this rejects by
- * default: https only, host must be an allowlisted hostname or a subdomain of
- * one, and anything unparseable is refused rather than guessed at.
+ * default: {@link #isAllowed} is https only, host must be an allowlisted
+ * hostname or a subdomain of one, and anything unparseable is refused rather
+ * than guessed at. That is the whole rule for a WEBSITE ad's {@code ctaUrl}.
+ *
+ * <p>A coupon ad's redirect links ({@code redirectUrl}, {@code redirectUrlAndroid},
+ * {@code redirectUrlIos}) also accept an app deep link with a custom scheme
+ * ({@code glidewash://redeem}), see {@link #isAllowedRedirect} and
+ * {@link #isAppLink} (owner ruling 2026-10-29). The domain allowlist cannot
+ * apply to those — they have no web host — so the control is the admin's
+ * review of the ad (promoter-written ads are approved before renters see them;
+ * the review screen marks an app link). What this still refuses is any scheme a
+ * phone would hand to a browser (which would get around the domain allowlist),
+ * a script engine, a file, the dialler or messages, and anything that is not
+ * printable ASCII.
  *
  * <p>Subdomain matching compares label boundaries, not string suffixes —
  * {@code evil-spice-bazaar.ae} ends with {@code spice-bazaar.ae} but is a
@@ -39,6 +52,36 @@ public class PromotionUrlValidator {
      */
     private static final Pattern HOSTNAME = Pattern.compile(
             "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$");
+
+    /**
+     * An app link's scheme: a letter, then 1–31 letters, digits, {@code +}, {@code .}
+     * or {@code -} (RFC 3986's scheme alphabet, length-capped). Case-insensitive.
+     */
+    private static final Pattern APP_SCHEME = Pattern.compile(
+            "^[a-z][a-z0-9+.-]{1,31}$", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Schemes an app link may never use, compared lower-cased. Web schemes stay
+     * under {@link #isAllowed}'s domain rule (so an https link on a domain the
+     * business does not claim is still refused, and plain http never passes).
+     * Browser-opening schemes ({@code googlechromes://host/path},
+     * {@code firefox://open-url?url=…}, {@code microsoft-edge-https://…}) are
+     * refused because they hand a web address to a browser and so would get
+     * around the domain allowlist; see also {@link #isRefusedAppScheme} for the
+     * {@code -http}/{@code -https}/{@code x-safari-} families. The rest run
+     * script, read local data, reach system handlers (Android {@code intent:},
+     * iOS enterprise installs) or place calls, messages and FaceTime calls.
+     * Keep in step with the web form and the renter app.
+     */
+    static final Set<String> REFUSED_APP_SCHEMES = Set.of(
+            "http", "https", "javascript", "vbscript", "data", "file", "blob", "about",
+            "content", "ftp", "ws", "wss", "intent", "itms-services", "chrome",
+            "chrome-extension", "mailto", "tel", "sms", "facetime", "facetime-audio",
+            // Browsers: these open a web address and would get around the allowlist.
+            "googlechrome", "googlechromes", "firefox", "focus", "brave", "opera", "opera-http",
+            "microsoft-edge", "duckduckgo", "edge",
+            // Calls and messages.
+            "telprompt", "facetime-prompt", "facetime-audio-prompt", "smsto", "mms", "mmsto");
 
     /** Normalises admin input into bare lowercase hostnames, dropping anything invalid. */
     public List<String> parseDomains(String raw) {
@@ -133,5 +176,52 @@ public class PromotionUrlValidator {
         }
         final String normalizedHost = h;
         return allowed.stream().anyMatch(d -> normalizedHost.equals(d) || normalizedHost.endsWith("." + d));
+    }
+
+    /**
+     * The rule for a coupon redirect link: {@link #isAllowed} (https on the
+     * business's allowed domains) or an {@link #isAppLink app link}. Length is
+     * capped by the caller.
+     */
+    public boolean isAllowedRedirect(String url, String allowedDomainsRaw) {
+        return isAllowed(url, allowedDomainsRaw) || isAppLink(url);
+    }
+
+    /**
+     * An app deep link with a custom scheme: the scheme matches {@link #APP_SCHEME},
+     * something follows {@code scheme:}, every character is printable ASCII
+     * ({@code !} to {@code ~}: no space, control, non-ASCII or invisible character,
+     * so the link reads on the review screen exactly as the phone opens it), and
+     * the scheme is not refused ({@link #isRefusedAppScheme}). Not trimmed: a
+     * caller passes the stored, already-trimmed value.
+     */
+    public boolean isAppLink(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c < 0x21 || c > 0x7E) {
+                return false;
+            }
+        }
+        int colon = url.indexOf(':');
+        if (colon < 0 || colon == url.length() - 1) {
+            return false;
+        }
+        String scheme = url.substring(0, colon);
+        return APP_SCHEME.matcher(scheme).matches() && !isRefusedAppScheme(scheme);
+    }
+
+    /**
+     * Whether an app link may not use {@code scheme} (any case): one of
+     * {@link #REFUSED_APP_SCHEMES}, or a browser bridge by pattern — anything
+     * ending in {@code -http} or {@code -https} ({@code microsoft-edge-https},
+     * {@code opera-https}) or starting with {@code x-safari-}.
+     */
+    static boolean isRefusedAppScheme(String scheme) {
+        String s = scheme.toLowerCase(Locale.ROOT);
+        return REFUSED_APP_SCHEMES.contains(s)
+                || s.endsWith("-http") || s.endsWith("-https") || s.startsWith("x-safari-");
     }
 }

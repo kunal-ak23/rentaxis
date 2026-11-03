@@ -51,7 +51,7 @@ public record PromoAdRequest(
         @Size(max = 500) List<UUID> propertyIds,
         Boolean active,
         // Addendum A, COUPON only: the link "Copy code" opens, and its query
-        // parameters. Every rule (https + allowlist, ≤10 params, names, STATIC
+        // parameters. Every rule (allowlisted https or an app link, ≤10 params, names, STATIC
         // values) is checked in PromotionService; @Size here only bounds the body.
         @Size(max = 2048) String redirectUrl,
         @Size(max = 50) List<RedirectParam> redirectParams,

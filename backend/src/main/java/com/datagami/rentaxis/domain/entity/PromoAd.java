@@ -130,7 +130,7 @@ public class PromoAd extends BaseTenantEntity {
     @Column(name = "archived_at")
     private Instant archivedAt;
 
-    /** COUPON only (addendum A): opened after "Copy code"; allowlisted like a WEBSITE ctaUrl. */
+    /** COUPON only (addendum A): opened after "Copy code"; allowlisted https like a WEBSITE ctaUrl, or an app link (yourapp://...). */
     @Column(name = "redirect_url", length = 2048)
     private String redirectUrl;
 

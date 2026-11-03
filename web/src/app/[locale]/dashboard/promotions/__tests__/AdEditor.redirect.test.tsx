@@ -281,10 +281,10 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
             expect(onSave).not.toHaveBeenCalled()
         })
 
-        it('refuses a link that is not https, off the allowlist, with userinfo, or too long', () => {
+        it('refuses a link that is neither https nor an app link, off the allowlist, with userinfo, or too long', () => {
             const onSave = startCoupon(mode)
             const cases: [string, string][] = [
-                ['http://app.quickwash.example.test/x', L.httpsRequired],
+                ['http://app.quickwash.example.test/x', L.redirectLinkInvalid],
                 ['https://evil.example.test/x', L.domainNotAllowed],
                 ['https://bank.example.test@app.quickwash.example.test/x', L.domainNotAllowed],
                 [`https://app.quickwash.example.test/${'a'.repeat(2048)}`, L.redirectUrlTooLong.replace('{max}', '2048')],
@@ -302,6 +302,64 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
             fireEvent.change(linkField(), { target: { value: 'https://deep.app.quickwash.example.test/x' } })
             save()
             expect(onSave).toHaveBeenCalledTimes(1)
+        })
+
+        it('accepts app links on every link field, off the allowlist, and sends them as typed', () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(linkField(), { target: { value: 'glidewash://redeem?x=1' } })
+            fireEvent.change(androidField(), { target: { value: ' myapp:open ' } })
+            fireEvent.change(iosField(), { target: { value: 'GlideWash://x' } })
+            save()
+            expect(onSave).toHaveBeenCalledTimes(1)
+            expect(onSave.mock.calls[0][0]).toMatchObject({
+                redirectUrl: 'glidewash://redeem?x=1', redirectUrlAndroid: 'myapp:open', redirectUrlIos: 'GlideWash://x',
+            })
+        })
+
+        it('refuses dangerous and malformed app links with the app-link message', () => {
+            const onSave = startCoupon(mode)
+            for (const value of ['javascript:alert(1)', 'JavaScript:x', 'data:text/html,x', 'file:///etc/passwd',
+                'intent://x#Intent;end', 'glidewash:', 'glide wash://x', 'glidewash://re deem', '1app://x',
+                'tel:+97150', 'glidewash://x\u200Ey', 'glidewash://x\uFE00', 'glidewash://\u3164',
+                'glidewash://x\u00A0y', 'googlechromes://quickwash.example.test/r', 'x-safari-https://evil.example.test/r',
+                'firefox://open-url?url=https://evil.example.test', 'microsoft-edge-https://evil.example.test/r']) {
+                fireEvent.change(linkField(), { target: { value } })
+                save()
+                expect(document.getElementById('err-redirectUrl'), value).toHaveTextContent(L.redirectLinkInvalid)
+            }
+            expect(onSave).not.toHaveBeenCalled()
+        })
+
+        it('sends a mixed-case app link exactly as typed', () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(androidField(), { target: { value: 'GlideWash://Redeem/a/../b?x=%7e' } })
+            save()
+            expect(onSave.mock.calls[0][0].redirectUrlAndroid).toBe('GlideWash://Redeem/a/../b?x=%7e')
+        })
+
+        it('still refuses an https link off the allowlist as a domain problem', () => {
+            const onSave = startCoupon(mode)
+            fireEvent.change(androidField(), { target: { value: 'https://evil.example.test/x' } })
+            save()
+            expect(document.getElementById('err-redirectUrlAndroid')).toHaveTextContent(L.domainNotAllowed)
+            expect(onSave).not.toHaveBeenCalled()
+        })
+
+        it('shows the app-link placeholder and help', () => {
+            startCoupon(mode)
+            expect(linkField()).toHaveAttribute('placeholder', L.redirectUrlPlaceholder)
+            expect(androidField()).toHaveAttribute('placeholder', L.redirectUrlPlaceholder)
+            expect(screen.getByText(L.redirectAppLinkHint)).toBeInTheDocument()
+        })
+
+        it('keeps a WEBSITE link to https on the allowlist: an app link is refused there', () => {
+            const onSave = renderEditor(mode)
+            type('Title (English)', 'Free dry-clean')
+            type('What happens on tap', 'WEBSITE')
+            fireEvent.change(screen.getByLabelText(L.ctaUrl), { target: { value: 'glidewash://redeem' } })
+            save()
+            expect(screen.getByText(L.httpsRequired)).toBeInTheDocument()
+            expect(onSave).not.toHaveBeenCalled()
         })
     })
 
@@ -452,7 +510,9 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
             const errorOf = () => document.getElementById(`err-${errorKey}`)
 
             it.each([
-                ['that is not https', 'http://app.quickwash.example.test/x', () => L.httpsRequired],
+                ['that is plain http', 'http://app.quickwash.example.test/x', () => L.redirectLinkInvalid],
+                ['with a refused scheme', 'intent://open#Intent;end', () => L.redirectLinkInvalid],
+                ['that is a malformed app link', 'quick wash://open', () => L.redirectLinkInvalid],
                 ['that is off the allowlist', 'https://evil.example.test/x', () => L.domainNotAllowed],
                 ['with userinfo', 'https://bank.example.test@app.quickwash.example.test/x', () => L.domainNotAllowed],
                 ['over 2048 characters', `https://app.quickwash.example.test/${'a'.repeat(2048)}`,

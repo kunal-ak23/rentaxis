@@ -8,6 +8,7 @@ import {
     REDIRECT_LINK_KEYS,
     RedirectLinkFields,
     exampleFor,
+    isAppLink,
     linksFromAd,
     redirectErrors,
     rowsFromAd,
@@ -221,15 +222,16 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
             next.couponCode = t("couponRequired");
         }
         if (ctaType === "COUPON") {
-            // Each of the three redirect links (default, Android, iPhone) follows the
-            // WEBSITE link's rules: https, on one of the business's allowed domains,
-            // no userinfo. Anything else on the links or their parameters is checked
-            // by redirectErrors.
+            // Each of the three redirect links (default, Android, iPhone) is either an
+            // https link under the WEBSITE link's rules (on one of the business's
+            // allowed domains, no userinfo) or an app link with a custom scheme
+            // (isAppLink; not domain-checked, admins check it on review). Anything
+            // else on the links or their parameters is checked by redirectErrors.
             const problems = {} as Record<RedirectLinkKey, RedirectLinkProblem>;
             for (const key of REDIRECT_LINK_KEYS) {
                 const link = redirectLinks[key].trim();
-                problems[key] = link === "" ? null
-                    : !link.toLowerCase().startsWith("https://") ? "https"
+                problems[key] = link === "" || isAppLink(link) ? null
+                    : !link.toLowerCase().startsWith("https://") ? "invalid"
                     : !hostIsAllowed(link, business?.allowedDomains ?? []) ? "domain" : null;
             }
             for (const [key, messageKey] of Object.entries(redirectErrors(redirectLinks, redirectRows, problems))) {

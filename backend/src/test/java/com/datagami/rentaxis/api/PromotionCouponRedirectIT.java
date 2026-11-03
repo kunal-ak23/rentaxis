@@ -151,14 +151,14 @@ class PromotionCouponRedirectIT extends AbstractPromoterIT {
         String longPath = "https://app.quickwash.example/" + "a".repeat(2049 - "https://app.quickwash.example/".length());
         assertThat(longPath).hasSize(2049);
         for (String field : List.of("redirectUrlAndroid", "redirectUrlIos")) {
-            assertRefused(platform(field, "https://elsewhere.example/open"), field + " must be https");
+            assertRefused(platform(field, "https://elsewhere.example/open"), field + " must be an https link");
             // A store page needs its domain on the allowlist like any other host.
             assertRefused(platform(field, "https://play.google.com/store/apps/details?id=com.quickwash"),
-                    field + " must be https");
-            assertRefused(platform(field, "https://apps.apple.com/app/id123"), field + " must be https");
-            assertRefused(platform(field, "http://app.quickwash.example/open"), field + " must be https");
-            assertRefused(platform(field, "https://user@app.quickwash.example/open"), field + " must be https");
-            assertRefused(platform(field, "app.quickwash.example/open"), field + " must be https");
+                    field + " must be an https link");
+            assertRefused(platform(field, "https://apps.apple.com/app/id123"), field + " must be an https link");
+            assertRefused(platform(field, "http://app.quickwash.example/open"), field + " must be an https link");
+            assertRefused(platform(field, "https://user@app.quickwash.example/open"), field + " must be an https link");
+            assertRefused(platform(field, "app.quickwash.example/open"), field + " must be an https link");
             assertRefused(platform(field, longPath), field);
         }
         // No link of any kind: the parameters have nowhere to go.
@@ -166,7 +166,97 @@ class PromotionCouponRedirectIT extends AbstractPromoterIT {
         assertRefused(coupon(" ", "", "  ", List.of(param("code", "COUPON_CODE", null))), "need a link");
     }
 
+    @Test
+    void anAppLinkIsAcceptedOnEveryRedirectField() {
+        // Owner ruling 2026-10-29: a custom-scheme app link, not domain-checked.
+        Resp android = post(admin, "/api/v1/promotions/ads",
+                coupon(LINK, "glidewash://redeem", null, List.of(param("code", "COUPON_CODE", null))));
+        assertThat(android.status()).isEqualTo(201);
+        assertThat(android.text("redirectUrl")).isEqualTo(LINK);
+        assertThat(android.text("redirectUrlAndroid")).isEqualTo("glidewash://redeem");
+        assertThat(adById(android.text("id")).get("redirectUrlAndroid").asText()).isEqualTo("glidewash://redeem");
+
+        Resp mainAndIos = post(admin, "/api/v1/promotions/ads",
+                coupon("glidewash:redeem?src=miftah", null, "GlideWash://x", List.of()));
+        assertThat(mainAndIos.status()).isEqualTo(201);
+        assertThat(mainAndIos.text("redirectUrl")).isEqualTo("glidewash:redeem?src=miftah");
+        assertThat(mainAndIos.text("redirectUrlIos")).isEqualTo("GlideWash://x");
+    }
+
+    @Test
+    void aWebsiteAdStaysHttpsOnly() {
+        // Coupon redirects take app links; a WEBSITE ctaUrl never does.
+        Map<String, Object> req = coupon(null, List.of());
+        req.put("ctaType", "WEBSITE");
+        req.put("ctaUrl", "glidewash://redeem");
+        assertRefused(req, "ctaUrl must be https");
+    }
+
+    @Test
+    void everyRefusedSchemeInTheSharedFixtureIsA400() {
+        for (String scheme : com.datagami.rentaxis.core.service.RefusedAppSchemes.all()) {
+            assertRefused(platform("redirectUrlAndroid", scheme + "://evil.example/r"), "or an app link");
+        }
+        for (String scheme : com.datagami.rentaxis.core.service.RefusedAppSchemes.ALLOWED) {
+            assertThat(post(admin, "/api/v1/promotions/ads", platform("redirectUrlIos", scheme + "://x")).status())
+                    .as(scheme).isEqualTo(201);
+        }
+    }
+
+    @Test
+    void aRefusedSchemeIsA400NamingBothForms() {
+        for (String field : List.of("redirectUrl", "redirectUrlAndroid", "redirectUrlIos")) {
+            for (String bad : List.of("javascript:alert(1)", "intent://x#Intent;end", "data:text/html,x",
+                    "file:///etc/passwd", "glidewash:", "glide wash://x", "1app://x")) {
+                assertRefused(platform(field, bad),
+                        field + " must be an https link on one of this business's allowed domains"
+                                + " or an app link such as yourapp://path");
+            }
+        }
+    }
+
     // ------------------------------------------------------------ resolution
+
+    @Test
+    void theFeedResolvesAnAppLinkWithTheParameters() {
+        User renter = user(org, UserRole.RENTER);
+        renterRecord(renter, "Omar", null, null);
+        List<Map<String, Object>> params = List.of(param("code", "COUPON_CODE", null), param("n", "RENTER_NAME", null));
+        String adId = post(admin, "/api/v1/promotions/ads",
+                coupon(LINK, "glidewash://redeem", "glidewash://redeem?src=miftah#top", params)).text("id");
+
+        JsonNode card = offers(renter).get(adId);
+
+        assertThat(card.get("redirectUrl").asText()).isEqualTo(LINK + "&code=SAVE10&n=Omar");
+        assertThat(card.get("redirectUrlAndroid").asText()).isEqualTo("glidewash://redeem?code=SAVE10&n=Omar");
+        assertThat(card.get("redirectUrlIos").asText()).isEqualTo("glidewash://redeem?src=miftah&code=SAVE10&n=Omar#top");
+        assertThat(texts(card.get("sharedFields"))).containsExactly("RENTER_NAME");
+    }
+
+    @Test
+    void anAppLinkIsResolvedByteForByteAsStored() {
+        User renter = user(org, UserRole.RENTER);
+        String stored = "GlideWash://Redeem/a/../b?x=%7e";
+        String adId = post(admin, "/api/v1/promotions/ads",
+                coupon(null, stored, null, List.of(param("code", "COUPON_CODE", null)))).text("id");
+
+        assertThat(adById(adId).get("redirectUrlAndroid").asText()).isEqualTo(stored);
+        assertThat(offers(renter).get(adId).get("redirectUrlAndroid").asText()).isEqualTo(stored + "&code=SAVE10");
+    }
+
+    @Test
+    void aStoredAppLinkWithARefusedSchemeIsDroppedAtReadTime() {
+        User renter = user(org, UserRole.RENTER);
+        String adId = post(admin, "/api/v1/promotions/ads",
+                coupon(LINK, "glidewash://redeem", null, List.of())).text("id");
+        // A value that bypassed the write check (an old row, a manual fix) is re-checked in the feed.
+        jdbc.update("UPDATE promo_ads SET redirect_url_android = 'googlechromes://evil.example/r' WHERE id = ?::uuid", adId);
+
+        JsonNode card = offers(renter).get(adId);
+
+        assertThat(card.get("redirectUrl").asText()).isEqualTo(LINK);
+        assertThat(card.get("redirectUrlAndroid").isNull()).isTrue();
+    }
 
     @Test
     void theFeedResolvesEachPlatformLinkLikeTheMainOne() {

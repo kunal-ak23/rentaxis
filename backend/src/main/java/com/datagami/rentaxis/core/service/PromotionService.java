@@ -632,9 +632,11 @@ public class PromotionService {
     /**
      * One coupon redirect link, trimmed (blank = none): {@code redirectUrl} (plan
      * addendum A) or a platform link (addendum C), all under the same rule. At most
-     * 2048 characters, and the rule of a WEBSITE ctaUrl: the renter app opens it with
-     * the renter's own data appended, so https, a host, no userinfo, and on the
-     * business's allowed domains only.
+     * 2048 characters, and either the rule of a WEBSITE ctaUrl (https, a host, no
+     * userinfo, on the business's allowed domains) or an app deep link with a custom
+     * scheme ({@link PromotionUrlValidator#isAppLink}; owner ruling 2026-10-29). The
+     * renter app opens it with the renter's own data appended; an app link is not
+     * domain-checked, so the admin's review of the ad is the control there.
      */
     private String redirectLink(String requested, String field, PromoBusiness business) {
         String url = trimToNull(requested);
@@ -645,9 +647,10 @@ public class PromotionService {
             throw new BusinessRuleViolationException(
                     field + " must be at most " + MAX_REDIRECT_URL + " characters");
         }
-        if (!urlValidator.isAllowed(url, business.getAllowedDomains())) {
-            throw new BusinessRuleViolationException(
-                    field + " must be https and on one of this business's allowed domains");
+        if (!urlValidator.isAllowedRedirect(url, business.getAllowedDomains())) {
+            throw new BusinessRuleViolationException(field
+                    + " must be an https link on one of this business's allowed domains"
+                    + " or an app link such as yourapp://path");
         }
         return url;
     }
