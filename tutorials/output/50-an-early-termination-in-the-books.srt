@@ -1,0 +1,157 @@
+1
+00:00:00,000 --> 00:00:05,728
+This tutorial follows the early termination
+from tutorial 48 into the books.
+
+2
+00:00:05,728 --> 00:00:09,070
+Open Ahmed Hassan's contract for A-101:
+with
+
+3
+00:00:09,070 --> 00:00:11,934
+its settlement finalized, it is Closed.
+
+4
+00:00:11,934 --> 00:00:15,276
+On the Cheques tab, open Journal Vouchers.
+
+5
+00:00:15,276 --> 00:00:19,572
+Terminating on the thirty-first of August
+wrote three things.
+
+6
+00:00:19,572 --> 00:00:22,914
+The October cheque's PDR is reversed, so
+
+7
+00:00:22,914 --> 00:00:26,256
+its 21,250 is back on Rent Receivable.
+
+8
+00:00:26,256 --> 00:00:31,984
+August's recognition is posted again, so
+the last month absorbs the rounding.
+
+9
+00:00:31,984 --> 00:00:35,326
+And TCR-26/2 takes off the unearned rent.
+
+10
+00:00:35,326 --> 00:00:36,280
+Open it.
+
+11
+00:00:36,280 --> 00:00:41,054
+TCR-26/2 debits Advance Rent and credits
+Rent Receivable with 28,410.96:
+
+12
+00:00:41,054 --> 00:00:45,828
+the rent from September to December, which
+was never earned.
+
+13
+00:00:45,828 --> 00:00:48,215
+Finalizing the settlement wrote STL-26/2.
+
+14
+00:00:48,215 --> 00:00:52,511
+The deposit of 22,000 is released from
+Security Deposit.
+
+15
+00:00:52,511 --> 00:00:55,853
+Rent Receivable is debited 7,160.96,
+clearing what
+
+16
+00:00:55,853 --> 00:00:58,717
+the landlord owed Ahmed on account.
+
+17
+00:00:58,717 --> 00:01:03,491
+The cleaning deduction of 750 is credited
+to Maintenance Charges.
+
+18
+00:01:03,491 --> 00:01:08,742
+And the 28,410.96 left is owed to Ahmed,
+in Refunds payable.
+
+19
+00:01:08,742 --> 00:01:11,129
+Paying the refund wrote BPV-26/2.
+
+20
+00:01:11,129 --> 00:01:13,993
+Refunds payable is debited, and the
+
+21
+00:01:13,993 --> 00:01:16,857
+building's bank account is credited
+28,410.96.
+
+22
+00:01:16,857 --> 00:01:21,154
+Refunds payable is kept at head office, so
+two
+
+23
+00:01:21,154 --> 00:01:25,450
+inter-property clearing lines balance head
+office against the building.
+
+24
+00:01:25,450 --> 00:01:29,269
+Below the list, the contract account by
+account.
+
+25
+00:01:29,269 --> 00:01:31,656
+Advance Rent is at zero.
+
+26
+00:01:31,656 --> 00:01:33,565
+The bank keeps 58,839.04.
+
+27
+00:01:33,565 --> 00:01:37,384
+PDC Receivable and Rent Receivable are at
+zero,
+
+28
+00:01:37,384 --> 00:01:40,726
+and Rental Income shows the 56,589.04
+earned.
+
+29
+00:01:40,726 --> 00:01:45,022
+Security Deposit and Refunds payable are
+at zero too.
+
+30
+00:01:45,022 --> 00:01:49,796
+What the bank keeps is what was earned:
+the rent,
+
+31
+00:01:49,796 --> 00:01:54,570
+the admin fee of 1,500, and the 750 for
+cleaning.
+
+32
+00:01:54,570 --> 00:01:58,866
+Revenue recognition stops at the
+termination date: September to
+
+33
+00:01:58,866 --> 00:02:02,685
+December are cancelled, and the schedule
+totals 56,589.04,
+
+34
+00:02:02,685 --> 00:02:06,504
+the rent earned to the thirty-first of
+August.
