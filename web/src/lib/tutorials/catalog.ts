@@ -438,6 +438,15 @@ export const TUTORIALS: Tutorial[] = [
         },
         relatedArticles: ["operations--bookings-meetings-promotions"],
     },
+    {
+        id: "52", slug: "connect-your-systems-promoter-api-keys-units-feed-and-coupon-deep-links", topic: "operations", roles: ["PROMOTER", "SUPER_ADMIN"], durationSec: 173, youtubeId: null,
+        title: { en: "Connect your systems: API keys, the units feed and coupon deep links", ar: "اربط أنظمتك: مفاتيح API وقائمة الوحدات والروابط العميقة للقسائم" },
+        description: {
+            en: "Create a promoter API key, read your units feed, put the unit ID on a coupon link that opens your own app, and rotate or revoke keys.",
+            ar: "أنشئ مفتاح API للمروّج، واقرأ قائمة وحداتك، وأضف معرّف الوحدة إلى رابط القسيمة الذي يفتح تطبيقك، ثم بدّل المفاتيح أو أبطلها.",
+        },
+        relatedArticles: ["operations--bookings-meetings-promotions"],
+    },
 ];
 
 /** YouTube video ids are 11 URL-safe characters; anything else is refused before it reaches a URL. */
