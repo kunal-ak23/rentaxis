@@ -423,6 +423,8 @@ class ChequeControllerIT extends AbstractPostgresIT {
         long entriesBefore = journalEntryCount();
         // The real path, not a status poke: the term ends 31 Jan 2027, so the
         // nightly sweep run on 1 Feb expires it.
+        // Marked not-renewing, so the sweep expires it instead of putting it on hold.
+        jdbc.update("update leases set not_renewing_at = now() where id = ?", leaseId);
         tx.executeWithoutResult(s -> leaseService.markExpired(leaseId, END.plusDays(1)));
         assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.EXPIRED);
 

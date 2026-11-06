@@ -109,7 +109,7 @@ public class PenaltyAssessmentService {
      * The money owed on a closed contract is settled, not invoiced.</p>
      */
     private static final Set<LeaseStatus> CHARGEABLE = EnumSet.of(
-            LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED, LeaseStatus.RENEWED);
+            LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD, LeaseStatus.RENEWED);
 
     private static final String BEING_UPDATED =
             "This penalty is being updated by another request. Please try again.";

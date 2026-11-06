@@ -6,6 +6,7 @@ import LeaseDialog from "./LeaseDialog";
 import {
     ApiError,
     leaseApi,
+    type IncomeFromOptions,
     type LeaseDetail,
     type PostLeaseDryRunResponse,
     type PostLeaseResponse,
@@ -51,6 +52,32 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
     const [error, setError] = useState<string | null>(null);
     // Break-it R2 F2: "this contract changed" outlives the re-pricing it triggers.
     const [stale, setStale] = useState<string | null>(null);
+    // Back-dated contracts (client call, Nov 2026): the month income starts from.
+    const backdated = isBackdated(lease);
+    const [incomeFrom, setIncomeFrom] = useState<string | null>(null);
+    const [income, setIncome] = useState<IncomeFromOptions | null>(null);
+
+    useEffect(() => {
+        if (!open || !backdated) {
+            setIncome(null);
+            setIncomeFrom(null);
+            return;
+        }
+        let cancelled = false;
+        Promise.resolve()
+            .then(() => leaseApi.incomeFrom(lease.id, incomeFrom))
+            .then(res => {
+                if (cancelled) return;
+                setIncome(res);
+                if (incomeFrom == null && res.backdated) setIncomeFrom(res.defaultFrom);
+            })
+            .catch((e: unknown) => {
+                if (!cancelled) setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("postFailed"));
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [open, backdated, lease.id, lease.version, incomeFrom, t, tCommon]);
 
     useEffect(() => {
         if (!open) {
@@ -85,7 +112,10 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
         setStale(null);
         try {
             // Break-it R2 F2: the version these figures were priced on; the server refuses a newer contract.
-            const res = await leaseApi.post(lease.id, lease.version);
+            const from = income?.backdated ? incomeFrom : null;
+            const res = from
+                ? await leaseApi.post(lease.id, lease.version, from)
+                : await leaseApi.post(lease.id, lease.version);
             onPosted(res);
         } catch (e) {
             if (isLeaseChanged(e)) {
@@ -161,6 +191,13 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
                                 pdr: dry.journals.pdr,
                             })}
                         </p>
+                        {income?.backdated && income.earliest && income.latest && (
+                            <IncomeFromSection
+                                options={income}
+                                value={incomeFrom}
+                                onChange={setIncomeFrom}
+                            />
+                        )}
                         {!!dry.notices?.length && (
                             <ul data-testid="post-dry-run-notices" className="space-y-1 text-info list-disc ms-4">
                                 {dry.notices.map((n, i) => (
@@ -192,6 +229,65 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
                 )}
             </div>
         </LeaseDialog>
+    );
+}
+
+/** The term started before the month of the contract date (the server decides; this only saves a call). */
+export function isBackdated(lease: Pick<LeaseDetail, "startDate" | "contractDate">): boolean {
+    if (!lease.contractDate || !lease.startDate) return false;
+    return lease.startDate < `${lease.contractDate.slice(0, 7)}-01`;
+}
+
+/** Every first-of-month from `from` to `to` inclusive (yyyy-MM-01). */
+export function monthsBetween(from: string, to: string): string[] {
+    const out: string[] = [];
+    let [y, m] = [Number(from.slice(0, 4)), Number(from.slice(5, 7))];
+    const end = Number(to.slice(0, 4)) * 12 + Number(to.slice(5, 7));
+    while (y * 12 + m <= end && out.length < 600) {
+        out.push(`${y}-${String(m).padStart(2, "0")}-01`);
+        m += 1;
+        if (m > 12) { m = 1; y += 1; }
+    }
+    return out;
+}
+
+function IncomeFromSection({ options, value, onChange }: {
+    options: IncomeFromOptions;
+    value: string | null;
+    onChange: (v: string) => void;
+}) {
+    const t = useTranslations("Leasing");
+    const months = monthsBetween(options.earliest!, options.latest!);
+    const label = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+    return (
+        <div data-testid="post-income-from" className="space-y-1.5 rounded-xl border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <p className="font-semibold">{t("incomeFrom.title")}</p>
+            <p className="text-muted">{t("incomeFrom.help")}</p>
+            <label className="flex items-center gap-2">
+                <span className="text-muted">{t("incomeFrom.label")}</span>
+                <select
+                    data-testid="post-income-from-select"
+                    className="rounded-lg border border-border bg-input px-2 py-1"
+                    value={value ?? options.defaultFrom ?? ""}
+                    onChange={e => onChange(e.target.value)}
+                >
+                    {months.map(m => (
+                        <option key={m} value={m}>{label(m)}</option>
+                    ))}
+                </select>
+            </label>
+            {options.foldedMonths > 0 ? (
+                <p data-testid="post-income-from-fold">
+                    {t("incomeFrom.fold", {
+                        months: options.foldedMonths,
+                        amount: fmtAmount(options.foldedAmount),
+                        date: formatDate(options.catchUpOn ?? ""),
+                    })}
+                </p>
+            ) : (
+                <p className="text-muted" data-testid="post-income-from-fold">{t("incomeFrom.noFold")}</p>
+            )}
+        </div>
     );
 }
 

@@ -32,7 +32,14 @@ public enum PenaltyReason {
     MAINTENANCE_RECHARGE(AccountRole.MAINTENANCE_CHARGES, "Maintenance recharge", true),
 
     /** F14-50: the fee for an amenity or parking booking. */
-    BOOKING_FEE(AccountRole.OTHER_INCOME, "Booking fee", true);
+    BOOKING_FEE(AccountRole.OTHER_INCOME, "Booking fee", true),
+
+    /**
+     * A held-over tenancy that ended without a renewal: the days from the old end to
+     * the day the renter moved out, at the old day rate. Rent in substance, so it
+     * earns rental income and carries VAT where the rent did.
+     */
+    USE_AND_OCCUPATION(AccountRole.RENTAL_INCOME, "Use and occupation", true);
 
     private final AccountRole incomeRole;
     private final String label;

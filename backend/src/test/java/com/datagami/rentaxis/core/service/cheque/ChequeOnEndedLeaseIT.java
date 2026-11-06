@@ -116,6 +116,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
 
     @Autowired ChequeService cheques;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired ChequeQueryService chequeQueries;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired LeaseTerminationService termination;
@@ -1168,6 +1169,8 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
     @Test
     void anExpiredLeaseTakesNoNewGridRowsEither() {
         UUID leaseId = sampleResidencesWithOneChequeStillInTheDrawer();
+        // Marked not-renewing, so the sweep expires it instead of putting it on hold.
+        jdbc.update("update leases set not_renewing_at = now() where id = ?", leaseId);
         leaseService.markExpired(leaseId, END.plusDays(1));
         assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.EXPIRED);
 

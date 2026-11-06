@@ -796,6 +796,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       case 'ACTIVE':
         return AppColors.success;
       case 'NOTICE_GIVEN':
+      case 'ON_HOLD':
         return AppColors.warning;
       // Matches the shared StatusHelper convention: an expired term is a
       // settled fact, not an amber "needs attention" state.
@@ -1783,6 +1784,8 @@ class _L {
         return ar ? 'بانتظار التوقيع' : 'Pending Signature';
       case 'EXPIRED':
         return ar ? 'منتهي' : 'Expired';
+      case 'ON_HOLD':
+        return ar ? 'معلّق' : 'On hold';
       case 'NOTICE_GIVEN':
         return ar ? 'إشعار إنهاء' : 'Notice Given';
       case 'TERMINATED':

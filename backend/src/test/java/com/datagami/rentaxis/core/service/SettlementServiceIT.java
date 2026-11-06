@@ -349,6 +349,8 @@ class SettlementServiceIT extends AbstractPostgresIT {
      */
     private UUID expiredSampleResidences() {
         UUID leaseId = sampleResidences();
+        // Marked not-renewing, so the sweep expires it instead of putting it on hold.
+        jdbcTemplate.update("update leases set not_renewing_at = now() where id = ?", leaseId);
         leaseService.markExpired(leaseId, END.plusDays(1));
         return leaseId;
     }
@@ -506,6 +508,8 @@ class SettlementServiceIT extends AbstractPostgresIT {
         UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
                 List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "51000"),
                         line("SECURITY_DEPOSIT", "3000")), 4, null).lease().getId();
+        // Marked not-renewing, so the sweep expires it instead of putting it on hold.
+        jdbcTemplate.update("update leases set not_renewing_at = now() where id = ?", leaseId);
         leaseService.markExpired(leaseId, END.plusDays(1));
         saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "2000"),
                 deduction(DeductionCategory.UTILITY_ARREARS, "650"));
@@ -538,6 +542,8 @@ class SettlementServiceIT extends AbstractPostgresIT {
         UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END,
                 List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "51000"),
                         line("SECURITY_DEPOSIT", "5000")), 4, null).lease().getId();
+        // Marked not-renewing, so the sweep expires it instead of putting it on hold.
+        jdbcTemplate.update("update leases set not_renewing_at = now() where id = ?", leaseId);
         leaseService.markExpired(leaseId, END.plusDays(1));
         saveDraft(leaseId, deduction(DeductionCategory.PROPERTY_DAMAGE, "400"),
                 deduction(DeductionCategory.UTILITY_ARREARS, "200"));

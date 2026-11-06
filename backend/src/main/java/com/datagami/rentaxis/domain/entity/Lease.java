@@ -225,6 +225,14 @@ public class Lease extends BaseTenantEntity {
     private LocalDate firstDueDate;
 
     /**
+     * Back-dated contracts: the first day of the month income starts in. Months
+     * before it are recognised in one catch-up entry on the contract date rather
+     * than in their own (closed) months. Null = every month in its own month.
+     */
+    @Column(name = "income_from_date")
+    private LocalDate incomeFromDate;
+
+    /**
      * When the renter accepted the contract in the portal.
      *
      * <p>Acceptance is a fact about the renter, not a posting: it records that the

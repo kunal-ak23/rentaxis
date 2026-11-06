@@ -19,14 +19,14 @@ import { idParam } from "../urlIds";
 export type QueueStage = "todo" | "drafted" | "notRenewing" | "renewed" | "all";
 export const QUEUE_STAGES: QueueStage[] = ["todo", "drafted", "notRenewing", "renewed", "all"];
 
-const EVERY: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE", "ACTIVE", "NOTICE_GIVEN", "RENEWED", "TERMINATED", "EXPIRED", "CLOSED"];
+const EVERY: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE", "ACTIVE", "NOTICE_GIVEN", "RENEWED", "TERMINATED", "ON_HOLD", "EXPIRED", "CLOSED"];
 
 const STAGE: Record<QueueStage, { statuses: LeaseStatus[]; successor: SuccessorState; mark: RenewalMark }> = {
-    todo: { statuses: ["ACTIVE", "EXPIRED"], successor: "NONE", mark: "UNMARKED" },
-    drafted: { statuses: ["ACTIVE", "NOTICE_GIVEN", "EXPIRED"], successor: "DRAFTED", mark: "ANY" },
-    notRenewing: { statuses: ["ACTIVE", "NOTICE_GIVEN", "EXPIRED"], successor: "NONE", mark: "NOT_RENEWING" },
+    todo: { statuses: ["ACTIVE", "ON_HOLD", "EXPIRED"], successor: "NONE", mark: "UNMARKED" },
+    drafted: { statuses: ["ACTIVE", "NOTICE_GIVEN", "ON_HOLD", "EXPIRED"], successor: "DRAFTED", mark: "ANY" },
+    notRenewing: { statuses: ["ACTIVE", "NOTICE_GIVEN", "ON_HOLD", "EXPIRED"], successor: "NONE", mark: "NOT_RENEWING" },
     renewed: { statuses: ["RENEWED"], successor: "ANY", mark: "ANY" },
-    all: { statuses: ["ACTIVE", "NOTICE_GIVEN", "EXPIRED", "RENEWED"], successor: "ANY", mark: "ANY" },
+    all: { statuses: ["ACTIVE", "NOTICE_GIVEN", "ON_HOLD", "EXPIRED", "RENEWED"], successor: "ANY", mark: "ANY" },
 };
 
 /** The paged-read filters for a stage: the statuses it does not hold are excluded. */
@@ -95,7 +95,7 @@ export function parseQueueState(sp: URLSearchParams, today: string): QueueState 
 
 /** Whether bulk renew can take this row: a running or held-over contract with nothing drafted from it. */
 export function isRenewable(l: Pick<LeaseDetail, "status" | "renewedToLeaseId" | "transferredToLeaseId">): boolean {
-    return (l.status === "ACTIVE" || l.status === "EXPIRED" || l.status === "NOTICE_GIVEN")
+    return (l.status === "ACTIVE" || l.status === "ON_HOLD" || l.status === "EXPIRED" || l.status === "NOTICE_GIVEN")
         && !l.renewedToLeaseId && !l.transferredToLeaseId;
 }
 

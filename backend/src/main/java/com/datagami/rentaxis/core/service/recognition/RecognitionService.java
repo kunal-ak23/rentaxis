@@ -543,6 +543,54 @@ public class RecognitionService {
         if (today != null && d.isAfter(today)) return LockedCatchUp.none(d);
         LocalDate own = lease.getUnit() == null || lease.getUnit().getProperty() == null ? null
                 : lease.getUnit().getProperty().getBooksStartDate();
+        return fold(lease, e -> !e.getPeriodEnd().isAfter(locked) && (own == null || !e.getPeriodEnd().isBefore(own)),
+                d, preview, "locked months never recognised: ");
+    }
+
+    /**
+     * A back-dated contract (client call, Nov 2026): a renewal posted in November for a
+     * term that began in September must not put September's and October's income
+     * into months whose books are closed and reconciled. The months ending before
+     * {@code incomeFrom} are cancelled and recognised in one catch-up {@code CIL} per
+     * account pair dated {@code on} — the contract's own posting date — and the
+     * month-end run carries on from {@code incomeFrom} as usual.
+     *
+     * <p>Called in the posting transaction, after the schedule is built, so the
+     * month-end run never sees the folded rows as PLANNED.</p>
+     */
+    @Transactional
+    public LockedCatchUp foldBeforeIncomeFrom(UUID leaseId, LocalDate incomeFrom, LocalDate on) {
+        if (incomeFrom == null) return LockedCatchUp.none(on);
+        return fold(lease(leaseId), e -> e.getPeriodEnd().isBefore(incomeFrom), on, false,
+                "back-dated contract, income from " + incomeFrom.format(java.time.format.DateTimeFormatter.ofPattern("MM/yyyy"))
+                        + ": ");
+    }
+
+    /**
+     * What {@link #foldBeforeIncomeFrom} would fold for a contract not yet posted:
+     * its planned months ending before {@code incomeFrom}, from the same schedule
+     * preview the Post dialog shows.
+     */
+    @Transactional(readOnly = true)
+    public LockedCatchUp previewFoldBeforeIncomeFrom(UUID leaseId, LocalDate incomeFrom, LocalDate on) {
+        if (incomeFrom == null) return LockedCatchUp.none(on);
+        java.time.format.DateTimeFormatter mmyyyy = java.time.format.DateTimeFormatter.ofPattern("MM/yyyy");
+        java.util.Set<String> months = new java.util.TreeSet<>(MONTH_ORDER);
+        BigDecimal total = BigDecimal.ZERO;
+        int rows = 0;
+        for (RentMonth m : previewRentSchedule(leaseId)) {
+            if (!m.periodEnd().isBefore(incomeFrom)) continue;
+            rows++;
+            total = total.add(m.amount());
+            months.add(m.periodEnd().format(mmyyyy));
+        }
+        return new LockedCatchUp(rows > 0 ? 1 : 0, rows, total.setScale(2, RoundingMode.HALF_UP), on, List.copyOf(months));
+    }
+
+    /** Cancels the lease's PLANNED rows {@code which} accepts and posts their total as catch-ups dated {@code d}. */
+    private LockedCatchUp fold(Lease lease, java.util.function.Predicate<RecognitionEntry> which, LocalDate d,
+                               boolean preview, String reason) {
+        UUID leaseId = lease.getId();
         java.time.format.DateTimeFormatter mmyyyy = java.time.format.DateTimeFormatter.ofPattern("MM/yyyy");
 
         Map<List<UUID>, BigDecimal> sum = new java.util.LinkedHashMap<>();
@@ -554,8 +602,7 @@ public class RecognitionService {
         java.util.Set<String> allMonths = new java.util.TreeSet<>(MONTH_ORDER);
         int rows = 0;
         for (RecognitionEntry e : entries.findByLease_IdOrderByPeriodStartAsc(leaseId)) {
-            if (e.getStatus() != RecognitionStatus.PLANNED || e.getPeriodEnd().isAfter(locked)) continue;
-            if (own != null && e.getPeriodEnd().isBefore(own)) continue;
+            if (e.getStatus() != RecognitionStatus.PLANNED || !which.test(e)) continue;
             RentSegment seg = e.getSegment();
             List<UUID> key = List.of(poster.deferralAccountId(seg, lease), poster.incomeAccountId(seg, lease));
             if (!preview) {
@@ -580,7 +627,7 @@ public class RecognitionService {
             total = total.add(amount);
             if (preview || amount.signum() == 0) continue;
             postCatchUp(lease, key, fees.contains(key), lineOf.get(key), from.get(key), to.get(key).plusDays(1), d,
-                    amount, "locked months never recognised: " + String.join(", ", monthsOf.get(key)), null);
+                    amount, reason + String.join(", ", monthsOf.get(key)), null);
         }
         return new LockedCatchUp(rows > 0 ? 1 : 0, rows, total.setScale(2, RoundingMode.HALF_UP), d, List.copyOf(allMonths));
     }

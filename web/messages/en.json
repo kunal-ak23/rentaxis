@@ -2501,6 +2501,24 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "incomeFrom": {
+      "title": "Back-dated contract",
+      "help": "This contract started before the month of its contract date. Months already passed can be recognised in one entry instead of in their own (closed) months.",
+      "label": "Recognise income from",
+      "fold": "{months, plural, one {# month} other {# months}} before this ({amount}) will be recognised in one entry on {date}.",
+      "noFold": "Every month is recognised in its own month."
+    },
+    "holdover": {
+      "vacateAction": "Tenant moved out",
+      "vacateTitle": "Tenant moved out during the hold",
+      "vacateConfirm": "Charge and close",
+      "vacateHelp": "The term ended on {date}. The days from then to the move-out date are charged at the old rent as use and occupation, dated today. The lease then expires and the unit is released.",
+      "movedOutOn": "Moved out on",
+      "days": "{days} days at {rate} a day",
+      "monthDays": "{days} days",
+      "total": "Use and occupation",
+      "failed": "Could not close the hold. Try again."
+    },
     "scanReloadFailed": "The cheque scans were attached, but the contract could not be read back. Reopen the contract before changing the cheques.",
     "belowExpectedRent": "This unit asks {expected} a year. This contract works out at {annual} a year — {gap} below.",
     "scanCheques": "Scan cheques",
@@ -2693,6 +2711,7 @@
       "TERMINATED": "Terminated",
       "RENEWED": "Renewed",
       "EXPIRED": "Expired",
+      "ON_HOLD": "On hold",
       "CLOSED": "Closed"
     },
     "renewedBy": "Renewed by {number}",

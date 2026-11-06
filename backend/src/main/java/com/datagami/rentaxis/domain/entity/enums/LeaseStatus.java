@@ -12,6 +12,14 @@ public enum LeaseStatus {
      * and possibly its deposit, to the next contract.
      */
     RENEWED,
+    /**
+     * The term ran out with no renewal and no notice, and the renter is presumed
+     * still in the unit while the landlord chases them (holdover). Unlike EXPIRED
+     * it keeps the unit: nothing else can be let on it. Nothing is recognised; the
+     * way out is a renewal starting the day after the old end, or "tenant moved
+     * out" (a use-and-occupation charge, then EXPIRED).
+     */
+    ON_HOLD,
     EXPIRED,
     CLOSED
 }

@@ -78,7 +78,7 @@ public class LeaseRenewalService {
      * than continued.</p>
      */
     private static final Set<LeaseStatus> RENEWABLE =
-            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.EXPIRED, LeaseStatus.NOTICE_GIVEN);
+            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD, LeaseStatus.NOTICE_GIVEN);
 
     private final LeaseRepository leaseRepository;
     private final LeaseLineRepository leaseLineRepository;

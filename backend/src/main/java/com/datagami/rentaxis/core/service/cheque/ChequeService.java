@@ -202,7 +202,7 @@ public class ChequeService {
      * shut.</p>
      */
     private static final Set<LeaseStatus> COLLECTABLE = EnumSet.of(
-            LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED,
+            LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD,
             LeaseStatus.RENEWED, LeaseStatus.TERMINATED);
 
     /**
@@ -234,7 +234,7 @@ public class ChequeService {
      * {@link #POSTED} already admits it.</p>
      */
     private static final Set<LeaseStatus> ENDED_BUT_COLLECTABLE = EnumSet.of(
-            LeaseStatus.TERMINATED, LeaseStatus.EXPIRED);
+            LeaseStatus.TERMINATED, LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD);
 
     private final ChequeRepository chequeRepository;
     private final LeaseRepository leaseRepository;

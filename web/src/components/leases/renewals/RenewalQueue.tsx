@@ -184,7 +184,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
         if (perms.extend && l.status === "ACTIVE" && !l.renewedToLeaseId) items.push({ id: "extend", label: t("actionExtend"), testId: `${q}-extend-${l.id}`, icon: CalendarClock, onSelect: () => setExtending(l) });
         const continued = !!l.renewedToLeaseId || !!l.transferredToLeaseId;
         // PR C ruling 1: "Not renewing" is a soft, reversible mark; giving notice is its own act.
-        if (perms.renew && !continued && !l.notRenewingAt && ["ACTIVE", "NOTICE_GIVEN", "EXPIRED"].includes(l.status))
+        if (perms.renew && !continued && !l.notRenewingAt && ["ACTIVE", "NOTICE_GIVEN", "ON_HOLD", "EXPIRED"].includes(l.status))
             items.push({ id: "notRenewing", label: t("actionNotRenewing"), testId: `${q}-not-renewing-${l.id}`, icon: Flag, onSelect: () => setMarking(l) });
         if (perms.renew && l.notRenewingAt)
             items.push({ id: "undoNotRenewing", label: t("actionUndoNotRenewing"), testId: `${q}-undo-not-renewing-${l.id}`, icon: Undo2, onSelect: () => undoMark(l) });
@@ -203,7 +203,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
         };
         if (l.status === "NOTICE_GIVEN") return { text: t("stateOnNotice"), tone: "text-warning" };
         if (l.status === "RENEWED") return { text: t("stateRenewed"), tone: "text-success" };
-        if (l.status === "EXPIRED") return { text: t("stateHoldover"), tone: "text-error" };
+        if (l.status === "EXPIRED" || l.status === "ON_HOLD") return { text: t("stateHoldover"), tone: "text-error" };
         return { text: t("stateTodo"), tone: "text-[var(--ink-600)]" };
     };
 

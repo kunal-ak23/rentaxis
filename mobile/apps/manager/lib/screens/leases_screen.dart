@@ -375,6 +375,7 @@ class _LeaseCard extends StatelessWidget {
         return AppColors.accentDark;
       case 'EXPIRED':
       case 'NOTICE_GIVEN':
+      case 'ON_HOLD':
         return m.warning;
       case 'TERMINATED':
       case 'CLOSED':
@@ -684,6 +685,8 @@ class _L {
         return ar ? 'بانتظار التوقيع' : 'Awaiting sig.';
       case 'EXPIRED':
         return ar ? 'منتهي' : 'Expired';
+      case 'ON_HOLD':
+        return ar ? 'معلّق' : 'On hold';
       case 'NOTICE_GIVEN':
         return ar ? 'إشعار إنهاء' : 'Notice given';
       case 'TERMINATED':

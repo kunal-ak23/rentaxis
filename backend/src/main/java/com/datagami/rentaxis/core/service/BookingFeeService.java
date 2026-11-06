@@ -41,7 +41,7 @@ public class BookingFeeService {
     public static final Set<String> TYPES = Set.of("FREE", "PER_BOOKING", "PER_HOUR");
 
     private static final EnumSet<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN,
-            LeaseStatus.EXPIRED, LeaseStatus.RENEWED);
+            LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD, LeaseStatus.RENEWED);
 
     private final PenaltyAssessmentService charges;
     private final LeaseRepository leases;

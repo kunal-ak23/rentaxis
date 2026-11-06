@@ -160,6 +160,11 @@ public class LeasePostingService {
     @org.springframework.context.annotation.Lazy
     private com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionService;
 
+    /** Back-dated contracts: the month income starts from (client call, Nov 2026). */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private BackdatedIncome backdatedIncome;
+
     /** PR #397 R1-P2-2: cheque responses carry the ledger's facts (due, ledgerSettled, openAmount). */
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries;
@@ -241,6 +246,30 @@ public class LeasePostingService {
      */
     @Transactional
     public PostLeaseResponse post(UUID leaseId, Long expectedVersion) {
+        return post(leaseId, expectedVersion, null);
+    }
+
+    /**
+     * The same, for a back-dated contract whose income starts from {@code incomeFrom}
+     * ({@link BackdatedIncome}): checked before anything is written, then — once the
+     * post has built the recognition schedule — the months before it are folded
+     * into one catch-up on the posting date, inside this transaction, so the
+     * month-end run never posts them into their own closed months. Null = no fold.
+     */
+    @Transactional
+    public PostLeaseResponse post(UUID leaseId, Long expectedVersion, LocalDate incomeFrom) {
+        LocalDate from = incomeFrom == null ? null : backdatedIncome.resolve(lockLease(leaseId), incomeFrom);
+        PostLeaseResponse posted = postChecked(leaseId, expectedVersion);
+        if (from != null) {
+            Lease lease = lockLease(leaseId);
+            lease.setIncomeFromDate(from);
+            leaseRepository.save(lease);
+            recognitionService.foldBeforeIncomeFrom(leaseId, from, BackdatedIncome.catchUpOn(lease, from));
+        }
+        return posted;
+    }
+
+    private PostLeaseResponse postChecked(UUID leaseId, Long expectedVersion) {
         if (expectedVersion != null) {
             LeaseService.requireVersion(lockLease(leaseId), expectedVersion);
         }
@@ -1626,13 +1655,13 @@ public class LeasePostingService {
         Lease predecessor = leaseRepository.findByIdScopedToTenant(lease.getRenewedFromLeaseId()).orElse(null);
         if (predecessor == null || RENEWABLE_PREDECESSOR.contains(predecessor.getStatus())) return Optional.empty();
         return Optional.of("This renewal can no longer be posted: the lease it renews is " + predecessor.getStatus()
-                + ", and only an ACTIVE, EXPIRED or NOTICE_GIVEN lease can be renewed."
+                + ", and only an ACTIVE, ON_HOLD, EXPIRED or NOTICE_GIVEN lease can be renewed."
                 + " Delete this draft and draft a new contract instead.");
     }
 
     /** What a lease must be for a successor's post to retire it (spec §6.6). */
     static final Set<LeaseStatus> RENEWABLE_PREDECESSOR =
-            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.EXPIRED, LeaseStatus.NOTICE_GIVEN);
+            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD, LeaseStatus.NOTICE_GIVEN);
 
     // ------------------------------------------------------------------
     // helpers

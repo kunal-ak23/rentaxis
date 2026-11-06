@@ -220,12 +220,13 @@ class LeaseExpirationJobIT extends AbstractPostgresIT {
     // ------------------------------------------------------------------
 
     /**
-     * The sweep, for both landlords: the contract goes EXPIRED, the unit comes back
-     * on the market, and the lease's trail says who did it — with nothing posted and
-     * no register row touched.
+     * The sweep, for both landlords: a running contract nobody said was ending goes
+     * ON_HOLD (holdover, Nov 2026) — the renter is presumed still in the flat, so
+     * the unit stays occupied — and the lease's trail says who did it, with nothing
+     * posted and no register row touched.
      */
     @Test
-    void aTermThatHasRunOutExpiresAndGivesTheUnitBack() {
+    void aTermThatHasRunOutGoesOnHoldAndKeepsTheUnit() {
         long alphaJournals = journalCount(alpha.tenantId());
         long betaJournals = journalCount(beta.tenantId());
 
@@ -237,13 +238,13 @@ class LeaseExpirationJobIT extends AbstractPostgresIT {
         assertThat(run.tenants()).as("both landlords were visited").isGreaterThanOrEqualTo(2);
         assertThat(run.expired()).as("at least one lease each").isGreaterThanOrEqualTo(2);
         for (UUID leaseId : List.of(alphaLease, betaLease)) {
-            assertThat(statusOf(leaseId)).isEqualTo(LeaseStatus.EXPIRED);
+            assertThat(statusOf(leaseId)).isEqualTo(LeaseStatus.ON_HOLD);
             Unit unit = unitOf(leaseId);
-            assertThat(unit.getStatus()).isEqualTo(UnitStatus.VACANT);
-            assertThat(unit.getCurrentTenantName()).isNull();
-            assertThat(unit.getActualRent()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(unit.getStatus()).as("a holdover keeps the unit").isEqualTo(UnitStatus.OCCUPIED);
+            assertThat(unit.getCurrentTenantName()).isNotNull();
+            assertThat(unit.getActualRent()).isPositive();
             assertThat(eventsOf(leaseId))
-                    .filteredOn(e -> e.getNewState() == LeaseStatus.EXPIRED)
+                    .filteredOn(e -> e.getNewState() == LeaseStatus.ON_HOLD)
                     .singleElement()
                     .satisfies(e -> assertThat(e.getPreviousState()).isEqualTo(LeaseStatus.ACTIVE));
         }
@@ -272,7 +273,7 @@ class LeaseExpirationJobIT extends AbstractPostgresIT {
 
         job.runFor(TODAY);
 
-        assertThat(statusOf(alphaLease)).isEqualTo(LeaseStatus.EXPIRED);
+        assertThat(statusOf(alphaLease)).isEqualTo(LeaseStatus.ON_HOLD);
         assertThat(register(alphaLease)).hasSize(5)
                 .allSatisfy(c -> {
                     assertThat(c.getStatus()).as("still collectable").isEqualTo(ChequeStatus.REGISTERED);
@@ -297,14 +298,14 @@ class LeaseExpirationJobIT extends AbstractPostgresIT {
         int expired = job.runTenant(alpha.tenantId(), TODAY);
 
         assertThat(expired).isEqualTo(1);
-        assertThat(statusOf(alphaLease)).isEqualTo(LeaseStatus.EXPIRED);
+        assertThat(statusOf(alphaLease)).isEqualTo(LeaseStatus.ON_HOLD);
 
         assertThat(statusOf(betaLease)).as("the other landlord's lease is untouched")
                 .isEqualTo(LeaseStatus.ACTIVE);
         assertThat(unitOf(betaLease).getStatus()).isEqualTo(UnitStatus.OCCUPIED);
         assertThat(eventsOf(betaLease))
                 .as("and it has no expiry event")
-                .noneSatisfy(e -> assertThat(e.getNewState()).isEqualTo(LeaseStatus.EXPIRED));
+                .noneSatisfy(e -> assertThat(e.getNewState()).isEqualTo(LeaseStatus.ON_HOLD));
         assertThat(TenantContextHolder.getTenantId()).isNull();
 
         // Leave no residue. There is no per-test truncation here and `runFor` sweeps
@@ -312,7 +313,7 @@ class LeaseExpirationJobIT extends AbstractPostgresIT {
         // past end date would inflate a sibling test's expired() count and make this
         // class order-dependent (review M5).
         job.runTenant(beta.tenantId(), TODAY);
-        assertThat(statusOf(betaLease)).isEqualTo(LeaseStatus.EXPIRED);
+        assertThat(statusOf(betaLease)).isEqualTo(LeaseStatus.ON_HOLD);
     }
 
     /**
@@ -398,8 +399,8 @@ class LeaseExpirationJobIT extends AbstractPostgresIT {
 
         job.evaluateExpiredLeases();
 
-        assertThat(statusOf(alphaLease)).isEqualTo(LeaseStatus.EXPIRED);
-        assertThat(statusOf(betaLease)).isEqualTo(LeaseStatus.EXPIRED);
+        assertThat(statusOf(alphaLease)).isEqualTo(LeaseStatus.ON_HOLD);
+        assertThat(statusOf(betaLease)).isEqualTo(LeaseStatus.ON_HOLD);
 
         Map<String, Object> lock = jdbc.queryForMap(
                 "select locked_at, lock_until from shedlock where name = 'lease-expiration'");
@@ -471,7 +472,7 @@ class LeaseExpirationJobIT extends AbstractPostgresIT {
 
         assertThat(expiredForBoth()).as("nothing of this test's left to expire").isZero();
         assertThat(eventsOf(alphaLease))
-                .filteredOn(e -> e.getNewState() == LeaseStatus.EXPIRED)
-                .as("one expiry event, not two").hasSize(1);
+                .filteredOn(e -> e.getNewState() == LeaseStatus.ON_HOLD)
+                .as("one hold event, not two").hasSize(1);
     }
 }

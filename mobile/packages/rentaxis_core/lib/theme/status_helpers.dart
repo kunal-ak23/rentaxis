@@ -34,6 +34,7 @@ class StatusHelper {
       'PENDING_SIGNATURE' => AppColors.statusPending,
       'ACTIVE' => AppColors.statusActive,
       'NOTICE_GIVEN' => AppColors.warning,
+      'ON_HOLD' => AppColors.warning,
       'TERMINATED' => AppColors.danger,
       'EXPIRED' => AppColors.textMuted,
       'CLOSED' => AppColors.textMuted,

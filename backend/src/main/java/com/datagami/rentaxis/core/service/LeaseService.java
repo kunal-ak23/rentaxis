@@ -529,7 +529,7 @@ public class LeaseService {
     /** Posted statuses that hold a unit for their term (F14-14); RENEWED keeps its term until its end. */
     private List<Lease> holdingLeases(UUID unitId) {
         List<Lease> out = new java.util.ArrayList<>(leaseRepository.findByUnitIdAndStatusIn(unitId, LIVE));
-        out.addAll(leaseRepository.findByUnitIdAndStatusIn(unitId, EnumSet.of(LeaseStatus.RENEWED)));
+        out.addAll(leaseRepository.findByUnitIdAndStatusIn(unitId, EnumSet.of(LeaseStatus.RENEWED, LeaseStatus.ON_HOLD)));
         // P2-4: a lease terminated with a date still to come holds the unit through
         // that date (the renter is serving notice). One with no termination date on
         // record (legacy) is treated as ended.
@@ -541,6 +541,8 @@ public class LeaseService {
 
     /** The last day a lease holds its unit: the termination date when it was cut short. */
     private static LocalDate holdsUntil(Lease l) {
+        // A holdover holds the unit until someone resolves it, whatever its end date said.
+        if (l.getStatus() == LeaseStatus.ON_HOLD) return null;
         return l.getTerminatedOn() != null ? l.getTerminatedOn() : l.getEndDate();
     }
 
@@ -668,6 +670,16 @@ public class LeaseService {
      */
     static java.util.Optional<String> renewalStartsTooEarly(Lease predecessor, LocalDate renewalStart) {
         if (predecessor == null || renewalStart == null) return java.util.Optional.empty();
+        if (predecessor.getStatus() == LeaseStatus.ON_HOLD && predecessor.getEndDate() != null) {
+            // A holdover is one continuous tenancy: a renewal that started later would
+            // leave the held-over days uncharged, an earlier one would charge them twice.
+            LocalDate day = predecessor.getEndDate().plusDays(1);
+            if (renewalStart.equals(day)) return java.util.Optional.empty();
+            java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            return java.util.Optional.of("This lease is on hold since " + day.format(dmy)
+                    + ". Its renewal must start on " + day.format(dmy) + ", the day after the old term ended, so the"
+                    + " held-over months are charged; this one starts on " + renewalStart.format(dmy) + ".");
+        }
         LocalDate until = holdsUntil(predecessor);
         if (until == null || renewalStart.isAfter(until)) return java.util.Optional.empty();
         java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -2186,6 +2198,18 @@ public class LeaseService {
         }
 
         LeaseStatus previousStatus = lease.getStatus();
+        if (goesOnHold(lease)) {
+            // Holdover (client call, Nov 2026): nobody said the tenancy is ending, so
+            // the renter is presumed still in the unit while the landlord chases the
+            // renewal. The unit is kept — releasing it is what let a second renter
+            // be let into an occupied flat — and nothing is recognised until a
+            // renewal starting the day after this end date is posted.
+            lease.setStatus(LeaseStatus.ON_HOLD);
+            Lease saved = leaseRepository.save(lease);
+            recordEvent(saved, previousStatus, LeaseStatus.ON_HOLD,
+                    "Term ended " + lease.getEndDate() + " with no renewal or notice; put on hold until the tenancy is confirmed");
+            return true;
+        }
         lease.setStatus(LeaseStatus.EXPIRED);
 
         // Expiry and termination are the two ways out of a running lease and must
@@ -2202,6 +2226,36 @@ public class LeaseService {
         recordEvent(saved, previousStatus, LeaseStatus.EXPIRED,
                 "Automatically transitioned to EXPIRED by system job (term ended " + lease.getEndDate() + ")");
         return true;
+    }
+
+    /**
+     * Whether a contract whose term just ran out is a holdover rather than an end:
+     * it was running (not serving notice) and nobody marked it as not renewing.
+     */
+    static boolean goesOnHold(Lease lease) {
+        return lease.getStatus() == LeaseStatus.ACTIVE && lease.getNotRenewingAt() == null;
+    }
+
+    /**
+     * A held-over tenancy turned out to have ended: the renter moved out on
+     * {@code movedOutOn}. EXPIRED, unit released — the state expiry would have left
+     * it in. Called by {@code HoldoverService.vacate} after the use-and-occupation
+     * charge, never on its own.
+     */
+    @Transactional
+    public void markHoldoverVacated(UUID leaseId, LocalDate movedOutOn) {
+        Lease lease = lockLeaseForTransition(leaseId);
+        leaseAccessPolicy.requireManageable(lease);
+        if (lease.getStatus() != LeaseStatus.ON_HOLD) {
+            throw new BusinessRuleViolationException("Only a lease on hold can be closed as moved out; this one is "
+                    + lease.getStatus() + ".");
+        }
+        lease.setStatus(LeaseStatus.EXPIRED);
+        lease.clearNotRenewing();
+        releaseUnitIfNoOtherActiveLease(lease);
+        Lease saved = leaseRepository.save(lease);
+        recordEvent(saved, LeaseStatus.ON_HOLD, LeaseStatus.EXPIRED,
+                "Held over after " + lease.getEndDate() + "; renter moved out on " + movedOutOn);
     }
 
     /**

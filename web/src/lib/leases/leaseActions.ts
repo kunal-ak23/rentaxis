@@ -3,7 +3,8 @@ import { hasPermission, type UserRole } from "../rbac";
 
 export type LeaseActionId =
     | "edit" | "post" | "recordPayment" | "renew" | "settlement" | "extend" | "amend" | "addCharge" | "transfer"
-    | "assignment" | "reduce" | "raisePenalty" | "giveNotice" | "terminate" | "writeOff" | "downloadContract" | "ledger" | "delete";
+    | "assignment" | "reduce" | "raisePenalty" | "giveNotice" | "terminate" | "writeOff" | "downloadContract" | "ledger" | "delete"
+    | "holdoverVacate";
 export interface LeaseActionFacts { status: LeaseStatus; posted: boolean; hasContract: boolean; transferredOut: boolean }
 export interface LeasePerms {
     canDraft: boolean; canPost: boolean; canRenew: boolean; canExtend: boolean; canCheques: boolean;
@@ -12,8 +13,8 @@ export interface LeasePerms {
 
 const DRAFTING: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE"];
 const LIVE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN"];
-const RENEWABLE: LeaseStatus[] = ["ACTIVE", "EXPIRED", "NOTICE_GIVEN"];
-const PENALTY_CHARGEABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN", "EXPIRED", "RENEWED"];
+const RENEWABLE: LeaseStatus[] = ["ACTIVE", "ON_HOLD", "EXPIRED", "NOTICE_GIVEN"];
+const PENALTY_CHARGEABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN", "ON_HOLD", "EXPIRED", "RENEWED"];
 const HAS_SETTLEMENT: LeaseStatus[] = ["TERMINATED", "EXPIRED", "RENEWED", "CLOSED"];
 
 /**
@@ -94,6 +95,8 @@ export function availableLeaseActions(f: LeaseActionFacts, p: LeasePerms): Lease
         ledger: f.posted,
         // LeaseService: "Only DRAFT leases can be deleted" (break-it R4).
         delete: f.status === "DRAFT" && p.canDraft,
+        // Holdover: the renter left instead of renewing — a use-and-occupation charge, so finance.
+        holdoverVacate: f.status === "ON_HOLD" && p.canRaisePenalty,
     };
     return MENU_ORDER.filter(id => on[id]);
 }
@@ -101,13 +104,14 @@ export function availableLeaseActions(f: LeaseActionFacts, p: LeasePerms): Lease
 export const PRIMARY_BY_STATUS: Record<LeaseStatus, LeaseActionId[]> = {
     DRAFT: ["edit", "post"], PENDING_SIGNATURE: ["edit", "post"],
     ACTIVE: ["recordPayment", "renew"], NOTICE_GIVEN: ["recordPayment", "renew"],
+    ON_HOLD: ["renew", "holdoverVacate"],
     EXPIRED: ["renew", "settlement"], TERMINATED: ["settlement"], RENEWED: ["settlement"], CLOSED: ["settlement"],
 };
 
 /** Spec §5 order, then the actions that are primary in some other status — every LeaseActionId exactly once. */
 export const MENU_ORDER: LeaseActionId[] = [
     "extend", "amend", "addCharge", "transfer", "assignment", "reduce", "raisePenalty", "giveNotice", "terminate",
-    "writeOff", "downloadContract", "ledger", "post", "renew", "settlement", "recordPayment", "edit", "delete",
+    "writeOff", "downloadContract", "ledger", "post", "renew", "holdoverVacate", "settlement", "recordPayment", "edit", "delete",
 ];
 
 export function splitLeaseActions(available: LeaseActionId[], status: LeaseStatus): { primary: LeaseActionId[]; menu: LeaseActionId[] } {

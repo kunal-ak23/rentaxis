@@ -169,6 +169,7 @@ class _ContractCardState extends ConsumerState<_ContractCard> {
       'RENEWED' => ar ? 'مجدد' : 'Renewed',
       'TERMINATED' => ar ? 'منتهي' : 'Terminated',
       'EXPIRED' => ar ? 'منتهي المدة' : 'Expired',
+      'ON_HOLD' => ar ? 'بانتظار التجديد' : 'Renewal pending',
       'CLOSED' => ar ? 'مغلق' : 'Closed',
       _ => ar ? 'مسودة' : 'Draft',
     };

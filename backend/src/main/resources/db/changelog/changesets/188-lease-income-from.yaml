@@ -1,0 +1,16 @@
+databaseChangeLog:
+  # Back-dated contracts (client call, Nov 2026): a contract posted today whose term
+  # started months ago recognises the months before income_from_date in one
+  # catch-up entry, dated on the contract date, instead of in months whose books
+  # are already closed. Null = every month in its own month (the old behaviour,
+  # and every contract that was not back-dated).
+  - changeSet:
+      id: 188-lease-income-from
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: income_from_date
+                  type: date

@@ -61,7 +61,7 @@ public class TicketChargesService {
     public record RechargeRequest(@com.datagami.rentaxis.api.validation.Money(positive = true) BigDecimal amount, Boolean vatable, String description) { }
 
     private static final EnumSet<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN,
-            LeaseStatus.EXPIRED, LeaseStatus.RENEWED);
+            LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD, LeaseStatus.RENEWED);
 
     private final MaintenanceTicketRepository tickets;
     private final LeaseRepository leases;

@@ -85,6 +85,8 @@ public class LeaseController {
     private final com.datagami.rentaxis.core.service.lease.LeaseChainService leaseChainService;
     private final com.datagami.rentaxis.core.service.ledger.PropertyAccountService propertyAccountService;
     private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
+    private final com.datagami.rentaxis.core.service.lease.BackdatedIncome backdatedIncome;
+    private final com.datagami.rentaxis.core.service.lease.HoldoverService holdoverService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -321,7 +323,10 @@ public class LeaseController {
     // --- Posting -----------------------------------------------------------
 
     /** Break-it R2 F2: the optional body of a post — the lease version the dialog loaded. */
-    public record PostLeaseRequest(Long version) {
+    public record PostLeaseRequest(Long version, java.time.LocalDate incomeFrom) {
+        public PostLeaseRequest(Long version) {
+            this(version, null);
+        }
     }
     //
     // PUT /{id}/activate is gone. A lease used to become ACTIVE by a status change
@@ -349,7 +354,44 @@ public class LeaseController {
         Long expected = body != null && body.version() != null ? body.version() : LeaseService.versionFromIfMatch(ifMatch);
         return ResponseEntity.ok(dryRun
                 ? leasePostingService.dryRun(id)
-                : guardedLeaseWrite(expected, () -> leasePostingService.post(id, expected)));
+                : guardedLeaseWrite(expected, () -> leasePostingService.post(id, expected,
+                        body != null ? body.incomeFrom() : null)));
+    }
+
+    /**
+     * Back-dated contracts: whether this contract started before the month of its
+     * contract date, the months its income may start from, and what the catch-up on
+     * the posting date would fold for {@code incomeFrom} (default: the contract
+     * date's month).
+     */
+    @GetMapping("/{id}/income-from")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.lease.BackdatedIncome.Options> incomeFromOptions(
+            @PathVariable UUID id,
+            @RequestParam(name = "incomeFrom", required = false)
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
+            java.time.LocalDate incomeFrom) {
+        return ResponseEntity.ok(backdatedIncome.options(id, incomeFrom));
+    }
+
+    /** A lease on hold whose renter left: the use-and-occupation charge a move-out on {@code movedOutOn} would raise. */
+    @GetMapping("/{id}/holdover/vacate-preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.lease.HoldoverService.VacatePreview> holdoverVacatePreview(
+            @PathVariable UUID id,
+            @RequestParam(name = "movedOutOn")
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
+            java.time.LocalDate movedOutOn) {
+        return ResponseEntity.ok(holdoverService.previewVacate(id, movedOutOn));
+    }
+
+    /** Charges the held-over days as use and occupation (dated today), then EXPIRED with the unit released. */
+    @PostMapping("/{id}/holdover/vacate")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.lease.HoldoverService.VacateResult> holdoverVacate(
+            @PathVariable UUID id,
+            @RequestBody com.datagami.rentaxis.core.service.lease.HoldoverService.VacateRequest body) {
+        return ResponseEntity.ok(holdoverService.vacate(id, body));
     }
 
     /**

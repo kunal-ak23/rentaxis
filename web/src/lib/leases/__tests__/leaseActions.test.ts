@@ -99,7 +99,7 @@ describe("lease actions", () => {
 
     it("never lists an action twice, and the menu order names every action once", () => {
         expect(new Set(MENU_ORDER).size).toBe(MENU_ORDER.length);
-        expect(MENU_ORDER).toHaveLength(18);
+        expect(MENU_ORDER).toHaveLength(19);
         for (const { role, f } of matrix()) {
             const { primary, menu } = splitLeaseActions(availableLeaseActions(f, leasePermsFor(role)), f.status);
             expect(new Set([...primary, ...menu]).size).toBe(primary.length + menu.length);
@@ -111,6 +111,7 @@ describe("lease actions", () => {
         ["ACTIVE", ["recordPayment", "renew"]],
         ["NOTICE_GIVEN", ["recordPayment", "renew"]],
         ["EXPIRED", ["renew", "settlement"]],
+        ["ON_HOLD", ["renew", "holdoverVacate"]],
         ["TERMINATED", ["settlement"]],
     ] as [LeaseStatus, LeaseActionId[]][])("a tenant admin's %s contract leads with %j", (status, want) => {
         const f = { status, posted: status !== "DRAFT", hasContract: true, transferredOut: false };
@@ -122,6 +123,15 @@ describe("lease actions", () => {
         const { primary, menu } = splitLeaseActions(availableLeaseActions(f, leasePermsFor("PROPERTY_MANAGER")), "ACTIVE");
         expect(primary).toContain("renew");
         expect(menu).toEqual(expect.arrayContaining(["giveNotice", "terminate", "transfer", "reduce", "ledger"]));
+    });
+
+    it("offers no settlement or notice on a lease on hold, and only staff who can charge may record the move-out", () => {
+        const f = { status: "ON_HOLD" as LeaseStatus, posted: true, hasContract: true, transferredOut: false };
+        const admin = availableLeaseActions(f, leasePermsFor("TENANT_ADMIN"));
+        expect(admin).toEqual(expect.arrayContaining(["renew", "holdoverVacate", "raisePenalty"]));
+        expect(admin).not.toContain("settlement");
+        expect(admin).not.toContain("giveNotice");
+        expect(availableLeaseActions(f, leasePermsFor("RENTER"))).not.toContain("holdoverVacate");
     });
 
     it("puts Delete in the menu on a draft, never as a primary button", () => {

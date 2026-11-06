@@ -10,6 +10,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
     ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, Camera, CheckCircle, Download,
+    DoorOpen,
     ArrowRightLeft, CircleSlash, FileText, Gavel, Loader2, Mail, MinusCircle, Pencil, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, UserCog, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,7 @@ import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
 import RaisePenaltyDialog, { PENALTY_REASONS } from "@/components/penalties/RaisePenaltyDialog";
 import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
+import HoldoverVacateDialog from "@/components/leases/HoldoverVacateDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import VatScheduleTab from "@/components/leases/VatScheduleTab";
 import { defaultInstallmentsFor, fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
@@ -107,6 +109,7 @@ const STATUS_COLORS: Record<string, string> = {
     PENDING_SIGNATURE: "bg-warning/10 text-warning border-warning/20",
     TERMINATED: "bg-error/10 text-error border-error/20",
     EXPIRED: "bg-warning/10 text-warning border-warning/20",
+    ON_HOLD: "bg-warning/10 text-warning border-warning/20",
     CLOSED: "bg-input text-muted border-border",
     NOTICE_GIVEN: "bg-warning/10 text-warning border-warning/20",
     RENEWED: "bg-info/10 text-info border-info/20",
@@ -223,6 +226,7 @@ export default function LeaseDetailPage() {
     const [addenda, setAddenda] = useState<LeaseAddendum[]>([]);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [noticeOpen, setNoticeOpen] = useState(false);
+    const [vacateOpen, setVacateOpen] = useState(false);
     const [noticeError, setNoticeError] = useState<string | null>(null);
     const [penaltyOpen, setPenaltyOpen] = useState(false);
     const [penaltyKey, setPenaltyKey] = useState(0);
@@ -607,6 +611,7 @@ export default function LeaseDetailPage() {
         },
         ledger: { label: t("ledger"), testId: "lease-ledger", icon: BookOpen, href: `/dashboard/finance/tenant-ledger?renterId=${lease.renterId}&leaseId=${lease.id}` },
         delete: { label: t("deleteDraft"), testId: "lease-delete", icon: Trash2, onSelect: () => setDeleteOpen(true), destructive: true },
+        holdoverVacate: { label: t("holdover.vacateAction"), testId: "lease-holdover-vacate", icon: DoorOpen, onSelect: () => setVacateOpen(true) },
     };
 
     return (
@@ -1375,6 +1380,17 @@ export default function LeaseDetailPage() {
                         : t("chargeRaisedBanner", { type: tChequesReason(`reason.${p.reason}`) }));
                     setPenaltyKey(k => k + 1);
                     selectTab("payments", "penalties");
+                }}
+            />
+
+            <HoldoverVacateDialog
+                open={vacateOpen}
+                lease={lease}
+                today={new Date().toLocaleDateString("en-CA")}
+                onClose={() => setVacateOpen(false)}
+                onDone={async () => {
+                    setVacateOpen(false);
+                    await loadLease();
                 }}
             />
 

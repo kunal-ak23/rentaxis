@@ -36,7 +36,7 @@ public class RenewalMarkService {
 
     /** The contracts the mark makes sense on: still running or held over, not yet continued or ended. */
     private static final Set<LeaseStatus> MARKABLE =
-            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED);
+            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD);
     static final int MAX_NOTE = 500;
 
     private final LeaseRepository leaseRepository;

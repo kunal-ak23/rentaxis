@@ -12,7 +12,7 @@ export const ENDED: LeaseStatus[] = ["TERMINATED", "EXPIRED", "RENEWED", "CLOSED
 export const TO_POST: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE"];
 /** "Settlement due": a finalised settlement moves a contract to CLOSED; a renewed one carries on in its successor. */
 export const SETTLEMENT_DUE: LeaseStatus[] = ["TERMINATED", "EXPIRED"];
-const ALL_STATUSES: LeaseStatus[] = [...TO_POST, "ACTIVE", "NOTICE_GIVEN", ...ENDED];
+const ALL_STATUSES: LeaseStatus[] = [...TO_POST, "ACTIVE", "NOTICE_GIVEN", "ON_HOLD", ...ENDED];
 
 export interface ContractListState {
     view: ContractView;

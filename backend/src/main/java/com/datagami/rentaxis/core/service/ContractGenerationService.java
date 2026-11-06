@@ -452,7 +452,7 @@ public class ContractGenerationService {
         }
         return switch (status) {
             case DRAFT, PENDING_SIGNATURE -> false;
-            case ACTIVE, NOTICE_GIVEN, RENEWED, EXPIRED -> true;
+            case ACTIVE, NOTICE_GIVEN, RENEWED, ON_HOLD, EXPIRED -> true;
             case TERMINATED, CLOSED -> lease.getPostedAt() != null || lease.getRenterAcceptedAt() != null;
         };
     }

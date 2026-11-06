@@ -80,6 +80,7 @@ export type LeaseStatus =
   | "NOTICE_GIVEN"
   | "TERMINATED"
   | "RENEWED"
+  | "ON_HOLD"
   | "EXPIRED"
   | "CLOSED";
 
@@ -1235,6 +1236,35 @@ export type TransferJournals = {
   depositCarried: number;
 };
 
+/**
+ * BackdatedIncome.Options — a contract that started before the month of its
+ * contract date: the months its income may start from (yyyy-MM-01) and what the
+ * catch-up on the posting date folds for `incomeFrom`.
+ */
+export type IncomeFromOptions = {
+  backdated: boolean;
+  earliest: string | null;
+  latest: string | null;
+  defaultFrom: string | null;
+  incomeFrom: string | null;
+  catchUpOn: string | null;
+  foldedMonths: number;
+  foldedAmount: number;
+  monthsNamed: string[];
+};
+
+/** HoldoverService.VacatePreview — the use-and-occupation charge for a renter who left during a hold. */
+export type HoldoverVacatePreview = {
+  holdFrom: string;
+  movedOutOn: string;
+  days: number;
+  dayRate: number;
+  months: { month: string; days: number; amount: number }[];
+  amount: number;
+};
+
+export type HoldoverVacateResult = { leaseId: string; amount: number; chargeId: string | null };
+
 /** PostLeaseDryRunResponse — every validation a real post would run, nothing written. */
 export type PostLeaseDryRunResponse = {
   ok: boolean;
@@ -1611,8 +1641,17 @@ export const leaseApi = {
   setRentFreePeriods: (id: string, periods: RentFreePeriod[], version?: number | null) =>
     send<LeaseDetail>("PUT", `/leases/${id}/rent-free-periods`, periods, ifMatch(version)),
   /** Break-it R2 F2: `version` is the lease version the Post dialog loaded; a stale one is refused (409 lease.changed). */
-  post: (id: string, version?: number | null) =>
-    send<PostLeaseResponse>("POST", `/leases/${id}/post`, version == null ? undefined : { version }),
+  post: (id: string, version?: number | null, incomeFrom?: string | null) =>
+    send<PostLeaseResponse>("POST", `/leases/${id}/post`,
+      incomeFrom ? { version: version ?? null, incomeFrom } : version == null ? undefined : { version }),
+  /** Back-dated contracts: the months income may start from and what the catch-up would fold. */
+  incomeFrom: (id: string, incomeFrom?: string | null) =>
+    get<IncomeFromOptions>(`/leases/${id}/income-from${qs({ incomeFrom: incomeFrom ?? undefined })}`),
+  /** A lease on hold whose renter left: the use-and-occupation charge for a move-out date. */
+  holdoverVacatePreview: (id: string, movedOutOn: string) =>
+    get<HoldoverVacatePreview>(`/leases/${id}/holdover/vacate-preview${qs({ movedOutOn })}`),
+  holdoverVacate: (id: string, movedOutOn: string, expectedAmount: number) =>
+    send<HoldoverVacateResult>("POST", `/leases/${id}/holdover/vacate`, { movedOutOn, expectedAmount }),
   /** `?dryRun=true` — every validation a post would run, nothing written. */
   dryRunPost: (id: string) => send<PostLeaseDryRunResponse>("POST", `/leases/${id}/post${qs({ dryRun: true })}`),
   amendLines: (id: string, body: AmendLeaseLinesInput) => send<PostLeaseResponse>("POST", `/leases/${id}/amend-lines`, body),
