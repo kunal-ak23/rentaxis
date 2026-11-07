@@ -13,8 +13,12 @@ export interface WorkspaceApi {
     tabId: string | null;
     /** Open `href` (locale-less) as a tab by the opening rules, or navigate in place when off. */
     open: (href: string, how: OpenHow) => void;
-    /** The record a screen shows ("Contract C-12 · Unit 304"); null when it unmounts. */
-    setRecordTitle: (title: string | null) => void;
+    /** The mounted page's key; a title or an unsaved-work hold belongs to the page that set it. */
+    pageKey: string;
+    /** The record a page shows ("Contract C-12 · Unit 304"); null when it unmounts. */
+    setRecordTitle: (pageKey: string, title: string | null) => void;
+    /** The page holds unsaved work until the returned release is called (spec §5). */
+    holdUnsaved: () => () => void;
 }
 
 export const WorkspaceContext = createContext<WorkspaceApi | null>(null);
@@ -34,9 +38,10 @@ export function useTabId(): string | null {
 export function useTabTitle(title: string | null | undefined) {
     const api = useContext(WorkspaceContext);
     const set = api?.setRecordTitle;
+    const key = api?.pageKey;
     useEffect(() => {
-        if (!set || !title) return;
-        set(title);
-        return () => set(null);
-    }, [set, title]);
+        if (!set || !key || !title) return;
+        set(key, title);
+        return () => set(key, null);
+    }, [set, key, title]);
 }

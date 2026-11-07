@@ -1076,7 +1076,8 @@ function LeasesList() {
                                             <tr
                                                 key={lease.id}
                                                 data-testid={`lease-row-${lease.id}`}
-                                                onClick={() => openContract(lease.id)}
+                                                onClick={(e) => (e.ctrlKey || e.metaKey ? openInNewTab(`/${locale}/dashboard/leases/${lease.id}`) : openContract(lease.id))}
+                                                onAuxClick={(e) => { if (e.button === 1) openInNewTab(`/${locale}/dashboard/leases/${lease.id}`); }}
                                                 className="border-b border-border hover:bg-input/30 transition-colors cursor-pointer"
                                             >
                                                 {canPostLeases && (

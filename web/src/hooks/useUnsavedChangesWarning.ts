@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useContext, useEffect } from "react";
+import { WorkspaceContext } from "@/components/workspace/WorkspaceContext";
 
 /**
  * Ask the browser to confirm before leaving while work is unsaved.
@@ -14,8 +15,16 @@ import { useEffect } from "react";
  * Modern browsers ignore a custom message and show their own generic prompt;
  * `preventDefault()` plus a non-empty `returnValue` is what triggers it across
  * the current set.
+ *
+ * With workspace tabs on, the same work also makes switching away from or
+ * closing the tab ask first: a tab switch unmounts the page, as a reload would.
  */
 export function useUnsavedChangesWarning(active: boolean): void {
+    const hold = useContext(WorkspaceContext)?.holdUnsaved;
+    useEffect(() => {
+        if (!active || !hold) return;
+        return hold();
+    }, [active, hold]);
     useEffect(() => {
         if (!active) return;
         const handler = (e: BeforeUnloadEvent) => {

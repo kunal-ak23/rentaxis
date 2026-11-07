@@ -19,6 +19,10 @@ import WorkspaceStrip from "./WorkspaceStrip";
 const newId = () =>
     typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10);
 
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+const isEditable = (t: EventTarget | null) =>
+    t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+
 const stripLocale = (pathname: string) => pathname.replace(/^\/(en|ar)(?=\/|$)/, "") || "/";
 
 /**
@@ -63,13 +67,20 @@ export default function WorkspaceHost({
     const [loadedFor, setLoadedFor] = useState<string | null>(null);
     const [renderKey, setRenderKey] = useState<string>("page");
     const [notice, setNotice] = useState<string | null>(null);
-    const [recordTitle, setRecordTitleState] = useState<string | null>(null);
+    // The record title and the page that set it: a page leaving must not name the next tab.
+    const [record, setRecord] = useState<{ key: string; title: string } | null>(null);
     const scope = `${userId}|${orgId}`;
     const loaded = enabled && loadedFor === scope;
+    const pageKey = loaded ? renderKey : "page";
+    const recordTitle = record && record.key === pageKey ? record.title : null;
+    // Pages holding unsaved work (useUnsavedChangesWarning): leaving the tab asks first.
+    const unsaved = useRef(0);
     // The href the host itself navigated to: its URL change is already in `ws`.
     const expected = useRef<string | null>(null);
     const wsRef = useRef(ws);
     wsRef.current = ws;
+    const hrefRef = useRef(href);
+    hrefRef.current = href;
     const scrolls = useRef(new Map<string, number>());
     const scrollRef = useRef<HTMLElement | null>(null);
 
@@ -79,6 +90,28 @@ export default function WorkspaceHost({
         if (replace) router.replace(url);
         else router.push(url);
     }, [locale, router]);
+
+    // Show `target` as tab `id`: navigate, or remount in place when the URL is already
+    // there (two tabs on one href), so no stale `expected` swallows a later URL change.
+    const show = useCallback((target: string, id: string | null) => {
+        if (target !== hrefRef.current) go(target);
+        else setRenderKey(id ?? "page");
+    }, [go]);
+
+    const mayLeave = useCallback(
+        () => unsaved.current === 0 || window.confirm(t("unsaved")),
+        [t],
+    );
+
+    const holdUnsaved = useCallback(() => {
+        unsaved.current += 1;
+        let held = true;
+        return () => { if (held) { held = false; unsaved.current -= 1; } };
+    }, []);
+
+    const setRecordTitle = useCallback((key: string, title: string | null) => {
+        setRecord(prev => (title ? { key, title } : prev?.key === key ? null : prev));
+    }, []);
 
     // Load (or reload, on a user or organisation change) and apply the fresh-load rules.
     useEffect(() => {
@@ -144,15 +177,16 @@ export default function WorkspaceHost({
     const active = ws.tabs.find(t => t.id === ws.activeId) ?? null;
 
     // A tab with no stored title takes its route's nav label; a record screen overrides it.
+    // Only once the active tab's page is the one mounted (a switch sets activeId first).
     useEffect(() => {
-        if (!loaded || !active) return;
+        if (!loaded || !active || renderKey !== active.id) return;
         if (recordTitle) {
             setWs(w => setTitle(w, active.id, recordTitle));
         } else if (active.title === null || typeof active.title === "object") {
             const l = screenLabel(active.href, rail);
             if (l) setWs(w => setTitle(w, active.id, l));
         }
-    }, [loaded, active, recordTitle, rail]);
+    }, [loaded, active, renderKey, recordTitle, rail]);
 
     // Phase 0, for everyone: "{title} — Miftah" in the browser tab.
     const fallback = screenLabel(href, rail);
@@ -164,22 +198,25 @@ export default function WorkspaceHost({
     const switchTo = useCallback((id: string) => {
         const w = wsRef.current;
         const tab = w.tabs.find(x => x.id === id);
-        if (!tab || id === w.activeId) return;
+        if (!tab || id === w.activeId || !mayLeave()) return;
         storeScroll(w.activeId);
         setWs(activate(w, id, Date.now()));
-        go(tab.href);
-         
-    }, [go]);
+        show(tab.href, id);
+
+    }, [show, mayLeave]);
 
     const close = useCallback((id: string) => {
         const w = wsRef.current;
-        const next = closeTab(w, id, Date.now());
+        if (w.activeId === id && !mayLeave()) return;
+        let next = closeTab(w, id, Date.now());
+        // The last tab closed: the home page it lands on becomes a tab, so the strip is never empty.
+        if (next.tabs.length === 0) next = openTab(next, "/dashboard", "new", newId(), Date.now()).ws;
         scrolls.current.delete(id);
         setWs(next);
         if (w.activeId !== id) return;
         const now = next.tabs.find(x => x.id === next.activeId);
-        go(now ? now.href : "/dashboard");
-    }, [go]);
+        show(now ? now.href : "/dashboard", next.activeId);
+    }, [show, mayLeave]);
 
     const open = useCallback((target: string, how: OpenHow) => {
         const w = wsRef.current;
@@ -188,24 +225,31 @@ export default function WorkspaceHost({
             setNotice(t("full", { max: MAX_TABS }));
             return;
         }
+        const dest = r.tab && r.outcome === "focused" ? r.tab.href : target;
+        if ((r.ws.activeId !== w.activeId || dest !== hrefRef.current) && !mayLeave()) return;
         storeScroll(w.activeId);
         setWs(r.ws);
-        const dest = r.tab && r.outcome === "focused" ? r.tab.href : target;
-        if (dest !== href) go(dest);
-        else setRenderKey(r.ws.activeId ?? "page");
-         
-    }, [go, href, t]);
+        show(dest, r.ws.activeId);
+
+    }, [show, mayLeave, t]);
 
     const reopen = useCallback(() => {
         const w = wsRef.current;
         const next = reopenClosed(w, Date.now());
-        if (next === w) return;
+        if (next === w || !mayLeave()) return;
         storeScroll(w.activeId);
         setWs(next);
         const tab = next.tabs.find(x => x.id === next.activeId);
-        if (tab) go(tab.href);
-         
-    }, [go]);
+        if (tab) show(tab.href, tab.id);
+
+    }, [show, mayLeave]);
+
+    const closeRest = useCallback(() => {
+        const w = wsRef.current;
+        if (!w.activeId) return;
+        for (const tab of w.tabs) if (tab.id !== w.activeId) scrolls.current.delete(tab.id);
+        setWs(closeOthers(w, w.activeId));
+    }, []);
 
     useEffect(() => {
         if (!notice) return;
@@ -219,6 +263,8 @@ export default function WorkspaceHost({
         const onKey = (e: KeyboardEvent) => {
             const k = workspaceKey(e);
             if (!k) return;
+            // On a Mac, Option types characters (Option+3 is £): leave typing alone.
+            if (IS_MAC && isEditable(e.target)) return;
             const w = wsRef.current;
             e.preventDefault();
             if (k.action === "goto") { const tab = w.tabs[k.index]; if (tab) switchTo(tab.id); }
@@ -235,8 +281,10 @@ export default function WorkspaceHost({
         enabled: loaded,
         tabId: loaded ? ws.activeId : null,
         open: loaded ? open : (target: string) => router.push(`/${locale}${target}`),
-        setRecordTitle: setRecordTitleState,
-    }), [loaded, ws.activeId, open, router, locale]);
+        pageKey,
+        setRecordTitle,
+        holdUnsaved,
+    }), [loaded, ws.activeId, open, router, locale, pageKey, setRecordTitle, holdUnsaved]);
 
     return (
         <WorkspaceContext.Provider value={api}>
@@ -248,11 +296,11 @@ export default function WorkspaceHost({
                     onClose={close}
                     onNew={() => open("/dashboard", "new")}
                     onReopen={reopen}
-                    onCloseOthers={() => { if (ws.activeId) setWs(w => closeOthers(w, w.activeId!)); }}
+                    onCloseOthers={closeRest}
                 />
             )}
             <main ref={scrollRef} className={mainClassName} {...(loaded ? { role: "tabpanel", id: "workspace-panel" } : {})}>
-                <Fragment key={loaded ? renderKey : "page"}>{children}</Fragment>
+                <Fragment key={pageKey}>{children}</Fragment>
             </main>
         </WorkspaceContext.Provider>
     );

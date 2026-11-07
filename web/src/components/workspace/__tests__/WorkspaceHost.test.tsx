@@ -15,6 +15,7 @@ vi.mock("next/navigation", () => ({
 import WorkspaceHost from "../WorkspaceHost";
 import { useTabTitle, useWorkspace } from "../WorkspaceContext";
 import { sessionKey } from "@/lib/workspace/persist";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 
 let mounts = 0;
 function Page({ title }: { title?: string }) {
@@ -29,11 +30,12 @@ function Page({ title }: { title?: string }) {
     );
 }
 
-function host(enabled: boolean, title?: string) {
+function host(enabled: boolean, title?: string, extra?: React.ReactNode) {
     return (
         <NextIntlClientProvider locale="en" messages={en}>
             <WorkspaceHost enabled={enabled} userId="u1" orgId="o1" role="TENANT_ADMIN" rail={[]} mainClassName="m">
                 <Page title={title} />
+                {extra}
             </WorkspaceHost>
         </NextIntlClientProvider>
     );
@@ -75,6 +77,54 @@ describe("WorkspaceHost", () => {
 
         const stored = JSON.parse(sessionStorage.getItem(sessionKey("u1", "o1"))!);
         expect(stored.tabs.map((t: { href: string }) => t.href)).toEqual(["/dashboard/leases", "/dashboard/leases/L1"]);
+    });
+
+    it("does not give the record title of the page being left to the tab switched to", () => {
+        const { rerender } = render(host(true));
+        fireEvent.click(screen.getByText("open L1"));
+        nav.pathname = "/en/dashboard/leases/L1";
+        rerender(host(true, "C-1"));
+        fireEvent.click(screen.getAllByTestId("workspace-tab")[0]);
+        rerender(host(true, "C-1"));
+        nav.pathname = "/en/dashboard/leases";
+        rerender(host(true));
+        const tabs = screen.getAllByTestId("workspace-tab");
+        expect(tabs[0]).not.toHaveTextContent("C-1");
+        expect(tabs[1]).toHaveTextContent("C-1");
+    });
+
+    it("asks before leaving a tab with unsaved work, and stays when the user declines", () => {
+        function Dirty() {
+            useUnsavedChangesWarning(true);
+            return null;
+        }
+        const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+        const { rerender } = render(host(true));
+        fireEvent.click(screen.getByText("open L1"));
+        nav.pathname = "/en/dashboard/leases/L1";
+        rerender(host(true, "C-1", <Dirty />));
+        nav.push.mockClear();
+
+        fireEvent.click(screen.getAllByTestId("workspace-tab")[0]);
+        expect(confirm).toHaveBeenCalled();
+        expect(nav.push).not.toHaveBeenCalled();
+        expect(screen.getAllByTestId("workspace-tab")[1]).toHaveAttribute("aria-selected", "true");
+
+        act(() => { fireEvent.keyDown(window, { code: "KeyW", altKey: true }); });
+        expect(screen.getAllByTestId("workspace-tab")).toHaveLength(2);
+
+        confirm.mockReturnValue(true);
+        fireEvent.click(screen.getAllByTestId("workspace-tab")[0]);
+        expect(nav.push).toHaveBeenLastCalledWith("/en/dashboard/leases");
+        confirm.mockRestore();
+    });
+
+    it("keeps a tab for the home page when the last tab is closed", () => {
+        render(host(true));
+        fireEvent.click(screen.getByTestId("workspace-tab-close"));
+        const tabs = screen.getAllByTestId("workspace-tab");
+        expect(tabs).toHaveLength(1);
+        expect(nav.push).toHaveBeenLastCalledWith("/en/dashboard");
     });
 
     it("comes back after a reload with every tab, and closes a tab with Alt+W", () => {

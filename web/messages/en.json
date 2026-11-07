@@ -6158,6 +6158,7 @@
     "shortcuts": "Keyboard shortcuts",
     "full": "{max} tabs are open. Close one to open another.",
     "untitled": "Screen",
+    "unsaved": "This tab has unsaved changes. Leave it and lose them?",
     "keyGoto": "Go to tab 1–8",
     "keyLast": "Go to the last tab",
     "keyNextPrev": "Next / previous tab",
