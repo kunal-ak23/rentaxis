@@ -191,8 +191,12 @@ public final class BankRecDTOs {
      * #441 r6: a delete the LINE_ORDER check offers on {@code day}: deleting each of {@code imports},
      * on the word of the statement {@code proofImportId}. The page's own button sends that id with
      * the delete; the server re-runs the check before removing anything with match history.
+     * {@code copies} (sim r26 S26-02/03): the step removes only the lines that statement shows as
+     * copies, from every import holding them; the import named and its other lines stay. Otherwise
+     * (delete the other imports holding the day) each import named is deleted.
      */
-    public record DeleteOffer(LocalDate day, UUID proofImportId, String proofFileName, List<ImportRef> imports) { }
+    public record DeleteOffer(LocalDate day, UUID proofImportId, String proofFileName, List<ImportRef> imports,
+                              boolean copies) { }
 
     public record ImportRef(UUID id, String fileName) { }
 
