@@ -2505,6 +2505,10 @@
       "title": "Back-dated contract",
       "help": "This contract started before the month of its contract date. Months already passed can be recognised in one entry instead of in their own (closed) months.",
       "label": "Recognise income from",
+      "oneEntry": "One entry this month: earlier months are recognised together in {month}, then normal monthly rent",
+      "spread": "Spread month by month: each month is recognised in its own month",
+      "spreadClosed": "Spreading is not possible: the earlier months are in closed books.",
+      "spreadPartly": "Months before {month} are in closed books and are recognised in one entry.",
       "fold": "{months, plural, one {# month} other {# months}} before this ({amount}) will be recognised in one entry on {date}.",
       "noFold": "Every month is recognised in its own month."
     },

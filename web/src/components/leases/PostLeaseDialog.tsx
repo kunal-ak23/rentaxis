@@ -194,6 +194,7 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
                         {income?.backdated && income.earliest && income.latest && (
                             <IncomeFromSection
                                 options={income}
+                                startDate={lease.startDate!}
                                 value={incomeFrom}
                                 onChange={setIncomeFrom}
                             />
@@ -238,44 +239,46 @@ export function isBackdated(lease: Pick<LeaseDetail, "startDate" | "contractDate
     return lease.startDate < `${lease.contractDate.slice(0, 7)}-01`;
 }
 
-/** Every first-of-month from `from` to `to` inclusive (yyyy-MM-01). */
-export function monthsBetween(from: string, to: string): string[] {
-    const out: string[] = [];
-    let [y, m] = [Number(from.slice(0, 4)), Number(from.slice(5, 7))];
-    const end = Number(to.slice(0, 4)) * 12 + Number(to.slice(5, 7));
-    while (y * 12 + m <= end && out.length < 600) {
-        out.push(`${y}-${String(m).padStart(2, "0")}-01`);
-        m += 1;
-        if (m > 12) { m = 1; y += 1; }
-    }
-    return out;
-}
-
-function IncomeFromSection({ options, value, onChange }: {
+function IncomeFromSection({ options, startDate, value, onChange }: {
     options: IncomeFromOptions;
+    startDate: string;
     value: string | null;
     onChange: (v: string) => void;
 }) {
     const t = useTranslations("Leasing");
-    const months = monthsBetween(options.earliest!, options.latest!);
     const label = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+    // Two choices (Kunal, 7 Nov 2026): one entry this month (the default), or each
+    // month in its own month — as far back as the books are open. "Spread" asks
+    // for the earliest open month; anything before it still folds.
+    const oneEntry = options.defaultFrom!;
+    const spreadFrom = options.earliest!;
+    const canSpread = spreadFrom < oneEntry;
+    const current = value ?? oneEntry;
+    const choice = (id: "one" | "spread", month: string, text: string, disabled = false) => (
+        <label className={`flex items-center gap-2 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
+            <input
+                type="radio"
+                name="post-income-from"
+                data-testid={`post-income-from-${id}`}
+                checked={current === month}
+                disabled={disabled}
+                onChange={() => onChange(month)}
+            />
+            <span>{text}</span>
+        </label>
+    );
     return (
         <div data-testid="post-income-from" className="space-y-1.5 rounded-xl border border-warning/40 bg-warning/5 px-3 py-2.5">
             <p className="font-semibold">{t("incomeFrom.title")}</p>
             <p className="text-muted">{t("incomeFrom.help")}</p>
-            <label className="flex items-center gap-2">
-                <span className="text-muted">{t("incomeFrom.label")}</span>
-                <select
-                    data-testid="post-income-from-select"
-                    className="rounded-lg border border-border bg-input px-2 py-1"
-                    value={value ?? options.defaultFrom ?? ""}
-                    onChange={e => onChange(e.target.value)}
-                >
-                    {months.map(m => (
-                        <option key={m} value={m}>{label(m)}</option>
-                    ))}
-                </select>
-            </label>
+            <div role="radiogroup" aria-label={t("incomeFrom.label")} className="space-y-1">
+                {choice("one", oneEntry, t("incomeFrom.oneEntry", { month: label(oneEntry) }))}
+                {choice("spread", canSpread ? spreadFrom : "", t("incomeFrom.spread"), !canSpread)}
+            </div>
+            {!canSpread && <p className="text-muted">{t("incomeFrom.spreadClosed")}</p>}
+            {canSpread && spreadFrom > `${startDate.slice(0, 7)}-01` && (
+                <p className="text-muted">{t("incomeFrom.spreadPartly", { month: label(spreadFrom) })}</p>
+            )}
             {options.foldedMonths > 0 ? (
                 <p data-testid="post-income-from-fold">
                     {t("incomeFrom.fold", {
