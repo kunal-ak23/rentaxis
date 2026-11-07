@@ -209,6 +209,9 @@ body {
 .thinscroll::-webkit-scrollbar       { width: 8px; height: 8px; }
 .thinscroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
 .thinscroll::-webkit-scrollbar-track { background: transparent; }
+/* The workspace tab strip scrolls sideways without a visible bar. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
 /* ── Typography scale ─────────────────────────────────────────────── */
 h1 { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; color: var(--foreground); }

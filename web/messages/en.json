@@ -2516,7 +2516,7 @@
       "vacateAction": "Tenant moved out",
       "vacateTitle": "Tenant moved out during the hold",
       "vacateConfirm": "Charge and close",
-      "vacateHelp": "The term ended on {date}. The days from then to the move-out date are charged at the old rent as use and occupation, dated today. The lease then expires and the unit is released.",
+      "vacateHelp": "The term ended on {date}. The days from then to the move-out date are charged at the old rent as use and occupation, dated today. The contract then expires and the unit is released.",
       "movedOutOn": "Moved out on",
       "days": "{days} days at {rate} a day",
       "monthDays": "{days} days",
@@ -6146,5 +6146,23 @@
     "security3": "Rotate keys when staff who knew them leave, and revoke any key you suspect has leaked.",
     "sampleRequest": "Request",
     "sampleResponse": "Response"
+  },
+  "Workspace": {
+    "appName": "Miftah",
+    "stripLabel": "Open screens",
+    "close": "Close {title}",
+    "newTab": "New tab",
+    "allTabs": "All tabs ({count})",
+    "reopenClosed": "Reopen closed tab",
+    "closeOthers": "Close other tabs",
+    "shortcuts": "Keyboard shortcuts",
+    "full": "{max} tabs are open. Close one to open another.",
+    "untitled": "Screen",
+    "keyGoto": "Go to tab 1–8",
+    "keyLast": "Go to the last tab",
+    "keyNextPrev": "Next / previous tab",
+    "keyClose": "Close tab",
+    "keyReopen": "Reopen closed tab",
+    "keySearch": "Find and open a screen"
   }
 }

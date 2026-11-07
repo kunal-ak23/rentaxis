@@ -16,6 +16,13 @@ import { AccessDeniedState, SelectOrgState } from "@/components/ui/PageStates";
 import { homeRedirect, isDashboardHome, routeDecision } from "@/lib/nav/routeGuard";
 import { readActiveOrgCookie } from "@/lib/session/orgSync";
 import { setAccountsScope } from "@/components/finance/AccountPicker";
+import WorkspaceHost from "@/components/workspace/WorkspaceHost";
+import { buildNav } from "@/lib/nav/navModel";
+import { useTenantFeatures } from "@/hooks/useTenantFeatures";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+
+/** Roles that get workspace tabs (spec §12); renters, guards and promoters have a handful of pages. */
+const WORKSPACE_ROLES: ReadonlySet<UserRole> = new Set<UserRole>(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER"]);
 
 export default function AuthenticatedLayout({
     children,
@@ -28,7 +35,9 @@ export default function AuthenticatedLayout({
 
     useEffect(() => {
         if (status === "unauthenticated") {
-            router.push("/auth/login");
+            // Workspace tabs §4: come back to the page (and its tab) after signing in, as the fetch guard does.
+            const back = `${window.location.pathname}${window.location.search}`;
+            router.push(`/auth/login?callbackUrl=${encodeURIComponent(back)}`);
         }
     }, [status, router]);
 
@@ -52,6 +61,16 @@ export default function AuthenticatedLayout({
     useEffect(() => {
         if (renterHome) router.replace(renterHome);
     }, [renterHome, router]);
+
+    // Workspace tabs (spec §13): on when the organisation's flag is on, the role is
+    // staff, the screen is at least 768 px wide and the page is not a superadmin
+    // page. Global View (a super admin with no organisation) has no workspace.
+    const { isEnabled, tenantSlug } = useTenantFeatures();
+    const wide = useMediaQuery("(min-width: 768px)");
+    const orgId = role === "SUPER_ADMIN" ? readActiveOrgCookie() : (session?.user?.tenantId ?? "");
+    const workspaceOn = !!role && WORKSPACE_ROLES.has(role) && isEnabled("WORKSPACE_TABS") && wide && !!orgId
+        && !/^\/(en|ar)\/superadmin(\/|$)/.test(pathname) && decision === "allow";
+    const rail = buildNav({ role, isEnabled, tenantSlug, booksLive: true });
 
     if (status === "loading") {
         return (
@@ -95,9 +114,16 @@ export default function AuthenticatedLayout({
                       * variant even though the FAB itself is pinned to a
                       * physical corner.
                       */}
-                    <main className="flex-1 overflow-y-auto thinscroll bg-background px-6 pt-6 pb-24 lg:px-8 lg:pt-7 lg:pb-28">
+                    <WorkspaceHost
+                        enabled={workspaceOn}
+                        userId={session.user?.id ?? ""}
+                        orgId={orgId}
+                        role={role}
+                        rail={rail}
+                        mainClassName="flex-1 overflow-y-auto thinscroll bg-background px-6 pt-6 pb-24 lg:px-8 lg:pt-7 lg:pb-28"
+                    >
                         {content}
-                    </main>
+                    </WorkspaceHost>
                 </div>
             </div>
             </NavShellProvider>

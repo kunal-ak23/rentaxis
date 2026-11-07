@@ -26,6 +26,7 @@ import {
     vatAllowedOn, type DraftRefusalResult,
 } from "@/lib/voucherRules";
 import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { moneyInputError, parseMoneyInput } from "@/lib/money";
@@ -261,6 +262,11 @@ export default function VoucherForm({
     const [attachments, setAttachments] = useState<VoucherAttachment[]>([]);
 
     const [savedId, setSavedId] = useState<string | undefined>(voucherId);
+    // Workspace tabs Phase 0: any typing since the last load or save, so a reload or a
+    // closed browser tab asks first. Set by the form's own input events, cleared by
+    // applyDetail (load, save, post) and by delete.
+    const [edited, setEdited] = useState(false);
+    useUnsavedChangesWarning(edited);
     const [amendedFromId, setAmendedFromId] = useState<string | null>(null);
     const [amendedFromNumber, setAmendedFromNumber] = useState<string | null>(null);
     const [status, setStatus] = useState<VoucherStatus>("DRAFT");
@@ -362,6 +368,7 @@ export default function VoucherForm({
     }, [refundPrefill?.settlementId]);
 
     const applyDetail = useCallback((v: VoucherDetail) => {
+        setEdited(false);
         setDocDate(v.docDate);
         setVendorId(v.vendorId ?? "");
         setInvoiceNumber(v.invoiceNumber ?? "");
@@ -843,6 +850,7 @@ export default function VoucherForm({
     const deleteDraft = () =>
         run(async () => {
             if (savedId) await voucherApi.remove(savedId);
+            setEdited(false);
             setConfirm(null);
             onDeleted?.();
         });
@@ -958,7 +966,8 @@ export default function VoucherForm({
     const columns = 6 + (withVat ? 2 : 0) + 1;
 
     return (
-        <div className="space-y-6" data-testid="voucher-form" data-voucher-type={type}>
+        <div className="space-y-6" data-testid="voucher-form" data-voucher-type={type}
+            onInputCapture={() => setEdited(true)} onChangeCapture={() => setEdited(true)}>
             {loadError && <LoadErrorBanner message={loadError} onRetry={() => location.reload()} />}
 
             {postedNumber && (

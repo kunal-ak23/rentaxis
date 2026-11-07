@@ -19,6 +19,11 @@ vi.mock("@/components/tour/TourProvider", () => ({
     default: ({ children, autoStart }: { children: React.ReactNode; autoStart?: boolean }) => { tourProps.autoStart = autoStart; return <>{children}</>; },
 }));
 vi.mock("@/components/help/HelpFAB", () => ({ default: () => null }));
+// The workspace host is tested on its own (WorkspaceHost.test.tsx); here it is the plain <main>.
+vi.mock("@/components/workspace/WorkspaceHost", () => ({
+    default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+}));
+vi.mock("@/hooks/useTenantFeatures", () => ({ useTenantFeatures: () => ({ isEnabled: () => false, tenantSlug: "" }) }));
 
 import AuthenticatedLayout from "../AuthenticatedLayout";
 import { resetPageOrg } from "@/lib/session/orgSync";

@@ -81,6 +81,7 @@ public class TenantFeatureService {
             case LEASE_RENEWALS -> "Contract Renewals & Reminders";
             case GATEPASS -> "Gate Passes & Security";
             case MOBILE_FINANCE -> "Mobile finance screens";
+            case WORKSPACE_TABS -> "Workspace tabs (web)";
         };
     }
 }

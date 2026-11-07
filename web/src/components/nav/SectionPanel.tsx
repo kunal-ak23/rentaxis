@@ -3,7 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
-import { Link } from "@/i18n/routing";
+import WorkspaceLink from "@/components/workspace/WorkspaceLink";
 import { cn } from "@/lib/utils";
 import type { RailSection } from "@/lib/nav/navModel";
 import { useLabel } from "@/lib/nav/useLabel";
@@ -60,12 +60,12 @@ export function SectionPanel({ section, activeItem, counts, showOrg = true }: {
                             )}
                             <div id={`panel-group-items-${g.id}`} data-testid={`panel-group-items-${g.id}`} hidden={!isOpen} className="space-y-0.5">
                                 {g.items.map(i => (
-                                    <Link key={i.id} href={i.href} data-testid={i.testId} data-tour={i.testId}
+                                    <WorkspaceLink key={i.id} href={i.href} opens="screen" data-testid={i.testId} data-tour={i.testId}
                                         aria-current={i.id === activeItem ? "page" : undefined}
                                         className={cn("block rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[13.5px]",
                                             i.id === activeItem ? "bg-[var(--sand-100)] font-semibold text-[var(--ink-900)]" : "text-[var(--ink-600)] hover:bg-[var(--sand-100)]")}>
                                         {label(i.label)}
-                                    </Link>
+                                    </WorkspaceLink>
                                 ))}
                             </div>
                         </div>
@@ -75,9 +75,9 @@ export function SectionPanel({ section, activeItem, counts, showOrg = true }: {
                     <div data-testid="panel-saved-views">
                         <div className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-500)]">{t("pinned")}</div>
                         {section.savedViews.map(v => (
-                            <Link key={v.id} href={v.href} data-testid={v.testId} className="block rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[13px] text-[var(--ink-600)] hover:bg-[var(--sand-100)]">
+                            <WorkspaceLink key={v.id} href={v.href} opens="screen" data-testid={v.testId} className="block rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[13px] text-[var(--ink-600)] hover:bg-[var(--sand-100)]">
                                 {label(v.label)}
-                            </Link>
+                            </WorkspaceLink>
                         ))}
                     </div>
                 )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
+import { useTabTitle } from "@/components/workspace/WorkspaceContext";
 import { saveResponse } from "@/lib/download";
 import { useCallback, useEffect, useState } from "react";
 import { ContractDocuments } from "@/components/leases/ContractDocuments";
@@ -185,6 +186,8 @@ export default function LeaseDetailPage() {
     // are read in `leasePermsFor` (src/lib/leases/leaseActions.ts).
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
+    // Workspace tabs §6: the tab and the browser tab name the contract.
+    useTabTitle(lease ? (lease.displayContractNumber ?? `${t("unit")} ${lease.unitIdentifier ?? ""}`.trim()) : null);
     const [cheques, setCheques] = useState<Cheque[]>([]);
     // Review of #452, I2: the grid as the server last returned it. The Post dialog prices
     // and posts the saved grid, so an edit still on screen (a merge) is saved before it opens.

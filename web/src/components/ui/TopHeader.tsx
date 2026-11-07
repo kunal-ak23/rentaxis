@@ -17,6 +17,7 @@ import { useNavShell } from "@/components/nav/NavShellContext";
 import { activeNav, buildNav } from "@/lib/nav/navModel";
 import { useLabel } from "@/lib/nav/useLabel";
 import { useTenantFeatures } from "@/hooks/useTenantFeatures";
+import { clearUser as clearWorkspaces } from "@/lib/workspace/persist";
 
 type Notification = {
     id: string;
@@ -312,7 +313,11 @@ export function TopHeader() {
                                             {/* Logout */}
                                             <button
                                                 data-testid="logout"
-                                                onClick={() => signOut()}
+                                                onClick={() => {
+                                                    // Workspace tabs §8: signing out forgets this user's open screens on this browser.
+                                                    if (session?.user?.id) clearWorkspaces(session.user.id);
+                                                    void signOut();
+                                                }}
                                                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-error hover:bg-error/5 transition-colors cursor-pointer"
                                             >
                                                 <LogOut size={15} className="rtl:rotate-180" />

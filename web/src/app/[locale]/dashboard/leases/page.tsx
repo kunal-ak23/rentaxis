@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect, useSyncExternalStore } from "react";
+import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { useSearchParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
@@ -36,6 +37,8 @@ import { stripInvalidIdParams } from "@/lib/urlIds";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 import { saveResponse } from "@/lib/download";
+
+const openInNewTab = (href: string) => window.open(href, "_blank", "noopener");
 
 type Lease = LeaseDetail;
 
@@ -130,6 +133,9 @@ function LeasesList() {
     const tc = useTranslations("ContractList");
     const tCommon = useTranslations("Common");
     const locale = useLocale();
+    // Workspace tabs §3: a contract opens in its own tab (or in place with the workspace off).
+    const workspace = useWorkspace();
+    const openContract = (id: string) => (workspace ? workspace.open(`/dashboard/leases/${id}`, "record") : router.push(`/dashboard/leases/${id}`));
     const [leases, setLeases] = useState<Lease[]>([]);
     const [wizardOpen, setWizardOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'table' | 'cards' | 'board'>('table');
@@ -437,7 +443,7 @@ function LeasesList() {
         // The detail page is the single edit surface — it has the metadata
         // editor (mirroring all the inline form fields), the schedule editor,
         // attachments, documents, and contract-generation in one place.
-        router.push(`/dashboard/leases/${lease.id}`);
+        openContract(lease.id);
     };
 
     const handleDeleteDraft = (id: string) => {
@@ -729,11 +735,14 @@ function LeasesList() {
             role="button"
             tabIndex={0}
             aria-label={`${t("unit")} ${lease.unitIdentifier} — ${lease.renterName}`}
-            onClick={() => router.push(`/dashboard/leases/${lease.id}`)}
+            // Workspace tabs Phase 0: Ctrl/Cmd-click and middle-click open the contract in a
+            // new browser tab, as a link would. The card holds buttons, so it cannot be an <a>.
+            onClick={(e) => (e.ctrlKey || e.metaKey ? openInNewTab(`/${locale}/dashboard/leases/${lease.id}`) : openContract(lease.id))}
+            onAuxClick={(e) => { if (e.button === 1) openInNewTab(`/${locale}/dashboard/leases/${lease.id}`); }}
             onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    router.push(`/dashboard/leases/${lease.id}`);
+                    openContract(lease.id);
                 }
             }}
             className={cn("bg-surface rounded-xl p-5 border border-border hover:shadow-md hover:border-primary/40 transition-all duration-200 flex flex-col justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30", compact && "p-4")}>
@@ -1067,7 +1076,7 @@ function LeasesList() {
                                             <tr
                                                 key={lease.id}
                                                 data-testid={`lease-row-${lease.id}`}
-                                                onClick={() => router.push(`/dashboard/leases/${lease.id}`)}
+                                                onClick={() => openContract(lease.id)}
                                                 className="border-b border-border hover:bg-input/30 transition-colors cursor-pointer"
                                             >
                                                 {canPostLeases && (

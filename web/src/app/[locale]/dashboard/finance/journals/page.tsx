@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import { Filter, Plus, Receipt, ShieldCheck, X } from "lucide-react";
 import { Link } from "@/i18n/routing";
+import WorkspaceLink from "@/components/workspace/WorkspaceLink";
 import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useNameLookup } from "@/components/finance/useNameLookup";
@@ -260,12 +261,13 @@ function Journals() {
                                 {rows.map(j => (
                                     <tr key={j.id} className="hover:bg-input/60 transition-colors">
                                         <td className={`${td} font-semibold`}>
-                                            <Link
+                                            <WorkspaceLink
+                                                opens="record"
                                                 href={`/dashboard/finance/journals/${j.id}`}
                                                 className="text-primary hover:underline cursor-pointer"
                                             >
                                                 {j.entryNumber}
-                                            </Link>
+                                            </WorkspaceLink>
                                         </td>
                                         <td className={`${td} tabular-nums`}>{j.entryDate}</td>
                                         <td className={td}>{j.docType}</td>

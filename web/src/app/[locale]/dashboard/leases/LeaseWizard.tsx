@@ -35,6 +35,7 @@ import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from 
 import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
 import { formatDate } from "@/lib/format";
 import { belowExpectedRent } from "@/lib/leases/belowExpectedRent";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 
 /**
  * Drafting a tenancy contract, in the order the client's accountant fills one
@@ -137,6 +138,7 @@ type Props = {
 };
 
 export default function LeaseWizard({ open, onClose, onCreated }: Props) {
+    const [edited, setEdited] = useState(false);
     const t = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
     const locale = useLocale();
@@ -196,6 +198,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const [longTermAck, setLongTermAck] = useState<string | null>(null);
 
     const reset = useCallback(() => {
+        setEdited(false);
         setStepIdx(0);
         setUnitId("");
         setRenterId("");
@@ -626,6 +629,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         }
     };
 
+    // Workspace tabs Phase 0: typing in the wizard makes a reload or a closed browser tab ask first.
+    useUnsavedChangesWarning(open && edited);
+
     if (!open) return null;
 
     const step = STEPS[stepIdx];
@@ -699,6 +705,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     return (
         <div
             data-testid="lease-wizard"
+            onInputCapture={() => setEdited(true)}
+            onChangeCapture={() => setEdited(true)}
             role="dialog"
             aria-modal="true"
             className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:p-6"

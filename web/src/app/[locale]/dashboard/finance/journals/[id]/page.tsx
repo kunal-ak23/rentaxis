@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { useTabTitle } from "@/components/workspace/WorkspaceContext";
 import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
@@ -60,6 +61,8 @@ function JournalDetail() {
     const properties = useNameLookup("properties", allowed);
 
     const [entry, setEntry] = useState<JournalEntry | null>(null);
+    // Workspace tabs §6: the tab and the browser tab name the voucher.
+    useTabTitle(entry?.entryNumber ?? null);
     // Only this entry's lines are named (the entry is loaded only when `allowed`).
     const units = useIdNames("units", entry?.lines.map(l => l.unitId) ?? []);
     const renters = useIdNames("renters", entry?.lines.map(l => l.renterId) ?? []);

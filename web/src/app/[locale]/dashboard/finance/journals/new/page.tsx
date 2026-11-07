@@ -2,6 +2,7 @@
 
 import { formatDate } from "@/lib/format";
 import { useMemo, useState } from "react";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
@@ -107,6 +108,10 @@ export default function NewJournalPage() {
     // F4: a JV dated a century out (2126 for 2026) took this year's numbers.
     const dateTooFar = isBeyondManualPostingWindow(entryDate);
     const canPost = balanced && complete && !moneyInvalid && !dateTooFar && lines.length >= 2 && !submitting;
+    // Workspace tabs Phase 0: a half-typed voucher is not lost to a reload or a closed browser tab
+    // without the browser asking first. Cleared while posting, so the redirect does not ask.
+    const dirty = !!narration || !!propertyId || lines.some(l => l.accountId || l.debit || l.credit || l.narration);
+    useUnsavedChangesWarning(dirty && !submitting);
 
     const submit = async (ev: React.FormEvent) => {
         ev.preventDefault();
