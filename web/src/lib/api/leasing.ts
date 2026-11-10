@@ -66,7 +66,9 @@ export type ChequeFailureReason = "BOUNCE" | "SIGNATURE_MISMATCH" | "ACCOUNT_CLO
 
 export type PenaltyReason = "CHEQUE_RETURN" | "LATE_PAYMENT" | "OTHER"
   /* F14-30: consideration for a supply — 5 % VAT on a VAT lease by default. */
-  | "SERVICE_RECHARGE" | "ADMIN_FEE" | "DAMAGE" | "MAINTENANCE_RECHARGE" | "BOOKING_FEE";
+  | "SERVICE_RECHARGE" | "ADMIN_FEE" | "DAMAGE" | "MAINTENANCE_RECHARGE" | "BOOKING_FEE"
+  /* A contract-level journal voucher (extra parking, a key): raised from the lease, never proposed. */
+  | "JOURNAL_VOUCHER";
 
 export type PenaltyAssessmentStatus = "PROPOSED" | "APPROVED" | "WAIVED" | "REVERSED" | "WRITTEN_OFF";
 
@@ -1427,6 +1429,15 @@ export type PenaltyAssessment = {
   sourceId?: string | null;
 };
 
+/** LeaseJournalVoucherRequest: `amount` is net; `vatable` adds 5 % (refused on a lease without VAT). */
+export type LeaseJournalVoucherInput = {
+  entryDate?: string | null;
+  accountId: string;
+  amount: number;
+  vatable?: boolean | null;
+  narration: string;
+};
+
 /** ProposePenaltyRequest. */
 export type ProposePenaltyInput = {
   leaseId: string;
@@ -1920,6 +1931,9 @@ export const chequeApi = {
 export const penaltyApi = {
   list: (q: PenaltyListQuery) => get<Page<PenaltyAssessment>>(`/penalties${qs(q)}`),
   propose: (body: ProposePenaltyInput) => announcingChange(send<PenaltyAssessment>("POST", "/penalties", body)),
+  /** A contract-level journal voucher: posted (JV) and given a collection row in one step. Finance only. */
+  journalVoucher: (leaseId: string, body: LeaseJournalVoucherInput) =>
+    announcingChange(send<PenaltyAssessment>("POST", `/penalties/lease/${leaseId}/journal-voucher`, body)),
   /**
    * Break-it R2 money2 F5: `expectedAmount` is the amount the queue showed; a proposal
    * reduced since is refused with 409 `penalty.changed` rather than charged.

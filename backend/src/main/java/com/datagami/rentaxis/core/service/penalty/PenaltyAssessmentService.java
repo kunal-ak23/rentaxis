@@ -5,6 +5,7 @@ import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
+import com.datagami.rentaxis.api.dto.penalty.LeaseJournalVoucherRequest;
 import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
 import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
@@ -17,6 +18,7 @@ import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -24,6 +26,7 @@ import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
+import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -168,6 +171,10 @@ public class PenaltyAssessmentService {
     @Transactional
     public PenaltyAssessmentDTO propose(ProposePenaltyRequest r, UUID byUser) {
         if (r == null || r.leaseId() == null) throw new BusinessRuleViolationException("A penalty needs a lease");
+        if (r.reason() == PenaltyReason.JOURNAL_VOUCHER) {
+            // It needs the account it credits, which only the lease's JV endpoint takes.
+            throw new BusinessRuleViolationException("Raise a journal voucher from the contract, not as a penalty");
+        }
         Lease lease = leaseRepository.findById(r.leaseId())
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         leaseAccessPolicy.requireManageable(lease);
@@ -196,6 +203,59 @@ public class PenaltyAssessmentService {
         PenaltyAssessment saved = save(lease, cheque, r.reason(), r.amount(), r.description(), incident, byUser);
         saved.setVatable(vatableFor(lease, r.reason(), r.vatable()));
         return dto(repository.save(saved));
+    }
+
+    /**
+     * A contract-level journal voucher: staff charge the renter a one-off amount
+     * (extra parking, a replacement key) to an income account they pick.
+     *
+     * <p>Raised and approved in one step — the person entering it is finance, so
+     * there is no proposal to decide on. Approval is the ordinary one: a {@code JV}
+     * Dr the lease's receivable / Cr the picked account (plus VAT when asked), and
+     * a CASH collection row, so the renter can pay it and get a receipt, and a
+     * reversal credits it back exactly as it does any other charge.</p>
+     */
+    @Transactional
+    public PenaltyAssessmentDTO raiseJournalVoucher(UUID leaseId, LeaseJournalVoucherRequest r, UUID byUser) {
+        Lease lease = leaseRepository.findById(leaseId).orElseThrow(() -> new NotFoundException("Lease not found"));
+        leaseAccessPolicy.requireManageable(lease);
+        requireChargeable(lease);
+        String narration = r.narration() == null ? "" : r.narration().trim();
+        if (narration.isEmpty()) throw new BusinessRuleViolationException("Say what the journal voucher is for");
+        Account account = accounts.findById(r.accountId())
+                .orElseThrow(() -> new NotFoundException("Account not found"));
+        requireIncomeLeafFor(account, lease);
+
+        LocalDate on = r.entryDate() != null ? r.entryDate() : manualDates.today();
+        PenaltyAssessment a = save(lease, null, PenaltyReason.JOURNAL_VOUCHER, r.amount(), narration, on, byUser);
+        a.setVatable(vatableFor(lease, PenaltyReason.JOURNAL_VOUCHER, r.vatable()));
+        a.setIncomeAccountId(account.getId());
+        a.setSourceType(JOURNAL_SOURCE);
+        repository.save(a);
+        return approve(a.getId(), on, false, null);
+    }
+
+    /** {@code PenaltyAssessment.sourceType} of a contract-level journal voucher. */
+    public static final String JOURNAL_SOURCE = "JOURNAL";
+
+    /**
+     * The account a journal voucher may credit: an active income leaf of this
+     * tenant, either shared or belonging to this lease's property.
+     */
+    private static void requireIncomeLeafFor(Account account, Lease lease) {
+        String label = account.getCode() + " " + account.getName();
+        if (account.isGroup() || !account.isActive()) {
+            throw new BusinessRuleViolationException(label + " is not an active ledger account");
+        }
+        if (account.getAccountType() != AccountType.INCOME) {
+            throw new BusinessRuleViolationException(label + " is not an income account");
+        }
+        UUID own = account.getPropertyId();
+        UUID leaseProperty = lease.getUnit() != null && lease.getUnit().getProperty() != null
+                ? lease.getUnit().getProperty().getId() : null;
+        if (own != null && !own.equals(leaseProperty)) {
+            throw new BusinessRuleViolationException(label + " belongs to another property");
+        }
     }
 
     /**
@@ -415,7 +475,9 @@ public class PenaltyAssessmentService {
         List<PostingRequest.Pair> pairs = new java.util.ArrayList<>();
         pairs.add(PostingRequest.pair(
                 LeaseChequeRegistrar.drReceivable(lease, amount).withNarration(narration),
-                PostingRequest.cr(a.getReason().incomeRole(), amount).withNarration(narration)));
+                (a.getIncomeAccountId() != null
+                        ? PostingRequest.cr(a.getIncomeAccountId(), amount)
+                        : PostingRequest.cr(a.getReason().incomeRole(), amount)).withNarration(narration)));
         if (vat.signum() > 0) {
             String vatNarration = "VAT on " + narration;
             pairs.add(PostingRequest.pair(
@@ -424,7 +486,7 @@ public class PenaltyAssessmentService {
                             .withNarration(vatNarration)));
         }
         JournalEntry pen = postingService.post(PostingRequest.ofPairs(
-                JournalDocType.PEN,
+                a.getReason() == PenaltyReason.JOURNAL_VOUCHER ? JournalDocType.JV : JournalDocType.PEN,
                 on,
                 narration,
                 LeaseChequeRegistrar.dimensions(lease, chequeId),
@@ -449,7 +511,8 @@ public class PenaltyAssessmentService {
         // raised in the ledger a line above, and no user typed it.
         ChequeDTO row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(
                 null, null, on, null, on, null, null, null, owed,
-                "Penalty - " + a.getReason().label(), ChequeMode.CASH));
+                a.getReason() == PenaltyReason.JOURNAL_VOUCHER ? narration : "Penalty - " + a.getReason().label(),
+                ChequeMode.CASH));
 
         // Set on the entity rather than widened into ChequeRowInput: the link is a
         // fact about this approval, not something a caller of the grid may type.
@@ -474,8 +537,14 @@ public class PenaltyAssessmentService {
         // and leaves this one untouched. Catching it in there would mark the new
         // transaction rollback-only and surface as an UnexpectedRollbackException on
         // the approval — a fine nobody could charge because a notification failed.
+        //
+        // Not for a journal voucher: the renter asked for what it charges (extra
+        // parking, a key), and "penalty incurred" would tell them they were fined.
+        // It reaches them as a payable row like any other.
         try {
-            notificationService.sendPenaltyIncurred(approved);
+            if (approved.getReason() != PenaltyReason.JOURNAL_VOUCHER) {
+                notificationService.sendPenaltyIncurred(approved);
+            }
         } catch (Exception e) {
             log.warn("Penalty {} was approved but the renter could not be notified: {}",
                     approved.getId(), e.getMessage());
@@ -739,6 +808,13 @@ public class PenaltyAssessmentService {
 
     private com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
 
+    private com.datagami.rentaxis.domain.repository.AccountRepository accounts;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setAccounts(com.datagami.rentaxis.domain.repository.AccountRepository accounts) {
+        this.accounts = accounts;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
     public void setLeaseLines(com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines) {
         this.leaseLines = leaseLines;
@@ -795,6 +871,7 @@ public class PenaltyAssessmentService {
 
     /** "Penalty - Cheque return - cheque 100041", or without the tail where there is no instrument. */
     private static String narrationFor(PenaltyAssessment a) {
+        if (a.getReason() == PenaltyReason.JOURNAL_VOUCHER) return a.getDescription();
         String head = "Penalty - " + a.getReason().label();
         Cheque c = a.getCheque();
         if (c == null) return head;

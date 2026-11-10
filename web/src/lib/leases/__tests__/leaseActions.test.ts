@@ -73,7 +73,7 @@ describe("lease actions", () => {
 
     it("adds no legacy action where the old header did not show it", () => {
         const extra: string[] = [];
-        const NEW: LeaseActionId[] = ["edit", "recordPayment", "assignment", "writeOff"];
+        const NEW: LeaseActionId[] = ["edit", "recordPayment", "assignment", "writeOff", "journalVoucher"];
         for (const { role, f } of matrix()) {
             const p = leasePermsFor(role);
             const legacy = legacyHeader(f, p);
@@ -99,7 +99,7 @@ describe("lease actions", () => {
 
     it("never lists an action twice, and the menu order names every action once", () => {
         expect(new Set(MENU_ORDER).size).toBe(MENU_ORDER.length);
-        expect(MENU_ORDER).toHaveLength(19);
+        expect(MENU_ORDER).toHaveLength(20);
         for (const { role, f } of matrix()) {
             const { primary, menu } = splitLeaseActions(availableLeaseActions(f, leasePermsFor(role)), f.status);
             expect(new Set([...primary, ...menu]).size).toBe(primary.length + menu.length);

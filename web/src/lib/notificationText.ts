@@ -132,6 +132,7 @@ const REASON_GROUP: Record<string, string> = {
     DAMAGE: "penaltyReason",
     MAINTENANCE_RECHARGE: "penaltyReason",
     BOOKING_FEE: "penaltyReason",
+    JOURNAL_VOUCHER: "penaltyReason",
 };
 
 /** A meeting slot as the office keeps it: UAE time, in the viewer's language. */

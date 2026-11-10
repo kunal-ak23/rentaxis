@@ -150,5 +150,6 @@ String _reason(String? reason, bool ar) => switch (reason) {
   'DAMAGE' => ar ? 'أضرار / تنظيف' : 'Damage / cleaning',
   'MAINTENANCE_RECHARGE' => ar ? 'رسوم صيانة' : 'Maintenance recharge',
   'BOOKING_FEE' => ar ? 'رسوم حجز' : 'Booking fee',
+  'JOURNAL_VOUCHER' => ar ? 'رسوم إضافية' : 'Additional charge',
   _ => ar ? 'رسوم أخرى' : 'Other charge',
 };

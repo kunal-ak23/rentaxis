@@ -1436,4 +1436,126 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> service.approve(proposed.id(), APPROVE_DATE))
                 .isInstanceOf(NotFoundException.class);
     }
+
+    // ------------------------------------------------------------------
+    // contract-level journal voucher
+    // ------------------------------------------------------------------
+
+    private com.datagami.rentaxis.api.dto.penalty.LeaseJournalVoucherRequest voucher(Account account, String amount,
+                                                                                    String narration) {
+        return new com.datagami.rentaxis.api.dto.penalty.LeaseJournalVoucherRequest(
+                APPROVE_DATE, account.getId(), new BigDecimal(amount), null, narration);
+    }
+
+    /**
+     * Extra parking asked for mid-contract: a JV Dr the lease's receivable / Cr the
+     * income account staff picked, and a CASH row so the renter can pay it.
+     */
+    @Test
+    void aJournalVoucherCreditsThePickedAccountAsAJvAndAddsACollectionRow() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        Account receivable = leaf(AccountRole.RENT_RECEIVABLE);
+        Account parking = leaf(AccountRole.PARKING_INCOME);
+        BigDecimal receivableBefore = balance(receivable, leaseId);
+
+        PenaltyAssessmentDTO jv = service.raiseJournalVoucher(leaseId,
+                voucher(parking, "300", "Extra parking bay B2 - November"), null);
+
+        assertThat(jv.status()).isEqualTo(PenaltyAssessmentStatus.APPROVED);
+        assertThat(jv.reason()).isEqualTo(PenaltyReason.JOURNAL_VOUCHER);
+        assertThat(reread(jv.id()).getIncomeAccountId()).isEqualTo(parking.getId());
+
+        JournalEntry entry = entry(jv.journalId());
+        assertThat(entry.getDocType()).isEqualTo(JournalDocType.JV);
+        assertThat(entry.getEntryDate()).isEqualTo(APPROVE_DATE);
+        assertThat(entry.getSourceType()).isEqualTo(JournalSourceType.PENALTY);
+        assertThat(entry.getSourceId()).isEqualTo(jv.id());
+        assertThat(entry.getNarration()).isEqualTo("Extra parking bay B2 - November");
+        List<JournalLine> jvLines = linesOf(entry.getId());
+        assertThat(jvLines).hasSize(2);
+        assertThat(jvLines.get(0).getAccountId()).isEqualTo(receivable.getId());
+        assertThat(jvLines.get(0).getDebit()).isEqualByComparingTo("300");
+        assertThat(jvLines.get(1).getAccountId()).isEqualTo(parking.getId());
+        assertThat(jvLines.get(1).getCredit()).isEqualByComparingTo("300");
+        assertThat(jvLines).allSatisfy(l -> {
+            assertThat(l.getLeaseId()).isEqualTo(leaseId);
+            assertThat(l.getRenterId()).isEqualTo(fixtures.renter().getId());
+        });
+
+        Cheque collection = rereadCheque(jv.collectionChequeId());
+        assertThat(collection.getMode()).isEqualTo(ChequeMode.CASH);
+        assertThat(collection.getStatus()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(collection.getAmount()).isEqualByComparingTo("300");
+        assertThat(collection.getNarration()).isEqualTo("Extra parking bay B2 - November");
+        assertThat(collection.getPenaltyAssessmentId()).isEqualTo(jv.id());
+        // The receivable nets back: the debt sits on the collection row's instrument.
+        assertThat(balance(receivable, leaseId)).isEqualByComparingTo(receivableBefore);
+        assertThat(balance(parking, leaseId)).isEqualByComparingTo("-300");
+    }
+
+    @Test
+    void aJournalVoucherCreditsOnlyAnIncomeAccount() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        long before = journalEntryRows();
+
+        assertThatThrownBy(() -> service.raiseJournalVoucher(leaseId,
+                voucher(leaf(AccountRole.RENT_RECEIVABLE), "300", "Extra parking"), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("is not an income account");
+        assertThatThrownBy(() -> service.raiseJournalVoucher(leaseId,
+                voucher(leaf(AccountRole.PARKING_INCOME), "300", "  "), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Say what the journal voucher is for");
+
+        assertThat(journalEntryRows()).isEqualTo(before);
+        assertThat(assessmentsOf(leaseId)).isEmpty();
+    }
+
+    /** A group account, or an income leaf switched off, is not one a JV may credit. */
+    @Test
+    void aJournalVoucherCreditsOnlyAnActiveLeaf() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        Account parking = leaf(AccountRole.PARKING_INCOME);
+        long before = journalEntryRows();
+
+        assertThat(parking.getParentId()).as("the parking leaf sits under a group").isNotNull();
+        assertThatThrownBy(() -> service.raiseJournalVoucher(leaseId,
+                new com.datagami.rentaxis.api.dto.penalty.LeaseJournalVoucherRequest(
+                        APPROVE_DATE, parking.getParentId(), new BigDecimal("300"), null, "Extra parking"), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("is not an active ledger account");
+
+        jdbc.update("update accounts set is_active = false where id = ?", parking.getId());
+        assertThatThrownBy(() -> service.raiseJournalVoucher(leaseId, voucher(parking, "300", "Extra parking"), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("is not an active ledger account");
+
+        assertThat(journalEntryRows()).isEqualTo(before);
+        assertThat(assessmentsOf(leaseId)).isEmpty();
+    }
+
+    @Test
+    void aJournalVoucherIsNeverProposedAsAPenalty() {
+        PostLeaseResponse r = posted();
+        assertThatThrownBy(() -> proposal(r.lease().getId(), null, PenaltyReason.JOURNAL_VOUCHER, "300"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Raise a journal voucher from the contract");
+    }
+
+    @Test
+    void reversingAJournalVoucherTakesTheIncomeBack() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        Account parking = leaf(AccountRole.PARKING_INCOME);
+        PenaltyAssessmentDTO jv = service.raiseJournalVoucher(leaseId,
+                voucher(parking, "300", "Extra parking bay B2 - November"), null);
+
+        PenaltyAssessmentDTO reversed = service.reverse(jv.id(), REVERSE_DATE, "Raised on the wrong contract");
+
+        assertThat(reversed.status()).isEqualTo(PenaltyAssessmentStatus.REVERSED);
+        assertThat(balance(parking, leaseId)).isEqualByComparingTo("0");
+    }
 }
