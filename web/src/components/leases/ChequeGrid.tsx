@@ -368,6 +368,7 @@ export default function ChequeGrid({
         setCombining(true);
         try {
             await onCombinedReceipt(pickedIds);
+            setReceiptPicked(new Set());
         } finally {
             setCombining(false);
         }

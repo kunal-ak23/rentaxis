@@ -74,6 +74,16 @@ public class RentReceiptService {
     private final BlobStorageService blobStorageService;
     private final PenaltyAssessmentRepository penaltyAssessments;
     private final BookingRequestRepository bookings;
+    // Names the booked amenity or spot on a booking receipt; optional so a unit test can leave them out.
+    private com.datagami.rentaxis.domain.repository.PropertyAmenityRepository amenities;
+    private com.datagami.rentaxis.domain.repository.ParkingSpotRepository parkingSpots;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setResourceRepositories(com.datagami.rentaxis.domain.repository.PropertyAmenityRepository amenities,
+                                 com.datagami.rentaxis.domain.repository.ParkingSpotRepository parkingSpots) {
+        this.amenities = amenities;
+        this.parkingSpots = parkingSpots;
+    }
 
     /** The most receipts one combined PDF may hold. */
     static final int MAX_COMBINED = 100;
@@ -264,7 +274,7 @@ public class RentReceiptService {
                 .replace("{{GENERATED_AT}}", java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm")));
     }
 
-    /** "Booking: Parking spot, 05 Nov 2026 – 07 Nov 2026" and its times, or nothing. */
+    /** "Booking: Parking spot P-12", then "Booked for: 05 Nov 2026 – 07 Nov 2026" and its times, or nothing. */
     private String bookingRows(BookingRequest b, DateTimeFormatter dateFmt) {
         if (b == null) return "";
         String kind = b.getResourceType() == BookingResourceType.PARKING_SPOT ? "Parking spot" : "Amenity";
@@ -279,9 +289,22 @@ public class RentReceiptService {
             when.append(when.isEmpty() ? "" : ", ").append(b.getPreferredStartTime());
             if (b.getPreferredEndTime() != null) when.append(" – ").append(b.getPreferredEndTime());
         }
-        String row = "<tr><td class=\"label\">Booking</td><td class=\"value\">" + kind + "</td></tr>";
+        String name = resourceName(b);
+        String row = "<tr><td class=\"label\">Booking</td><td class=\"value\">" + kind
+                + (name == null || name.isBlank() ? "" : " " + safe(name)) + "</td></tr>";
         return when.isEmpty() ? row
                 : row + "<tr><td class=\"label\">Booked for</td><td class=\"value\">" + safe(when.toString()) + "</td></tr>";
+    }
+
+    /** The amenity's English name or the spot's number; null when it cannot be found. */
+    private String resourceName(BookingRequest b) {
+        if (b.getAmenityId() != null && amenities != null) {
+            return amenities.findById(b.getAmenityId()).map(a -> a.getNameEn()).orElse(null);
+        }
+        if (b.getParkingSpotId() != null && parkingSpots != null) {
+            return parkingSpots.findById(b.getParkingSpotId()).map(p -> p.getSpotNumber()).orElse(null);
+        }
+        return null;
     }
 
     /** One PDF out of several, in order. */

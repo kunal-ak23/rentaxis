@@ -214,7 +214,7 @@ class BookingFeeIT extends AbstractPostgresIT {
             text = new org.apache.pdfbox.text.PDFTextStripper().getText(d);
         }
         assertThat(text).contains("BOOKING RECEIPT").doesNotContain("RENT RECEIPT")
-                .contains("Party Hall").contains((String) paid[3]);
+                .contains("Amenity Party Hall").contains((String) paid[3]);
     }
 
     /**
