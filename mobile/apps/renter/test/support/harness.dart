@@ -16,6 +16,12 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 /// list pushes /gatepass/:id, the create form pushes the detail), so navigation
 /// is not stubbed out.
 ///
+/// [theme] defaults to the legacy `AppTheme.lightTheme` the older screen tests
+/// were written against; pass `MiftahTheme.light` to render exactly what the
+/// app renders (its filled buttons carry an infinite minimum width, which the
+/// legacy theme does not, so a layout that passes here can still overflow in
+/// the app unless the test uses the app's theme).
+///
 /// [surfaceSize] grows the test window past the default 800x600. The create
 /// form is longer than that, and its fields live in a `ListView` — which builds
 /// lazily, so an off-screen field is not merely out of view, it does not exist
@@ -27,6 +33,7 @@ Future<ProviderContainer> pumpScreen(
   required String initialLocation,
   List<Override> overrides = const [],
   Size? surfaceSize,
+  ThemeData? theme,
 }) async {
   if (surfaceSize != null) {
     await tester.binding.setSurfaceSize(surfaceSize);
@@ -40,7 +47,7 @@ Future<ProviderContainer> pumpScreen(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp.router(
-        theme: AppTheme.lightTheme,
+        theme: theme ?? AppTheme.lightTheme,
         routerConfig: GoRouter(
           initialLocation: initialLocation,
           routes: routes,

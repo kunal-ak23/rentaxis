@@ -30,6 +30,8 @@ import 'screens/facilities/facilities_screen.dart';
 import 'screens/facilities/my_requests_screen.dart';
 import 'screens/services_hub_screen.dart';
 import 'screens/offers_screen.dart';
+import 'screens/wallet/checkout_screen.dart';
+import 'screens/wallet/rewards_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -116,6 +118,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           return SetPasswordScreen(token: token);
         },
       ),
+      // Demo checkout (DEMO_PAYMENTS=true). Outside the shell on purpose: a
+      // hosted checkout has no tab bar under it. The cheque id travels in the
+      // path and the screen re-fetches it, like every other pushed screen.
+      GoRoute(
+        path: '/pay/:chequeId',
+        pageBuilder: (context, state) => slideUpTransition(
+          CheckoutScreen(chequeId: state.pathParameters['chequeId']!),
+          state,
+        ),
+      ),
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
         // Tab roots cross-fade; pushed create/detail screens slide up. Both
@@ -140,6 +152,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/payments',
             pageBuilder: (context, state) =>
                 fadeTransition(const PaymentsScreen(), state),
+            routes: [
+              // Nested under /payments so the Wallet tab stays lit.
+              GoRoute(
+                path: 'rewards',
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const RewardsScreen(), state),
+              ),
+            ],
           ),
           // Services hub — the tab root that now fronts Meetings, Tickets,
           // Facilities, Gate passes, Approvals and Penalties.
