@@ -76,10 +76,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>The contract, and why this one</h2>
  * One year, seven post-dated cheques all registered on the contract date, five
- * clearances spread over ten months and <em>two cheques that bounce after
- * clearing</em> — the one cheque transition whose journal credits the bank rather
- * than PDC receivable (spec §7.2), and one the built register only permits in
- * {@code PDC} mode, which is why every row here is a PDC. Thirteen recognition
+ * clearances spread over ten months and <em>two cheques the bank returns</em>.
+ * The export cleared those two and returned them the same day; the product never
+ * bounces a cleared cheque (ruling 2026-11-10), so here they bounce from
+ * {@code DEPOSITED} and their {@code CBR} credits PDC receivable (fixture
+ * deviation D-f). Thirteen recognition
  * entries carry the rent out of advance rent day by day.
  *
  * <h2>Anonymisation (rulings P5-R11 / P5-R13)</h2>
@@ -249,8 +250,7 @@ class GoldenLedgerTenantOneIT extends AbstractPostgresIT {
      * the {@code PDR} is dated when the landlord took the paper, not when it matures.
      *
      * <p>{@code ChequeMode.PDC} is load-bearing rather than a default written out:
-     * {@code ChequeService.bounce} refuses a post-clearing bounce on anything else,
-     * and rows 6 and 7 do exactly that.</p>
+     * only a PDC is banked, and rows 6 and 7 bounce from the bank.</p>
      */
     private static ChequeRowInput cheque(int seq, String number, LocalDate chequeDate,
                                          String amount, String narration) {
@@ -269,11 +269,12 @@ class GoldenLedgerTenantOneIT extends AbstractPostgresIT {
         for (int i = 0; i < 5; i++) {
             bankAndClear(rows.get(i));
         }
-        // 6 and 7 clear and are returned by the bank the same day (spec §7.2,
-        // CLEARED -> BOUNCED: Dr rent receivable / Cr the bank it was banked into,
-        // not PDC receivable, which the CRT has already settled).
+        // 6 and 7 are banked and returned (DEPOSITED -> BOUNCED: Dr rent receivable /
+        // Cr PDC receivable). Never after clearing: a cleared cheque does not bounce
+        // (ruling 2026-11-10, fixture deviation D-f).
         for (int i = 5; i < 7; i++) {
-            ChequeDTO c = bankAndClear(rows.get(i));
+            ChequeDTO c = rows.get(i);
+            cheques.deposit(c.id(), ChequeActionRequest.on(c.chequeDate()));
             cheques.bounce(c.id(), new ChequeActionRequest(c.chequeDate(), null,
                     ChequeFailureReason.BOUNCE, null));
         }
@@ -397,16 +398,16 @@ class GoldenLedgerTenantOneIT extends AbstractPostgresIT {
         BigDecimal credit = actual.values().stream().map(AccountLedgerDTO::totalCredit)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // The export's own REPORT TOTAL row. The per-day rule redistributes the CIL
-        // rows but does not change their sum, so this number is unaffected by it.
-        assertThat(debit).isEqualByComparingTo("248150.00");
+        // The export's own REPORT TOTAL row less the two CRTs deviation D-f drops.
+        // The per-day rule redistributes the CIL rows but does not change their sum.
+        assertThat(debit).isEqualByComparingTo("229150.00");
         assertThat(credit).isEqualByComparingTo(debit);
 
         // And the fixture's own columns, so a transcription slip reads as a bad
         // fixture rather than as a product failure.
         List<GoldenRow> fixture = GoldenLedgerFixture.ledger(LEDGER);
-        assertThat(GoldenLedgerFixture.reportTotal(fixture)).isEqualByComparingTo("248150.00");
-        assertThat(GoldenLedgerFixture.creditTotal(fixture)).isEqualByComparingTo("248150.00");
+        assertThat(GoldenLedgerFixture.reportTotal(fixture)).isEqualByComparingTo("229150.00");
+        assertThat(GoldenLedgerFixture.creditTotal(fixture)).isEqualByComparingTo("229150.00");
     }
 
     /**

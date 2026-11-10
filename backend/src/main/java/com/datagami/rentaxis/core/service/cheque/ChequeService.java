@@ -679,12 +679,13 @@ public class ChequeService {
     /**
      * The bank returned it.
      *
-     * <p>From {@code DEPOSITED} the money never arrived, so the {@code CBR} simply
-     * puts the debt back where the {@code PDR} took it from: Dr rent receivable /
-     * Cr PDC receivable. From {@code CLEARED} the money <em>did</em> arrive and has
-     * now been taken back out of the bank, so the credit goes to the very account
-     * that was debited when it cleared — not to PDC receivable, which was already
-     * settled and would otherwise go negative on a cheque nobody holds.</p>
+     * <p>Only from {@code DEPOSITED}: the money never arrived, so the {@code CBR}
+     * simply puts the debt back where the {@code PDR} took it from: Dr rent
+     * receivable / Cr PDC receivable.</p>
+     *
+     * <p>A {@code CLEARED} cheque never bounces (ruling 2026-11-10): cleared means
+     * the bank has paid it and the transaction has happened, so there is nothing
+     * left for the bank to return.</p>
      */
     @Transactional
     public ChequeDTO bounce(UUID chequeId, ChequeActionRequest request) {
@@ -708,15 +709,12 @@ public class ChequeService {
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
         requireOurs(cheque, lease);
-        requireStatus(cheque, "bounce", ChequeStatus.DEPOSITED, ChequeStatus.CLEARED);
-        boolean afterClearing = cheque.getStatus() == ChequeStatus.CLEARED;
-        if (afterClearing && cheque.getMode() != ChequeMode.PDC) {
-            // Cash in the drawer does not un-arrive, and a settled transfer is
-            // reversed by the bank as its own receipt, not by editing this one.
+        if (cheque.getStatus() == ChequeStatus.CLEARED) {
             throw new BusinessRuleViolationException(
-                    "Only a post-dated cheque can bounce after it has cleared; " + label(cheque)
-                            + " is a " + cheque.getMode() + " receipt.");
+                    "A cleared cheque cannot bounce: " + label(cheque)
+                            + " has been paid by the bank and the transaction has happened.");
         }
+        requireStatus(cheque, "bounce", ChequeStatus.DEPOSITED);
 
         LocalDate date = r.dateOrToday();
         // Break-it R2 money2 F1: a return the bank has not made yet cannot be recorded
@@ -726,16 +724,7 @@ public class ChequeService {
         }
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
-        Line credit;
-        if (afterClearing) {
-            Account banked = cheque.getDebitAccount();
-            if (banked != null) bankLock.assertOpen(List.of(banked.getId()), date);
-            credit = banked != null
-                    ? PostingRequest.cr(banked.getId(), amount)
-                    : PostingRequest.cr(settlementRole(cheque.getMode()), amount);
-        } else {
-            credit = PostingRequest.cr(AccountRole.PDC_RECEIVABLE, amount);
-        }
+        Line credit = PostingRequest.cr(AccountRole.PDC_RECEIVABLE, amount);
         JournalEntry cbr = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.CBR,
                 date,

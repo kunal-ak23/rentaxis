@@ -415,14 +415,10 @@ public class ContractImportLeasePoster {
                 n[1]++;
             }
             case BOUNCED -> {
+                // Never via CLEARED: a cleared cheque does not bounce (ruling
+                // 2026-11-10), and the validator refuses a BOUNCED row with a
+                // ClearedDate.
                 chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
-                if (c.getImportedClearedOn() != null) {
-                    // A cheque that cleared and was returned weeks later. The
-                    // difference is not cosmetic: bouncing after clearing credits
-                    // the bank the money actually reached, while bouncing before it
-                    // credits the PDC receivable.
-                    chequeService.clear(c.getId(), on(c.getImportedClearedOn()), replay);
-                }
                 chequeService.bounce(c.getId(), on(c.getImportedBouncedOn()), replay);
                 n[2]++;
             }

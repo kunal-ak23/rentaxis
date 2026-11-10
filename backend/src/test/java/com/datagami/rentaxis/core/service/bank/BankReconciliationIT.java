@@ -734,8 +734,6 @@ class BankReconciliationIT extends AbstractPostgresIT {
                 .hasMessageContaining("The cheques total 5,000.00; the statement shows 4,999.00");
         assertThatThrownBy(() -> actions.clearCheques(new BankRecDTOs.ClearChequesInput(List.of(rtn), List.of(dep.id()))))
                 .hasMessageContaining("credit lines");
-        assertThatThrownBy(() -> actions.bounce(new BankRecDTOs.BounceInput(rtn, dep.id(), null)))
-                .hasMessageContaining("only a CLEARED cheque");
         assertThatThrownBy(() -> actions.present(new BankRecDTOs.PresentInput(pres, issuedOf(p).id())))
                 .hasMessageContaining("The line names cheque 000091, not 000090");
         assertThatThrownBy(() -> actions.post(new BankRecDTOs.PostLinesInput(List.of(credit), "CHARGE", false, null, null,
@@ -749,14 +747,9 @@ class BankReconciliationIT extends AbstractPostgresIT {
         // Nothing above wrote a match or a journal.
         assertThat(count("select count(*) from bank_matches where tenant_id = ?", tenantId)).isZero();
         assertThat(count("select count(*) from journal_entries where tenant_id = ? and doc_type in ('BNK', 'CBR', 'BPC')", tenantId)).isZero();
-
-        // The bounce that fits: CBR Dr receivable / Cr the leaf it cleared into.
-        BankRecDTOs.ActionResult b = actions.bounce(new BankRecDTOs.BounceInput(rtn, clr.id(), "BOUNCE"));
-        assertThat(docType(b.journalEntryIds().get(0))).isEqualTo("CBR");
-        assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, clr.id())).isEqualTo("BOUNCED");
-        // A line already matched is not booked twice.
-        assertThatThrownBy(() -> actions.bounce(new BankRecDTOs.BounceInput(rtn, clr.id(), null)))
-                .hasMessageContaining("already matched");
+        // A debit line no longer bounces a cheque (ruling 2026-11-10: a cleared
+        // cheque does not bounce), so the cleared one stays cleared.
+        assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, clr.id())).isEqualTo("CLEARED");
     }
 
     @Test
@@ -840,19 +833,14 @@ class BankReconciliationIT extends AbstractPostgresIT {
     }
 
     @Test
-    void aBounceFromALineNeedsItsReasonAndOtherCannotPostWithinTheSameBankAccount() {
+    void otherCannotPostWithinTheSameBankAccount() {
         imports.saveProfile(ei.getId(), enbdProfile());
-        ChequeDTO clr = cheque(marina, "6000", "000702");
-        deposit(SEP_1, clr);
-        chequeService.clear(clr.id(), ChequeActionRequest.on(SEP_3));
         importText("""
                 x
                 Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
                 06/09/2026,06/09/2026,RTN CHQ 000702,,"6,000.00",,"-6,000.00"
                 07/09/2026,07/09/2026,SWEEP,,,100.00,"-5,900.00"
                 """);
-        assertThatThrownBy(() -> actions.bounce(new BankRecDTOs.BounceInput(stmt(ws(), "RTN CHQ 000702").id(), clr.id(), null)))
-                .hasMessageContaining("failureReason is required");
         assertThatThrownBy(() -> actions.post(new BankRecDTOs.PostLinesInput(List.of(stmt(ws(), "SWEEP").id()), "OTHER", null,
                 palmBank.getId(), null, marinaBank.getId(), true, null)))
                 .hasMessageContaining("belongs to this same bank account");

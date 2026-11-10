@@ -14,7 +14,6 @@ import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.BankAccount;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
-import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import jakarta.persistence.EntityManager;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -275,44 +274,9 @@ public class BankLineActionService {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    // ------------------------------------------------------------------ bounce
-
-    /** Bounce: a debit ↔ a CLEARED cheque banked into the set, equal amount. Posts the CBR. */
-    @Transactional
-    public BankRecDTOs.ActionResult bounce(BankRecDTOs.BounceInput in) {
-        UUID t = BankAccountLedgerService.requireTenant();
-        L line = lockLines(t, List.of(in.statementLineId()), true).get(0);
-        Set<UUID> leaves = ledgers.requireLeafSet(line.bankAccountId());
-        if (line.amount().signum() >= 0) throw BankRecRefusal.refuse("bounceFromDebit", "A returned cheque is booked from a debit line");
-        requireNotFuture(line.date());
-        Map<String, Object> c = cheque(t, in.chequeId());
-        if (!"CLEARED".equals(c.get("status"))) {
-            throw BankRecRefusal.refuse("chequeNotCleared", "The cheque is " + c.get("status") + "; only a CLEARED cheque bounces from a statement", "status", c.get("status"));
-        }
-        if (((BigDecimal) c.get("amount")).compareTo(line.amount().negate()) != 0) {
-            throw BankRecRefusal.refuse("chequeAmountMismatch", "The cheque is " + StatementValues.money((BigDecimal) c.get("amount"))
-                    + "; the line is " + StatementValues.money(line.amount().negate()), "amount", StatementValues.money((BigDecimal) c.get("amount")), "line", StatementValues.money(line.amount().negate()));
-        }
-        if (c.get("debit_account_id") == null || !leaves.contains((UUID) c.get("debit_account_id"))) {
-            throw BankRecRefusal.refuse("chequeNotClearedHere", "The cheque was not cleared into this bank account");
-        }
-        // The register's bounce refuses a return without its reason (PR #353 review P2-6).
-        if (in.reason() == null || in.reason().isBlank()) {
-            throw BankRecRefusal.refuse("bounceReasonRequired", "Say why the bank returned the cheque (failureReason is required)");
-        }
-        ChequeFailureReason reason;
-        try {
-            reason = ChequeFailureReason.valueOf(in.reason().trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            throw BankRecRefusal.refuse("unknownReturnReason", "Unknown return reason " + in.reason(), "reason", in.reason());
-        }
-        cheques.bounce(in.chequeId(), new ChequeActionRequest(line.date(), "Returned per bank statement", reason, null));
-        em.flush();
-        UUID cbr = jdbc.queryForObject("select cbr_journal_id from cheques where tenant_id = :t and id = :id",
-                new MapSqlParameterSource("t", t).addValue("id", in.chequeId()), UUID.class);
-        UUID m = matches.recordCreated(line.bankAccountId(), List.of(line.id()), bankLines(t, cbr, leaves, false));
-        return done(t, m, List.of(cbr));
-    }
+    // A debit line never bounces a cheque: only a DEPOSITED cheque bounces, and the
+    // bank never paid that one, so there is no money for a statement to take back
+    // (ruling 2026-11-10: a cleared cheque does not bounce).
 
     // ------------------------------------------------------------------ present
 
@@ -436,7 +400,7 @@ public class BankLineActionService {
         leaves.add(new UUID(0, 0)); // keeps "in (:l)" valid when the set is empty
         MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("l", leaves)
                 .addValue("amt", l.amount().abs()).addValue("d", l.date());
-        List<BankRecDTOs.Candidate> clear = List.of(), receive = List.of(), bounce = List.of(), present = List.of();
+        List<BankRecDTOs.Candidate> clear = List.of(), receive = List.of(), present = List.of();
         List<BankRecDTOs.Refused> refused = new ArrayList<>();
         if (l.amount().signum() > 0) {
             clear = jdbc.query("""
@@ -474,12 +438,6 @@ public class BankLineActionService {
                     c.label() != null && Arrays.stream(c.label().toUpperCase(Locale.ROOT).split("\\s+"))
                             .anyMatch(w -> w.length() > 2 && text.contains(w)) ? 0 : 1)).toList();
         } else {
-            bounce = jdbc.query("""
-                    select c.id, c.cheque_number, c.amount, c.cleared_at as d, c.property_id, c.status, r.name_en
-                    from cheques c left join renters r on r.id = c.renter_id
-                    where c.tenant_id = :t and c.status = 'CLEARED' and c.mode = 'PDC' and c.debit_account_id in (:l)
-                      and c.amount = :amt order by c.cleared_at desc limit 100""", p,
-                    (rs, i) -> cand(rs, "CHEQUE", rs.getObject("d", LocalDate.class), l));
             present = jdbc.query("""
                     select ic.id, ic.cheque_number, ic.amount, ic.cheque_date as d, null::uuid as property_id, ic.status,
                            v.name_en
@@ -500,7 +458,7 @@ public class BankLineActionService {
                 select coalesce(sum(jl.credit - jl.debit), 0) from journal_lines jl
                 join tenant_default_account_mappings d on d.account_id = jl.account_id and d.tenant_id = jl.tenant_id
                 where jl.tenant_id = :t and d.role = 'BANK_SUSPENSE'""", p, BigDecimal.class);
-        return new BankRecDTOs.LineCandidates(l.id(), clear, receive, bounce, present, suspense,
+        return new BankRecDTOs.LineCandidates(l.id(), clear, receive, present, suspense,
                 bank.getBankTrn() != null && !bank.getBankTrn().isBlank(), leafRows, refused, firstOpenDay(t, l.date()));
     }
 

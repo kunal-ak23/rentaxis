@@ -17,11 +17,9 @@ import type { ChequeMode, ChequeStatus, LeaseStatus } from "@/lib/api/leasing";
  *    accepts only CASH and TRANSFER, and an ONLINE row waiting to be paid
  *    moves to ONLINE_PENDING through the gateway, not through this dialog
  *  - DEPOSITED               → clear, bounce
- *  - CLEARED + PDC           → bounce (late return), receipt
- *  - CLEARED + CASH/TRANSFER → receipt only — cash does not un-arrive, and a
- *    settled transfer is reversed by the bank as its own receipt, not by
- *    editing this one (`ChequeService#bounce` 400s a non-PDC bounce after
- *    clearing, so the UI never offers it)
+ *  - CLEARED                 → receipt only — cleared means the bank has paid
+ *    it and the transaction has happened, so `ChequeService#bounce` refuses
+ *    any CLEARED row whatever its mode (ruling 2026-11-10)
  *  - BOUNCED                 → replace
  *  - ONLINE_PENDING          → releaseOnline — a gateway session that was
  *    abandoned without a callback leaves the row parked out of the register's
@@ -167,7 +165,8 @@ export function registerActionsFor(
         case "DEPOSITED":
             return withoutRefused(["clear", "bounce"]);
         case "CLEARED":
-            return withoutRefused(mode === "PDC" ? ["bounce", "receipt"] : ["receipt"]);
+            // Never bounce: cleared means the bank has paid it (ruling 2026-11-10).
+            return withoutRefused(["receipt"]);
         case "BOUNCED":
             return ledgerSettled ? [] : withoutRefused(["replace"]);
         case "ONLINE_PENDING":
