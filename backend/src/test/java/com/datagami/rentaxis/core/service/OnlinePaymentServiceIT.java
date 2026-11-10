@@ -834,18 +834,21 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
     }
 
     /**
-     * An applied capture redelivered after its row bounced from CLEARED (a
-     * chargeback) is still the applied capture: it neither turns into a refund
-     * nor moves its capture time.
+     * A captured (CLEARED) row refuses a bounce, and an applied capture
+     * redelivered afterwards is still the applied capture: it neither turns into
+     * a refund nor moves its capture time.
      */
     @Test
-    void aRedeliveredCaptureAfterTheRowBouncedStaysAppliedWithItsFirstCaptureTime() throws Exception {
+    void aCapturedRowCannotBounceAndARedeliveredCaptureStaysAppliedWithItsFirstCaptureTime() throws Exception {
         UUID chequeId = firstCheque();
         onlinePayments.createOrder(chequeId);
         webhookCaptured();
         OnlinePayment first = onlyPayment();
-        chequeService.bounce(chequeId, new ChequeActionRequest(TODAY, null, ChequeFailureReason.BOUNCE, null));
-        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.BOUNCED);
+        // Ruling 2026-11-10: a cleared row never bounces, an online capture included.
+        assertThatThrownBy(() -> chequeService.bounce(chequeId,
+                new ChequeActionRequest(TODAY, null, ChequeFailureReason.BOUNCE, null)))
+                .hasMessageContaining("A cleared cheque cannot bounce");
+        assertThat(reread(chequeId).getStatus()).isEqualTo(ChequeStatus.CLEARED);
         Thread.sleep(20);
 
         webhookCaptured();

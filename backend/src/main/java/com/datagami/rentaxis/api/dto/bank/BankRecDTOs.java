@@ -226,7 +226,6 @@ public final class BankRecDTOs {
     public record ReceiveInput(@NotNull UUID statementLineId, @NotNull UUID chequeId, Boolean fromSuspense,
                                UUID bankLeafId) { }
 
-    public record BounceInput(@NotNull UUID statementLineId, @NotNull UUID chequeId, String reason) { }
 
     public record PresentInput(@NotNull UUID statementLineId, @NotNull UUID issuedChequeId) { }
 
@@ -264,12 +263,12 @@ public final class BankRecDTOs {
      * be booked on, after the period; null when the line's own date is open.
      */
     public record LineCandidates(UUID statementLineId, List<Candidate> clear, List<Candidate> receive,
-                                 List<Candidate> bounce, List<Candidate> present, BigDecimal suspenseBalance,
+                                 List<Candidate> present, BigDecimal suspenseBalance,
                                  boolean bankTrnSet, List<Leaf> leaves, List<Refused> refused, LocalDate firstOpenDay) {
         public LineCandidates(UUID statementLineId, List<Candidate> clear, List<Candidate> receive,
-                              List<Candidate> bounce, List<Candidate> present, BigDecimal suspenseBalance,
+                              List<Candidate> present, BigDecimal suspenseBalance,
                               boolean bankTrnSet, List<Leaf> leaves, List<Refused> refused) {
-            this(statementLineId, clear, receive, bounce, present, suspenseBalance, bankTrnSet, leaves, refused, null);
+            this(statementLineId, clear, receive, present, suspenseBalance, bankTrnSet, leaves, refused, null);
         }
     }
 

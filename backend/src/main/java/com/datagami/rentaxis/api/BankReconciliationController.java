@@ -281,12 +281,6 @@ public class BankReconciliationController {
         return ResponseEntity.ok(actions.receive(in));
     }
 
-    @PostMapping("/lines/actions/bounce")
-    public ResponseEntity<BankRecDTOs.ActionResult> bounce(@Valid @RequestBody BankRecDTOs.BounceInput in) {
-        requireTenantSelected();
-        return ResponseEntity.ok(actions.bounce(in));
-    }
-
     @PostMapping("/lines/actions/present")
     public ResponseEntity<BankRecDTOs.ActionResult> present(@Valid @RequestBody BankRecDTOs.PresentInput in) {
         requireTenantSelected();

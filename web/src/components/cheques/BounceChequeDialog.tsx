@@ -10,14 +10,12 @@ import { chequeTitle } from "./chequeLabel";
 import { serverText } from "@/components/finance/bankrec/serverText";
 
 /**
- * A cheque bounced — from DEPOSITED (the ordinary case) or from CLEARED, PDC
- * only, as a late return (spec §7.4). The server enforces which; this dialog
- * is opened for either and always sends the same request shape.
+ * A cheque bounced — only from DEPOSITED. A cleared cheque has been paid by the
+ * bank and can never bounce; the server refuses it (`ChequeService.bounce`).
  *
  * No debit-account override here, unlike deposit / clear / receive.
- * `ChequeService.bounce` (:310-370) never reads `r.debitAccountId()`: the
- * credit side of the CBR is the cheque's own debit account for a late return
- * (:329-332) or PDC receivable for a DEPOSITED one (:334). Offering the picker
+ * `ChequeService.bounce` never reads `r.debitAccountId()`: the credit side of
+ * the CBR is always PDC receivable. Offering the picker
  * told an accountant they had chosen which bank is credited back while the
  * entry ignored them — a wrong belief about a journal, which is worse than a
  * missing field.

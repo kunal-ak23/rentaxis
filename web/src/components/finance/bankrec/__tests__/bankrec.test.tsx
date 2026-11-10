@@ -248,7 +248,7 @@ describe("undo and reverse", () => {
 describe("create-from-line dialogs", () => {
     it("offers what fits the line's direction", () => {
         expect(actionsFor([line("x", "C", 10)])).toEqual(["clear", "receive", "interest", "suspense", "other"]);
-        expect(actionsFor([line("x", "D", -10)])).toEqual(["bounce", "present", "charge", "other"]);
+        expect(actionsFor([line("x", "D", -10)])).toEqual(["present", "charge", "other"]);
         expect(actionsFor([line("x", "D", -10), line("y", "V", -1)])).toEqual(["charge", "other"]);
         // Several lines only with the split stated; VAT at most 5% of the net.
         expect(chargeSplit([-50, -2.5], false, true).error).toBe("split");
@@ -262,7 +262,7 @@ describe("create-from-line dialogs", () => {
 
     it("previews the charge with its VAT, and posts one BNK for both lines on the chosen leaf", async () => {
         stubFetch([
-            { match: "/candidates", body: { statementLineId: "d1", clear: [], receive: [], bounce: [], present: [],
+            { match: "/candidates", body: { statementLineId: "d1", clear: [], receive: [], present: [],
                 suspenseBalance: 0, bankTrnSet: true, leaves: LEAVES } },
             { method: "POST", match: "/lines/actions/post", body: { matchId: "m9", journalEntryIds: ["e9"], entryNumbers: ["BNK-26/7"] } },
         ]);
@@ -289,7 +289,7 @@ describe("create-from-line dialogs", () => {
     it("books a line dated in the locked books on the first open day once that is ticked, in English and Arabic", async () => {
         for (const locale of ["en", "ar"] as const) {
             stubFetch([
-                { match: "/candidates", body: { statementLineId: "d1", clear: [], receive: [], bounce: [], present: [],
+                { match: "/candidates", body: { statementLineId: "d1", clear: [], receive: [], present: [],
                     suspenseBalance: 0, bankTrnSet: false, leaves: [LEAVES[0]], firstOpenDay: "2026-09-11" } },
                 { method: "POST", match: "/lines/actions/post", body: { matchId: "m9", journalEntryIds: ["e9"], entryNumbers: ["BNK-26/8"] } },
             ]);
@@ -311,7 +311,7 @@ describe("create-from-line dialogs", () => {
 
     /** Review P3-4 of #435: the server dates by the latest selected line; so does the dialog. */
     it("asks for the first open day only when the latest selected line is in the locked books", async () => {
-        const lockedCands = { statementLineId: "d1", clear: [], receive: [], bounce: [], present: [],
+        const lockedCands = { statementLineId: "d1", clear: [], receive: [], present: [],
             suspenseBalance: 0, bankTrnSet: false, leaves: [LEAVES[0]], firstOpenDay: "2026-09-11" };
         stubFetch([{ match: "/candidates", body: lockedCands },
             { method: "POST", match: "/lines/actions/post", body: { matchId: "m9", journalEntryIds: ["e9"], entryNumbers: ["BNK-26/10"] } }]);
@@ -337,7 +337,7 @@ describe("create-from-line dialogs", () => {
 
     it("sends no first-open-day flag for a line in open books", async () => {
         stubFetch([
-            { match: "/candidates", body: { statementLineId: "d1", clear: [], receive: [], bounce: [], present: [],
+            { match: "/candidates", body: { statementLineId: "d1", clear: [], receive: [], present: [],
                 suspenseBalance: 0, bankTrnSet: false, leaves: [LEAVES[0]], firstOpenDay: null } },
             { method: "POST", match: "/lines/actions/post", body: { matchId: "m9", journalEntryIds: ["e9"], entryNumbers: ["BNK-26/9"] } },
         ]);
@@ -352,7 +352,7 @@ describe("create-from-line dialogs", () => {
     });
 
     it("refuses a two-line charge whose VAT would be more than 5% before sending it", async () => {
-        stubFetch([{ match: "/candidates", body: { statementLineId: "x", clear: [], receive: [], bounce: [], present: [],
+        stubFetch([{ match: "/candidates", body: { statementLineId: "x", clear: [], receive: [], present: [],
             suspenseBalance: 0, bankTrnSet: true, leaves: [LEAVES[0]] } }]);
         renderIn("en", <LineActionDialog lines={[line("x", "SMS ALERT FEE", -25), line("y", "SMS ALERT FEE", -25)]}
                                           onClose={() => {}} onDone={() => {}} />);
@@ -367,7 +367,7 @@ describe("create-from-line dialogs", () => {
 
     /** Batch 4 review #5: a refused net/VAT was read as 0 with nothing said; now it is named and blocks Book. */
     it("names a refused net or VAT on a two-line charge and will not book it", async () => {
-        stubFetch([{ match: "/candidates", body: { statementLineId: "x", clear: [], receive: [], bounce: [], present: [],
+        stubFetch([{ match: "/candidates", body: { statementLineId: "x", clear: [], receive: [], present: [],
             suspenseBalance: 0, bankTrnSet: true, leaves: [LEAVES[0]] } }]);
         renderIn("en", <LineActionDialog lines={[line("x", "SMS ALERT FEE", -25), line("y", "SMS ALERT FEE", -25)]}
                                           onClose={() => {}} onDone={() => {}} />);
@@ -384,7 +384,7 @@ describe("create-from-line dialogs", () => {
     });
 
     it("pre-selects the cheque by number, and says when there is no bank TRN", async () => {
-        stubFetch([{ match: "/candidates", body: { statementLineId: "e", clear: [], receive: [], bounce: [],
+        stubFetch([{ match: "/candidates", body: { statementLineId: "e", clear: [], receive: [],
             present: [{ id: "ic-1", kind: "ISSUED_CHEQUE", label: "000031 Gulf AC", amount: 20000, date: "2026-09-28",
                 chequeNo: "000031", propertyId: null, status: "ISSUED", preselected: true }],
             suspenseBalance: 0, bankTrnSet: false, leaves: [LEAVES[0]] } },
@@ -405,7 +405,7 @@ describe("create-from-line dialogs", () => {
     /** Tutorial 45: with a TRN the tick follows the line's own words ("+ VAT"), else starts unticked. */
     it.each([["SERVICE CHARGE + VAT", true], ["SERVICE CHARGE", false]] as const)(
         "starts the VAT tick from the line text (%s)", async (text, ticked) => {
-            stubFetch([{ match: "/candidates", body: { statementLineId: "v", clear: [], receive: [], bounce: [], present: [],
+            stubFetch([{ match: "/candidates", body: { statementLineId: "v", clear: [], receive: [], present: [],
                 suspenseBalance: 0, bankTrnSet: true, leaves: [LEAVES[0]] } }]);
             renderIn("en", <LineActionDialog lines={[line("v", text, -105)]} initial="charge" onClose={() => {}} onDone={() => {}} />);
             await waitFor(() => expect(screen.getByTestId("vat-included")).toBeInTheDocument());

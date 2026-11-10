@@ -164,7 +164,8 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
         for (int i = 0; i < 6; i++) {
             ChequeDTO c = rows.get(i);
             cheques.deposit(c.id(), ChequeActionRequest.on(c.chequeDate()));
-            cheques.clear(c.id(), ChequeActionRequest.on(c.chequeDate()));
+            // 5 and 6 come back from the bank; a cleared cheque never bounces.
+            if (i < 4) cheques.clear(c.id(), ChequeActionRequest.on(c.chequeDate()));
         }
         cheques.receive(rows.get(6).id(), ChequeActionRequest.on(rows.get(6).chequeDate()));
         for (int i = 4; i < 6; i++) {
@@ -195,7 +196,8 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
         assertThat(r).hasSize(12);
         assertThat(r).extracting(c -> c.get("particular")).startsWith(depositName, advanceRentName, adminFeeName);
         assertThat(r.subList(3, 10)).allSatisfy(c -> assertThat(c.get("particular")).isEqualTo(pdcName));
-        assertThat(r.subList(10, 12)).allSatisfy(c -> assertThat(c.get("particular")).isEqualTo(bankName));
+        // The two CBRs credit PDC receivable: they bounced from DEPOSITED (a cleared cheque never bounces).
+        assertThat(r.subList(10, 12)).allSatisfy(c -> assertThat(c.get("particular")).isEqualTo(pdcName));
         assertThat(r).extracting(c -> c.get("balance")).containsExactly("3000.00", "63000.00", "63500.00", "54000.00",
                 "51000.00", "40800.00", "30600.00", "20400.00", "10200.00", "0.00", "10200.00", "20400.00");
         assertThat(r.subList(3, 10)).extracting(c -> c.get("chqNo"))
@@ -514,7 +516,7 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
                 .withLeaseServices(leaseService, grid, leasePosting);
     }
 
-    /** Tenant B on unit "102": rent 12,000 in two cheques from 2026-10-02; the first banked, cleared and bounced that day. */
+    /** Tenant B on unit "102": rent 12,000 in two cheques from 2026-10-02; the first banked and bounced that day. */
     private Renter addTenantB() {
         Renter tenantB = fx.createRenter("Tenant B");
         Unit unitB = fx.createUnit(fx.property(), "102");
@@ -523,7 +525,6 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
         leasePosting.post(leaseB);
         ChequeDTO first = grid.list(leaseB).get(0);
         cheques.deposit(first.id(), ChequeActionRequest.on(first.chequeDate()));
-        cheques.clear(first.id(), ChequeActionRequest.on(first.chequeDate()));
         cheques.bounce(first.id(), new ChequeActionRequest(first.chequeDate(), null, ChequeFailureReason.BOUNCE, null));
         return tenantB;
     }

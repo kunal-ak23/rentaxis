@@ -25,7 +25,7 @@ import { button, field, label, primary } from "./styles";
 /** The stated split of a multi-line charge: zero is an answer (no VAT). */
 const SPLIT = { allowZero: true } as const;
 
-export type LineAction = "clear" | "receive" | "receiveSuspense" | "bounce" | "present" | "charge" | "interest" | "suspense" | "other";
+export type LineAction = "clear" | "receive" | "receiveSuspense" | "present" | "charge" | "interest" | "suspense" | "other";
 
 /** Which actions a selection of lines offers (spec §3 "Offered when"). */
 export function actionsFor(lines: StatementLine[]): LineAction[] {
@@ -35,7 +35,9 @@ export function actionsFor(lines: StatementLine[]): LineAction[] {
     const unmatched = lines.every(l => !l.matchId);
     if (!unmatched) return lines.length === 1 && credit && lines[0].matchStatus === "CONFIRMED" ? ["receiveSuspense"] : [];
     if (credit) return lines.length === 1 ? ["clear", "receive", "interest", "suspense", "other"] : ["clear", "other"];
-    if (debit) return lines.length === 1 ? ["bounce", "present", "charge", "other"] : lines.length === 2 ? ["charge", "other"] : ["other"];
+    // A debit never bounces a cheque: only a DEPOSITED cheque bounces, and the bank
+    // never paid it, so a statement has nothing to take back (ruling 2026-11-10).
+    if (debit) return lines.length === 1 ? ["present", "charge", "other"] : lines.length === 2 ? ["charge", "other"] : ["other"];
     return ["other"];
 }
 
@@ -64,7 +66,6 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     const [leafId, setLeafId] = useState<string>("");
     const [shared, setShared] = useState<boolean | null>(null);
     const [vatIncluded, setVatIncluded] = useState(false);
-    const [reason, setReason] = useState("");
     const [accountId, setAccountId] = useState("");
     const [narration, setNarration] = useState("");
     // Sim r23 S23-03: a line dated in the locked books is booked on the first open day, when ticked.
@@ -105,7 +106,6 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         switch (action) {
             case "clear": return cands.clear;
             case "receive": case "receiveSuspense": return cands.receive;
-            case "bounce": return cands.bounce;
             case "present": return cands.present;
             default: return [];
         }
@@ -138,7 +138,6 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         switch (action) {
             case "clear": case "receive": return [[t("dr"), leafName, abs], [t("cr"), t("pdcReceivable"), abs]];
             case "receiveSuspense": return [[t("dr"), t("suspenseAccount"), picked.size ? pickedTotal : 0], [t("cr"), t("pdcReceivable"), picked.size ? pickedTotal : 0]];
-            case "bounce": return [[t("dr"), t("receivable"), abs], [t("cr"), leafName, abs]];
             case "present": return [[t("dr"), t("pdcPayable"), abs], [t("cr"), leafName, abs]];
             case "charge": {
                 // Tutorial 45: the debit names the account it lands in, not the field ("Charge").
@@ -169,8 +168,6 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         switch (action) {
             case "clear": return picked.size > 0 && Math.round(pickedTotal * 100) === Math.round(total * 100);
             case "receive": case "receiveSuspense": case "present": return picked.size === 1;
-            // PR #400 review P3-4: the bank's reason is chosen, never defaulted.
-            case "bounce": return picked.size === 1 && !!reason;
             case "other": return !!accountId && (!lockedLine || onFirstOpenDay);
             // Batch 4 review #5: a refused net or VAT is named under its field and never booked as 0.
             case "charge": return !split.error && !(multiCharge && (moneyTextInvalid(netText, SPLIT) || moneyTextInvalid(vatText, SPLIT)))
@@ -189,7 +186,6 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                 case "clear": r = await bankRecApi.clearCheques(lines.map(l => l.id), ids); break;
                 case "receive": r = await bankRecApi.receive({ statementLineId: first.id, chequeId: ids[0], bankLeafId: leafId || null }); break;
                 case "receiveSuspense": r = await bankRecApi.receive({ statementLineId: first.id, chequeId: ids[0], fromSuspense: true }); break;
-                case "bounce": r = await bankRecApi.bounce({ statementLineId: first.id, chequeId: ids[0], reason }); break;
                 case "present": r = await bankRecApi.present({ statementLineId: first.id, issuedChequeId: ids[0] }); break;
                 default:
                     r = await bankRecApi.post({
@@ -225,7 +221,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                     ))}
                 </div>
 
-                {["clear", "receive", "receiveSuspense", "bounce", "present"].includes(action) && (
+                {["clear", "receive", "receiveSuspense", "present"].includes(action) && (
                     <div>
                         <div className={`${label} mb-1`}>{t("candidates")}</div>
                         {action === "clear" && <p className="text-[11px] text-muted mb-1">{t("selectCheques")}</p>}
@@ -270,14 +266,6 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                     </div>
                 )}
 
-                {action === "bounce" && (
-                    <label className="block text-xs"><span className={`${label} block mb-1`}>{t("returnReason")}</span>
-                        <select className={field} value={reason} onChange={e => setReason(e.target.value)} data-testid="bounce-reason">
-                            <option value="" disabled>{t("chooseReturnReason")}</option>
-                            {["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED", "STOPPED_PAYMENT", "TECHNICAL_RETURN"].map(r => <option key={r} value={r}>{t(`reason_${r}`)}</option>)}
-                        </select>
-                    </label>
-                )}
                 {action === "charge" && (
                     <div className="text-xs space-y-1">
                         {lines.length === 1 && bankTrnSet && (

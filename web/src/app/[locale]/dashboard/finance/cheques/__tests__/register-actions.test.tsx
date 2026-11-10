@@ -42,8 +42,8 @@ describe("registerActionsFor", () => {
     });
 
     describe("CLEARED", () => {
-        it("offers Bounce (late return) and Receipt for a PDC row", () => {
-            expect(registerActionsFor("CLEARED", "PDC", true)).toEqual(["bounce", "receipt"]);
+        it("offers only Receipt for a PDC row: a cleared cheque never bounces", () => {
+            expect(registerActionsFor("CLEARED", "PDC", true)).toEqual(["receipt"]);
         });
 
         it("offers Receipt only for a CASH row — cash does not un-arrive", () => {

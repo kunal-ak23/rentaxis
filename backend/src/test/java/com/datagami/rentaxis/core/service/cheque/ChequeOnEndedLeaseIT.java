@@ -160,7 +160,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
     private static final LocalDate SETTLED_ON = LocalDate.of(2027, 2, 20);
     /** The day the kept paper is finally banked, a fortnight after the move-out. */
     private static final LocalDate BANKED_ON = LocalDate.of(2027, 3, 1);
-    /** A cheque that had cleared comes back before the statement is drawn (#297). */
+    /** A cheque still in clearing comes back before the statement is drawn (#297). */
     private static final LocalDate RETURNED_BEFORE_SETTLEMENT = LocalDate.of(2027, 2, 18);
     /** A fine approved before T, so its collection row is kept rather than handed back. */
     private static final LocalDate PENALTY_ON = LocalDate.of(2027, 1, 20);
@@ -189,6 +189,13 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
      * ever late — and the January rent is left in the drawer.
      */
     private UUID sampleResidencesWithOneChequeStillInTheDrawer() {
+        UUID leaseId = sampleResidencesWithOctoberBanked();
+        cheques.clear(chequeOn(leaseId, RENT_1).getId(), ChequeActionRequest.on(RENT_1));
+        return leaseId;
+    }
+
+    /** The same contract with October's cheque banked but not yet cleared. */
+    private UUID sampleResidencesWithOctoberBanked() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
                         line("SECURITY_DEPOSIT", "3000")));
@@ -202,7 +209,8 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         posting.post(leaseId);
         clearOnItsOwnDate(chequeOn(leaseId, ADMIN_CHEQUE));
         clearOnItsOwnDate(chequeOn(leaseId, DEPOSIT_CHEQUE));
-        clearOnItsOwnDate(chequeOn(leaseId, RENT_1));
+        Cheque october = chequeOn(leaseId, RENT_1);
+        cheques.deposit(october.getId(), ChequeActionRequest.on(october.getChequeDate()));
         return leaseId;
     }
 
@@ -823,8 +831,8 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
      * Issue #297: two bounces on one contract, and the settlement's own one must
      * stay shut.
      *
-     * <p>The October cheque (A) cleared, then failed before the statement was
-     * drawn, so the {@code STL} netted its 12,750 against the deposit and raised a
+     * <p>The October cheque (A) was banked, then returned before the statement was
+     * drawn (a cleared cheque cannot bounce, so it never cleared), so the {@code STL} netted its 12,750 against the deposit and raised a
      * CASH row for the remainder — A has been paid for. The January cheque (B) is
      * the one §9.1 kept; it bounces a fortnight <em>after</em> finalise, and that
      * genuinely puts 12,750 back on the contract.</p>
@@ -840,11 +848,14 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
      */
     @Test
     void aBounceAfterFinaliseDoesNotReopenReplaceOnAChequeTheSettlementAbsorbed() {
-        UUID leaseId = terminatedWithAKeptCheque();
+        UUID leaseId = sampleResidencesWithOctoberBanked();
+        recognition.runTo(RECOGNISED_TO, false);
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Renter relocating"), null);
+        recognition.runTo(T, false);
         UUID absorbed = chequeOn(leaseId, RENT_1).getId();
         UUID kept = chequeOn(leaseId, RENT_2).getId();
 
-        // A: cleared in October, returned by the bank before the statement is drawn.
+        // A: banked in October, returned by the bank before the statement is drawn.
         cheques.bounce(absorbed, ChequeActionRequest.on(RETURNED_BEFORE_SETTLEMENT));
         assertThat(statusOf(absorbed)).isEqualTo(ChequeStatus.BOUNCED);
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("7510.27");

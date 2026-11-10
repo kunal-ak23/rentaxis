@@ -555,7 +555,7 @@ class ChequeServiceIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> service.bounce(cash.id(),
                 new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.BOUNCE, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("Only a post-dated cheque can bounce after it has cleared");
+                .hasMessageContaining("A cleared cheque cannot bounce");
 
         assertThat(entryCount(JournalDocType.CBR, cash.id())).isZero();
     }
@@ -673,52 +673,25 @@ class ChequeServiceIT extends AbstractPostgresIT {
     }
 
     /**
-     * The bank took the money back out. Crediting PDC receivable here would credit
-     * an account the CRT already settled — the landlord would look like they were
-     * still holding the cheque <em>and</em> would still show the cash in the bank.
+     * Ruling 2026-11-10: cleared means the bank has paid the cheque and the
+     * transaction has happened, so it never bounces, whatever its mode. The refusal
+     * posts nothing: no CBR, and the bank keeps the money.
      */
     @Test
-    void bounceAfterClearDebitsBankNotPdc() {
+    void aClearedChequeCannotBounce() {
         PostLeaseResponse r = posted();
         UUID leaseId = r.lease().getId();
         UUID chequeId = r.cheques().get(0).id();
         service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
         service.clear(chequeId, ChequeActionRequest.on(CLEAR_DATE));
 
-        ChequeDTO bounced = service.bounce(chequeId,
-                new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.ACCOUNT_CLOSED, null));
+        assertThatThrownBy(() -> service.bounce(chequeId,
+                new ChequeActionRequest(BOUNCE_DATE, null, ChequeFailureReason.ACCOUNT_CLOSED, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("A cleared cheque cannot bounce");
 
-        Account bank = leaf(AccountRole.BANK);
-        assertPair(bounced.cbrJournalId(), JournalDocType.CBR, BOUNCE_DATE, chequeId, leaseId,
-                leaf(AccountRole.RENT_RECEIVABLE), bank, "12750");
-        // Clear then bounce leaves the bank where it started and the debt outstanding.
-        assertThat(balance(bank, leaseId)).isEqualByComparingTo("0");
-        // The cleared cheque stays settled against PDC receivable: 53,000 registered
-        // less the 12,750 that cleared. The bounce moved money between the bank and
-        // rent receivable, not back into the drawer.
-        assertThat(balance(leaf(AccountRole.PDC_RECEIVABLE), leaseId)).isEqualByComparingTo("40250");
-    }
-
-    /**
-     * The same rule when the money did not land in the property's default bank: a
-     * role re-resolved a month later can answer with a different leaf, so the
-     * account that was actually debited is the one that is credited back.
-     */
-    @Test
-    void bounceAfterClearCreditsTheAccountDebitedAtClear() {
-        PostLeaseResponse r = posted();
-        UUID leaseId = r.lease().getId();
-        UUID chequeId = r.cheques().get(0).id();
-        Account mashreq = otherBank();
-        service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
-        service.clear(chequeId, new ChequeActionRequest(CLEAR_DATE, null, null, mashreq.getId()));
-
-        ChequeDTO bounced = service.bounce(chequeId, ChequeActionRequest.on(BOUNCE_DATE));
-
-        assertPair(bounced.cbrJournalId(), JournalDocType.CBR, BOUNCE_DATE, chequeId, leaseId,
-                leaf(AccountRole.RENT_RECEIVABLE), mashreq, "12750");
-        assertThat(balance(mashreq, leaseId)).isEqualByComparingTo("0");
-        assertThat(balance(leaf(AccountRole.BANK), leaseId)).isEqualByComparingTo("0");
+        assertThat(chequeRepo.findById(chequeId).orElseThrow().getStatus()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(balance(leaf(AccountRole.BANK), leaseId)).isEqualByComparingTo("12750");
     }
 
     // ------------------------------------------------------------------

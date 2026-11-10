@@ -335,7 +335,6 @@ export type LineCandidates = {
     statementLineId: string;
     clear: Candidate[];
     receive: Candidate[];
-    bounce: Candidate[];
     present: Candidate[];
     suspenseBalance: number;
     bankTrnSet: boolean;
@@ -400,8 +399,6 @@ export const bankRecApi = {
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/clear-cheques`, { statementLineIds, chequeIds }),
     receive: (body: { statementLineId: string; chequeId: string; fromSuspense?: boolean; bankLeafId?: string | null }) =>
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/receive`, body),
-    bounce: (body: { statementLineId: string; chequeId: string; reason?: string | null }) =>
-        apiSend<ActionResult>("POST", `${ROOT}/lines/actions/bounce`, body),
     present: (body: { statementLineId: string; issuedChequeId: string }) =>
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/present`, body),
     post: (body: { statementLineIds: string[]; kind: PostKind; vatIncluded?: boolean; accountId?: string | null;

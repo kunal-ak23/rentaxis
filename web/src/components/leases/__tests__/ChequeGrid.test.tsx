@@ -249,7 +249,7 @@ describe("ChequeGrid row actions", () => {
         // ONLINE_PENDING never moves through "receive" — the server 400s that —
         // but staff may release an abandoned gateway session back to the register.
         expect(registerActionsFor("ONLINE_PENDING", "ONLINE", false)).toEqual(["releaseOnline"]);
-        expect(registerActionsFor("CLEARED", "PDC", false)).toEqual(["bounce", "receipt"]);
+        expect(registerActionsFor("CLEARED", "PDC", false)).toEqual(["receipt"]);
         expect(registerActionsFor("CLEARED", "CASH", false)).toEqual(["receipt"]);
         expect(registerActionsFor("CANCELLED", "PDC", false)).toEqual([]);
     });

@@ -970,7 +970,9 @@ public class ContractImportValidator {
         if (!banked && deposited != null) {
             errors.add(outOfPlace(rowNum, "DepositedDate", status));
         }
-        if (!"CLEARED".equals(status) && !"BOUNCED".equals(status) && cleared != null) {
+        if (!"CLEARED".equals(status) && cleared != null) {
+            // A BOUNCED row included: a cleared cheque never bounces (ruling
+            // 2026-11-10), so a row that claims both is one or the other.
             errors.add(outOfPlace(rowNum, "ClearedDate", status));
         }
         if (!"BOUNCED".equals(status) && bounced != null) {
@@ -1028,7 +1030,7 @@ public class ContractImportValidator {
         return switch (status) {
             case DEPOSITED -> deposited;
             case CLEARED -> deposited != null ? deposited : cleared;
-            case BOUNCED -> deposited != null ? deposited : (cleared != null ? cleared : bounced);
+            case BOUNCED -> deposited != null ? deposited : bounced;
             default -> null;
         };
     }

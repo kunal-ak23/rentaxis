@@ -52,7 +52,7 @@ describe("registerActionsFor without a lease (the caller that cannot know)", () 
         expect(registerActionsFor("REGISTERED", "PDC", true)).toEqual(["deposit", "details", "cancel"]);
         expect(registerActionsFor("REGISTERED", "CASH", false)).toEqual(["receive", "details"]);
         expect(registerActionsFor("DEPOSITED", "PDC", true)).toEqual(["clear", "bounce"]);
-        expect(registerActionsFor("CLEARED", "PDC", true)).toEqual(["bounce", "receipt"]);
+        expect(registerActionsFor("CLEARED", "PDC", true)).toEqual(["receipt"]);
         expect(registerActionsFor("CLEARED", "CASH", true)).toEqual(["receipt"]);
         expect(registerActionsFor("BOUNCED", "PDC", true)).toEqual(["replace"]);
         expect(registerActionsFor("ONLINE_PENDING", "ONLINE", true)).toEqual(["releaseOnline"]);
@@ -133,7 +133,7 @@ describe("registerActionsFor a cheque settled before the acquisition", () => {
     it("drops bounce/replace/receipt — the verbs `requireOurs` refuses — everywhere they would otherwise appear", () => {
         // DEPOSITED keeps `clear` (untouched by `requireOurs`) but loses `bounce`.
         expect(registerActionsFor("DEPOSITED", "PDC", true, undefined, false, true)).toEqual(["clear"]);
-        // CLEARED had only `bounce`/`receipt` to offer, so both cases end up empty.
+        // CLEARED had only `receipt` to offer, so both cases end up empty.
         expect(registerActionsFor("CLEARED", "PDC", true, undefined, false, true)).toEqual([]);
         expect(registerActionsFor("CLEARED", "CASH", true, undefined, false, true)).toEqual([]);
         // BOUNCED had only `replace`.
@@ -145,6 +145,6 @@ describe("registerActionsFor a cheque settled before the acquisition", () => {
     });
 
     it("defaults to false, unchanged from every case above", () => {
-        expect(registerActionsFor("CLEARED", "PDC", true)).toEqual(["bounce", "receipt"]);
+        expect(registerActionsFor("CLEARED", "PDC", true)).toEqual(["receipt"]);
     });
 });
