@@ -1513,6 +1513,30 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
         assertThat(assessmentsOf(leaseId)).isEmpty();
     }
 
+    /** A group account, or an income leaf switched off, is not one a JV may credit. */
+    @Test
+    void aJournalVoucherCreditsOnlyAnActiveLeaf() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        Account parking = leaf(AccountRole.PARKING_INCOME);
+        long before = journalEntryRows();
+
+        assertThat(parking.getParentId()).as("the parking leaf sits under a group").isNotNull();
+        assertThatThrownBy(() -> service.raiseJournalVoucher(leaseId,
+                new com.datagami.rentaxis.api.dto.penalty.LeaseJournalVoucherRequest(
+                        APPROVE_DATE, parking.getParentId(), new BigDecimal("300"), null, "Extra parking"), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("is not an active ledger account");
+
+        jdbc.update("update accounts set is_active = false where id = ?", parking.getId());
+        assertThatThrownBy(() -> service.raiseJournalVoucher(leaseId, voucher(parking, "300", "Extra parking"), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("is not an active ledger account");
+
+        assertThat(journalEntryRows()).isEqualTo(before);
+        assertThat(assessmentsOf(leaseId)).isEmpty();
+    }
+
     @Test
     void aJournalVoucherIsNeverProposedAsAPenalty() {
         PostLeaseResponse r = posted();

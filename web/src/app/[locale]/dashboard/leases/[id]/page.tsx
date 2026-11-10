@@ -1393,6 +1393,8 @@ export default function LeaseDetailPage() {
                 open={voucherOpen}
                 leaseId={leaseId}
                 propertyId={lease.propertyId}
+                // LeaseVat.isVatLease: VAT on the rent, by flag or on a rent line.
+                vatLease={!!lease.rentVatApplicable || totals.vat > 0}
                 onClose={() => setVoucherOpen(false)}
                 onPosted={() => {
                     setVoucherOpen(false);

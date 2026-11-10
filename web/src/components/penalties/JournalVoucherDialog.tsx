@@ -26,11 +26,13 @@ type Props = {
     open: boolean;
     leaseId: string;
     propertyId?: string | null;
+    /** False on a lease without VAT: the server refuses VAT there, so the option is not offered. */
+    vatLease?: boolean;
     onClose: () => void;
     onPosted: (p: PenaltyAssessment) => void;
 };
 
-export default function JournalVoucherDialog({ open, leaseId, propertyId, onClose, onPosted }: Props) {
+export default function JournalVoucherDialog({ open, leaseId, propertyId, vatLease = true, onClose, onPosted }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
@@ -61,7 +63,7 @@ export default function JournalVoucherDialog({ open, leaseId, propertyId, onClos
         setError(null);
         try {
             const posted = await penaltyApi.journalVoucher(leaseId, {
-                entryDate, accountId, amount, narration: narration.trim(), vatable: vat === "yes",
+                entryDate, accountId, amount, narration: narration.trim(), vatable: vatLease && vat === "yes",
             });
             onPosted(posted);
         } catch (e) {
@@ -94,9 +96,10 @@ export default function JournalVoucherDialog({ open, leaseId, propertyId, onClos
                 </div>
                 <div>
                     <label className={label} htmlFor="journal-voucher-vat">{t("chargeVat")}</label>
-                    <select id="journal-voucher-vat" className={field} value={vat} onChange={e => setVat(e.target.value as "no" | "yes")}>
+                    <select id="journal-voucher-vat" className={field} value={vatLease ? vat : "no"} disabled={!vatLease}
+                        onChange={e => setVat(e.target.value as "no" | "yes")}>
                         <option value="no">{t("chargeVatNo")}</option>
-                        <option value="yes">{t("chargeVatYes")}</option>
+                        {vatLease && <option value="yes">{t("chargeVatYes")}</option>}
                     </select>
                 </div>
                 <div>

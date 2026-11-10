@@ -1429,7 +1429,6 @@ export type PenaltyAssessment = {
   sourceId?: string | null;
 };
 
-/** ProposePenaltyRequest. */
 /** LeaseJournalVoucherRequest: `amount` is net; `vatable` adds 5 % (refused on a lease without VAT). */
 export type LeaseJournalVoucherInput = {
   entryDate?: string | null;
@@ -1439,6 +1438,7 @@ export type LeaseJournalVoucherInput = {
   narration: string;
 };
 
+/** ProposePenaltyRequest. */
 export type ProposePenaltyInput = {
   leaseId: string;
   chequeId?: string | null;
