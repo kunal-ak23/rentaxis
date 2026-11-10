@@ -282,6 +282,12 @@ export type DeleteOffer = {
     proofImportId: string;
     proofFileName: string | null;
     imports: { id: string; fileName: string | null }[];
+    /**
+     * Sim r26 S26-02/03: the copy step — it removes only the lines {@code proofFileName} shows as copies,
+     * from every import holding them; the import named and its other lines stay. Otherwise each import
+     * named is deleted (the delete-the-others step).
+     */
+    copies?: boolean;
 };
 
 /** A day to prove with its paper-statement totals. The lines' own totals are never sent, so they cannot be copied. */

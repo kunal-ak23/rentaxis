@@ -148,10 +148,11 @@ export function ReconciliationPanel({ bankAccountId, onChanged, refreshKey }: {
                                         <button key={i.id} type="button" className={small} disabled={busy}
                                                 data-testid={`rec-delete-offer-${i.id}`}
                                                 onClick={() => {
-                                                    if (!window.confirm(t("deleteOfferConfirm", { file: i.fileName ?? "", proof: o.proofFileName ?? "" }))) return;
+                                                    if (!window.confirm(t(o.copies ? "removeCopiesConfirm" : "deleteOfferConfirm",
+                                                        { file: i.fileName ?? "", proof: o.proofFileName ?? "" }))) return;
                                                     run(() => bankRecApi.deleteImport(i.id, o.proofImportId));
                                                 }}>
-                                            <Trash2 size={12} />{t("deleteOfferButton", { file: i.fileName ?? "" })}
+                                            <Trash2 size={12} />{t(o.copies ? "removeCopiesButton" : "deleteOfferButton", { file: i.fileName ?? "" })}
                                         </button>
                                     ))}
                                 </div>

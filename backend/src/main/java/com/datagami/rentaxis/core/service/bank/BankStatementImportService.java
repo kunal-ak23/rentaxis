@@ -273,6 +273,8 @@ public class BankStatementImportService {
         // #97 review P2-2: the stored lines of every day in the file, and which of
         // them each file row is (a duplicate) or is not (a new line).
         Map<LocalDate, List<StoredLine>> stored = storedLines(t, bankAccountId, r.rows());
+        // Sim r26 S26-01: which imports hold each stored line of those days, before this one.
+        Map<String, Set<UUID>> sources = dryRun ? Map.of() : storedSources(t, bankAccountId, stored.keySet());
         Matched matched = match(bankAccountId, r.rows(), stored, r.openingRow(), r.closingRow());
         List<String> hashes = matched.hashes();
         Set<String> existing = matched.duplicates();
@@ -394,14 +396,17 @@ public class BankStatementImportService {
         // download looks the same), so nothing is removed here. Deleting the import that brought
         // such a line — the user's call, on the check's advice to use a current export — removes
         // it with an audit record, history or not (delete()).
-        Set<String> copies = provenCopies(r.rows(), hashes, stored, r.openingRow(), r.closingRow());
+        // Sim r26 S26-01: a twin kept by code from before #441 carries no marker (changeset 183 set
+        // lookalike_kept = false on every existing row); on the same proof rules it is shown as a copy
+        // too, and from then on is a kept look-alike like any other (the check's steps reach it).
+        Set<String> copies = provenCopies(r.rows(), hashes, stored, r.openingRow(), r.closingRow(), sources);
         if (!copies.isEmpty()) {
             Map<String, LocalDate> copyDays = new HashMap<>();
             stored.forEach((d, ls) -> ls.forEach(l -> { if (copies.contains(l.hash())) copyDays.put(l.hash(), d); }));
             copyDays.values().removeIf(d -> locked != null && !d.isAfter(locked));
             if (!copyDays.isEmpty()) {
                 jdbc.update("""
-                        update bank_statement_lines set copy_proven_by = :imp
+                        update bank_statement_lines set copy_proven_by = :imp, lookalike_kept = true
                         where tenant_id = :t and bank_account_id = :b and line_hash in (:h)""",
                         new MapSqlParameterSource("t", t).addValue("b", bankAccountId)
                                 .addValue("h", copyDays.keySet()).addValue("imp", imp.getId()));
@@ -459,6 +464,23 @@ public class BankStatementImportService {
                                 rs.getString("description"), rs.getBigDecimal("running_balance"),
                                 rs.getObject("value_date", LocalDate.class), rs.getString("reference"),
                                 rs.getBoolean("lookalike_kept"))); });
+        return out;
+    }
+
+    /**
+     * Sim r26 S26-01: the imports holding each stored line of {@code days} ({@code bank_statement_line_sources}),
+     * by line hash.
+     */
+    private Map<String, Set<UUID>> storedSources(UUID t, UUID bankAccountId, Set<LocalDate> days) {
+        Map<String, Set<UUID>> out = new HashMap<>();
+        if (days.isEmpty()) return out;
+        jdbc.query("""
+                select l.line_hash, s.import_id from bank_statement_lines l
+                join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
+                where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date in (:d)""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", days),
+                rs -> { out.computeIfAbsent(rs.getString("line_hash"), k -> new HashSet<>())
+                        .add(rs.getObject("import_id", UUID.class)); });
         return out;
     }
 
@@ -661,6 +683,20 @@ public class BankStatementImportService {
      */
     static Set<String> provenCopies(List<StatementMapper.Row> rows, List<String> hashes,
                                     Map<LocalDate, List<StoredLine>> stored, boolean openingRow, boolean closingRow) {
+        return provenCopies(rows, hashes, stored, openingRow, closingRow, Map.of());
+    }
+
+    /**
+     * As above; {@code sources}: the imports holding each stored line before this one (by hash). Sim
+     * r26 S26-01: code from before #441 kept a twin at a moved balance with no marker, and changeset
+     * 183 set {@code lookalike_kept = false} on every existing row, so such a copy was never shown and
+     * its day never settled. On the same rules, a file holding the day whole also shows as a copy each
+     * <em>legacy look-alike</em> ({@link #legacyLookalikes}) it does not hold — the caller marks it a
+     * kept look-alike too. Nothing is removed here either.
+     */
+    static Set<String> provenCopies(List<StatementMapper.Row> rows, List<String> hashes,
+                                    Map<LocalDate, List<StoredLine>> stored, boolean openingRow, boolean closingRow,
+                                    Map<String, ? extends Collection<?>> sources) {
         Set<String> out = new HashSet<>();
         if (rows.isEmpty()) return out;
         LocalDate first = rows.get(0).txnDate(), last = rows.get(0).txnDate();
@@ -674,9 +710,42 @@ public class BankStatementImportService {
         for (Map.Entry<LocalDate, Set<String>> day : fileDays.entrySet()) {
             if (Pos.of(day.getKey(), first, last, openingRow, closingRow) != Pos.INTERIOR) continue;
             List<StoredLine> have = stored.getOrDefault(day.getKey(), List.of());
-            boolean othersHeld = have.stream().filter(l -> !l.lookalike()).allMatch(l -> day.getValue().contains(l.hash()));
+            Set<String> legacy = legacyLookalikes(have, day.getValue(), sources);
+            boolean othersHeld = have.stream().filter(l -> !l.lookalike() && !legacy.contains(l.hash()))
+                    .allMatch(l -> day.getValue().contains(l.hash()));
             if (!othersHeld) continue;
             have.stream().filter(l -> l.lookalike() && !day.getValue().contains(l.hash())).forEach(l -> out.add(l.hash()));
+            out.addAll(legacy);
+        }
+        return out;
+    }
+
+    /**
+     * Sim r26 S26-01: the stored lines of a day a file holds whole that are twins kept with no marker —
+     * not held by the file ({@code held}), not marked, and with a stored line of the day the file does
+     * hold, of the same amount and narration at another running balance, that no import holding the
+     * first also holds. Two lines one file brought share that file, and the code since #441 marks the
+     * later of two twins brought by different imports; so on lines written since, this finds only what
+     * the marker would have shown. The file has one such line fewer than stored: as for a marked line,
+     * that shows a copy only if the file is current, which the check leaves to the user's word.
+     */
+    static Set<String> legacyLookalikes(List<StoredLine> have, Set<String> held, Map<String, ? extends Collection<?>> sources) {
+        Set<String> out = new HashSet<>();
+        if (sources.isEmpty()) return out;
+        for (StoredLine u : have) {
+            if (u.lookalike() || held.contains(u.hash()) || u.balance() == null) continue;
+            Collection<?> su = sources.get(u.hash());
+            if (su == null || su.isEmpty()) continue;
+            String desc = StatementValues.normalise(u.description());
+            for (StoredLine s : have) {
+                if (s == u || s.lookalike() || !held.contains(s.hash()) || s.balance() == null) continue;
+                if (s.amount().compareTo(u.amount()) != 0 || s.balance().compareTo(u.balance()) == 0
+                        || !StatementValues.normalise(s.description()).equals(desc)) continue;
+                Collection<?> ss = sources.get(s.hash());
+                if (ss == null || ss.isEmpty() || !Collections.disjoint(su, ss)) continue;
+                out.add(u.hash());
+                break;
+            }
         }
         return out;
     }
@@ -1329,12 +1398,35 @@ public class BankStatementImportService {
                 .addValue("b", imp.getBankAccountId());
         jdbc.queryForList("select id from bank_accounts where id = :b and tenant_id = :t for update", p, UUID.class);
         LocalDate locked = bankLock.reconciledThrough(imp.getBankAccountId()).orElse(null);
+        // #441 r6: a line with undone match history goes only on the check's own offer — the request
+        // names the statement the check names as proof, and the check, re-run now, offers deleting
+        // this import on that statement's word for the day. Otherwise delete is exactly as before.
+        List<BankReconciliationService.DeleteOffer> offers = List.of();
+        if (proofImportId != null) {
+            offers = reconciliations.getObject().deleteOffers(imp.getBankAccountId())
+                    .stream().filter(o -> o.proof().equals(proofImportId) && o.imports().contains(importId)).toList();
+            if (offers.isEmpty()) {
+                throw BankRecRefusal.refuse("deleteNotOffered", "The reconciliation check does not offer deleting this import "
+                        + "on the word of that statement; delete it without it, or follow the check as it reads now");
+            }
+            // Sim r26 S26-02/S26-03: a copy step removes only the copies the statement shows, from every
+            // import holding them; the import and its other lines stay (a line of it in a finalized period,
+            // or a booked genuine line elsewhere, no longer blocks the step).
+            List<BankReconciliationService.DeleteOffer> copyOffers = offers.stream()
+                    .filter(BankReconciliationService.DeleteOffer::copies).toList();
+            if (!copyOffers.isEmpty()) {
+                removeShownCopies(t, imp, proofImportId, copyOffers, locked);
+                offers = offers.stream().filter(o -> !o.copies()).toList();
+                if (offers.isEmpty()) return;
+            }
+        }
         if (locked != null) {
             Integer inside = jdbc.queryForObject("select count(*) from bank_statement_lines where tenant_id = :t and import_id = :i and txn_date <= :r",
                     new MapSqlParameterSource(p.getValues()).addValue("r", locked), Integer.class);
             if (inside != null && inside > 0) {
                 throw new BusinessRuleViolationException(inside + " line(s) of this import are inside the reconciliation finalized through "
-                        + locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "; the import cannot be deleted");
+                        + locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "; the import cannot be deleted"
+                        + " while that reconciliation is finalized (reopen it first)");
             }
         }
         Integer confirmed = jdbc.queryForObject("""
@@ -1348,23 +1440,11 @@ public class BankStatementImportService {
                     + "matches, so importing a statement that holds these lines too, before deleting, also works.",
                     "count", confirmed);
         }
-        // #441 r6: a line with undone match history goes only on the check's own offer — the request
-        // names the statement the check names as proof, and the check, re-run now, offers deleting
-        // this import on that statement's word for the day. Otherwise delete is exactly as before.
         List<LocalDate> copyDays = List.of();
         if (proofImportId != null) {
-            List<BankReconciliationService.DeleteOffer> offers = reconciliations.getObject().deleteOffers(imp.getBankAccountId())
-                    .stream().filter(o -> o.proof().equals(proofImportId) && o.imports().contains(importId)).toList();
-            if (offers.isEmpty()) {
-                throw BankRecRefusal.refuse("deleteNotOffered", "The reconciliation check does not offer deleting this import "
-                        + "on the word of that statement; delete it without it, or follow the check as it reads now");
-            }
             copyDays = offers.stream().map(BankReconciliationService.DeleteOffer::day).toList();
             String shown = offers.stream().map(BankReconciliationService.DeleteOffer::text).collect(java.util.stream.Collectors.joining(" | "));
-            List<LocalDate> copyOfferDays = offers.stream().filter(BankReconciliationService.DeleteOffer::copies)
-                    .map(BankReconciliationService.DeleteOffer::day).toList();
-            List<LocalDate> wholeOfferDays = offers.stream().filter(o -> !o.copies())
-                    .map(BankReconciliationService.DeleteOffer::day).toList();
+            List<LocalDate> wholeOfferDays = offers.stream().map(BankReconciliationService.DeleteOffer::day).toList();
             MapSqlParameterSource cp = new MapSqlParameterSource(p.getValues()).addValue("w", proofImportId);
             // #441 r7: the import being deleted must predate the statement whose word it is deleted on.
             String predates = """
@@ -1372,16 +1452,7 @@ public class BankStatementImportService {
                        < (select w.imported_at from bank_statement_imports w where w.id = :w and w.tenant_id = l.tenant_id)
                     """;
             List<String> copies = new ArrayList<>();
-            if (!copyOfferDays.isEmpty()) {
-                // Copy offer: only the lines that statement itself marked as copies.
-                copies.addAll(jdbc.queryForList("""
-                        select l.line_hash from bank_statement_lines l
-                        where l.tenant_id = :t and l.import_id = :i and l.txn_date in (:cd) and l.copy_proven_by = :w and """
-                        + ONLY_THIS_IMPORT + predates + """
-                          and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)""",
-                        new MapSqlParameterSource(cp.getValues()).addValue("cd", copyOfferDays), String.class));
-            }
-            if (!wholeOfferDays.isEmpty()) {
+            {
                 // Delete-others offer: the lines that statement, holding the day whole, does not hold.
                 copies.addAll(jdbc.queryForList("""
                         select l.line_hash from bank_statement_lines l
@@ -1444,6 +1515,75 @@ public class BankStatementImportService {
         jdbc.update("delete from bank_statement_lines where tenant_id = :t and import_id = :i", p);
         recomputeDays(t, imp.getBankAccountId(), importId, days);
         imports.delete(imp);
+    }
+
+    /**
+     * Sim r26 S26-02/S26-03: the check's copy step, on the word of the statement {@code proof} that showed
+     * the copies ({@code copy_proven_by}). It removes those copies on the offered days — from every import
+     * holding them, each with an audit record, undone match history or not — provided every import
+     * holding a copy was made before that statement (#441 r7: a later one may hold a line the bank added
+     * after it was exported). The import named, and every other line it holds, stay: deleting it could
+     * take genuine lines no statement holds (on other days, or in a finalized period). It goes too only
+     * when it then holds nothing at all. A copy in a confirmed match stays until that match is undone; refused
+     * only when every copy shown is (undo them first).
+     */
+    private void removeShownCopies(UUID t, BankStatementImport imp, UUID proof,
+                                   List<BankReconciliationService.DeleteOffer> offers, LocalDate locked) {
+        List<LocalDate> days = offers.stream().map(BankReconciliationService.DeleteOffer::day).distinct().toList();
+        // The lines the check (re-run now) shows as copies on the statement's word: marked by it at import
+        // (copy_proven_by), or — S26-01, pre-#441 twins — shown by it now on the same rules.
+        List<UUID> ids = offers.stream().flatMap(o -> o.shown().stream()).distinct().toList();
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("b", imp.getBankAccountId())
+                .addValue("w", proof).addValue("d", days).addValue("i", imp.getId())
+                .addValue("ids", ids.isEmpty() ? List.of(new UUID(0, 0)) : ids);
+        List<Map<String, Object>> shown = jdbc.queryForList("""
+                select l.id, l.line_hash, l.txn_date,
+                       exists (select 1 from bank_match_statement_lines ml
+                                 join bank_matches m on m.id = ml.match_id and m.tenant_id = ml.tenant_id and m.status = 'CONFIRMED'
+                                where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id and not ml.released) as booked
+                from bank_statement_lines l
+                where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date in (:d) and l.id in (:ids)
+                  and not exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                    and s.import_id = :w)
+                  and not exists (select 1 from bank_statement_line_sources s
+                                    join bank_statement_imports x on x.id = s.import_id and x.tenant_id = s.tenant_id
+                                   where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                     and x.imported_at >= (select w.imported_at from bank_statement_imports w
+                                                            where w.id = :w and w.tenant_id = :t))
+                  and not exists (select 1 from bank_suspense_draws sd where sd.statement_line_id = l.id and sd.tenant_id = l.tenant_id)
+                order by l.txn_date, l.seq""", p);
+        if (shown.isEmpty()) {
+            throw BankRecRefusal.refuse("deleteNotOffered", "The reconciliation check does not offer deleting this import "
+                    + "on the word of that statement; delete it without it, or follow the check as it reads now");
+        }
+        // A copy in a confirmed match stays until its match is undone (the check's text for its day says so
+        // first); the others go now. The button is pressed for one day's step, and the server finds every
+        // offer naming this import on the statement's word, so another day's booked copy must not block it.
+        long booked = shown.stream().filter(m -> Boolean.TRUE.equals(m.get("booked"))).count();
+        shown = shown.stream().filter(m -> !Boolean.TRUE.equals(m.get("booked"))).toList();
+        if (shown.isEmpty()) {
+            throw BankRecRefusal.refuse("copiesBooked", booked + " line(s) the statement shows as copies are in confirmed "
+                    + "matches; undo those matches first, reversing the entries the booking created, then use this step again",
+                    "count", booked);
+        }
+        if (locked != null && shown.stream().anyMatch(m -> !((java.sql.Date) m.get("txn_date")).toLocalDate().isAfter(locked))) {
+            throw new BusinessRuleViolationException("A line this step removes is inside the reconciliation finalized through "
+                    + dmy(locked) + "; reopen that reconciliation first");
+        }
+        String text = offers.stream().map(BankReconciliationService.DeleteOffer::text)
+                .collect(java.util.stream.Collectors.joining(" | "));
+        jdbc.update("""
+                update bank_statement_lines set copy_proven_by = :w, lookalike_kept = true
+                where tenant_id = :t and bank_account_id = :b and id in (:shown)""",
+                new MapSqlParameterSource(p.getValues()).addValue("shown", shown.stream().map(m -> (UUID) m.get("id")).toList()));
+        removeCopies(t, imp.getBankAccountId(), shown.stream().map(m -> (String) m.get("line_hash")).toList(),
+                "shown as a copy by the statement named as proof and removed on the user's word, from the reconciliation "
+                        + "check's own step (pressed for " + imp.getFileName() + "), that it is the bank's current one; "
+                        + "the check read: " + text);
+        recomputeDays(t, imp.getBankAccountId(), new UUID(0, 0), days);
+        Integer left = jdbc.queryForObject("select count(*) from bank_statement_line_sources where tenant_id = :t and import_id = :i",
+                p, Integer.class);
+        if (left != null && left == 0) imports.delete(imp);
     }
 
     /**
