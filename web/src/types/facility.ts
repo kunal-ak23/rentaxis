@@ -49,6 +49,10 @@ export interface BookingRequestDTO {
   /** F14-50: the fee quoted, and the charge raised on approval. */
   feeAmount?: number
   chargeId?: string | null
+  /** The fee's collection row: its status, and the row to print a receipt from once CLEARED. */
+  feeStatus?: string | null
+  receiptChequeId?: string | null
+  receiptNumber?: string | null
   id: string
   resourceType: BookingResourceType
   amenityId: string | null

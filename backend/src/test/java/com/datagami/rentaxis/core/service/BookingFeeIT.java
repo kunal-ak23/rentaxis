@@ -64,6 +64,7 @@ class BookingFeeIT extends AbstractPostgresIT {
     @Autowired com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepo;
     @Autowired TransactionTemplate tx;
     @Autowired com.datagami.rentaxis.core.service.cheque.ChequeService chequeService;
+    @Autowired RentReceiptService receipts;
 
     private LeaseTestFixtures fixtures;
     private UUID renterUser;
@@ -179,6 +180,41 @@ class BookingFeeIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, row)).isEqualTo("CLEARED");
         assertThat(jdbc.queryForObject(receivable, BigDecimal.class, leaseId).subtract(before))
                 .as("the 300 + 15 VAT paid is left as a credit on the renter's account").isEqualByComparingTo("-315.00");
+    }
+
+    /**
+     * A paid booking fee prints as a booking receipt, not a rent receipt: it names the
+     * amenity and the slot. The booking list finds the fee's collection row, its status
+     * and its receipt number through the charge.
+     */
+    @Test
+    void aPaidBookingFeePrintsABookingReceiptNamingTheAmenityAndSlot() throws Exception {
+        PropertyAmenity hall = amenity("Party Hall", "PER_BOOKING", "300");
+        LocalDate day = LocalDate.now().plusDays(10);
+        BookingRequest b = book(hall, day);
+        BookingRequest approved = tx.execute(s -> bookings.approve(fixtures.tenantId(), b.getId(), UUID.randomUUID(), null));
+        UUID row = tx.execute(s -> assessments.findById(approved.getChargeId()).orElseThrow().getCollectionCheque().getId());
+
+        List<Object[]> unpaid = assessments.collectionRowsOf(fixtures.tenantId(), List.of(approved.getChargeId()));
+        assertThat(unpaid).hasSize(1);
+        assertThat(unpaid.get(0)[1]).isEqualTo(row);
+        assertThat(unpaid.get(0)[3]).as("no receipt number before the money lands").isNull();
+
+        chequeService.receive(row, com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest.on(LocalDate.now()));
+
+        Object[] paid = assessments.collectionRowsOf(fixtures.tenantId(), List.of(approved.getChargeId())).get(0);
+        assertThat(paid[2]).hasToString("CLEARED");
+        assertThat((String) paid[3]).startsWith("RR-");
+        assertThat(assessments.collectionRowsOf(UUID.randomUUID(), List.of(approved.getChargeId())))
+                .as("another tenant's charge is not found").isEmpty();
+
+        byte[] pdf = receipts.receipt(row).pdf();
+        String text;
+        try (org.apache.pdfbox.pdmodel.PDDocument d = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            text = new org.apache.pdfbox.text.PDFTextStripper().getText(d);
+        }
+        assertThat(text).contains("BOOKING RECEIPT").doesNotContain("RENT RECEIPT")
+                .contains("Amenity Party Hall").contains((String) paid[3]);
     }
 
     /**

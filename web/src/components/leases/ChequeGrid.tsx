@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Camera, CheckCircle2, Combine, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
+import { Camera, CheckCircle2, Combine, Download, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
 import ChequeScanLink from "@/components/cheques/ChequeScanLink";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
@@ -116,6 +116,11 @@ type Props = {
      */
     onScanRow?: (cheque: Cheque) => void;
     /**
+     * Combined receipt: rows that offer a receipt get a checkbox, and the picked
+     * ones are handed over to be downloaded as one PDF. Omitted = no selection.
+     */
+    onCombinedReceipt?: (chequeIds: string[]) => void | Promise<void>;
+    /**
      * Cancelling reverses the registering journal, so it is gated by
      * `canCancelCheques` (SA/TA/ACCOUNTANT) rather than by the
      * `canManageCheques` that admits a property manager to the rest of the row.
@@ -222,6 +227,7 @@ export default function ChequeGrid({
     error,
     onRowAction,
     onScanRow,
+    onCombinedReceipt,
     canCancelCheques = false,
     leaseStatus,
     settlementFinalized,
@@ -283,6 +289,9 @@ export default function ChequeGrid({
     const paste = usePasteReport();
     // The draft rows ticked for "Merge"; ids no longer on the grid (a regenerate) drop out.
     const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+    // Combined receipt: the cleared rows picked, kept to rows that still offer a receipt.
+    const [receiptPicked, setReceiptPicked] = useState<ReadonlySet<string>>(new Set());
+    const [combining, setCombining] = useState(false);
     const mergeable = (c: Cheque) => c.status === "DRAFT";
     const ticked = cheques.filter(c => selected.has(c.id) && mergeable(c));
     const toggle = (id: string) =>
@@ -347,6 +356,23 @@ export default function ChequeGrid({
         registerActionsFor(c.status, c.mode, canCancelCheques, { status: leaseStatus, settlementFinalized }, c.ledgerSettled, c.settledBeforeAcquisition);
 
     const showActions = !editable && !!onRowAction && cheques.some(c => actionsOf(c).length > 0);
+    const receiptable = (c: Cheque) => !editable && !!onCombinedReceipt && actionsOf(c).includes("receipt");
+    const pickedIds = cheques.filter(c => receiptable(c) && receiptPicked.has(c.id)).map(c => c.id);
+    const togglePicked = (id: string) => setReceiptPicked(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+    });
+    const combine = async () => {
+        if (!onCombinedReceipt || pickedIds.length === 0) return;
+        setCombining(true);
+        try {
+            await onCombinedReceipt(pickedIds);
+            setReceiptPicked(new Set());
+        } finally {
+            setCombining(false);
+        }
+    };
     const cols = 9 + (showVat ? 1 : 0) + (editable ? 0 : 1) + (showActions ? 1 : 0);
 
     return (
@@ -543,6 +569,22 @@ export default function ChequeGrid({
                 </div>
             )}
 
+            {!editable && onCombinedReceipt && cheques.some(receiptable) && (
+                <div className="px-4 py-2 border-b border-border flex flex-wrap items-center gap-3 text-[11px]" data-testid="combined-receipt-bar">
+                    <span className="text-muted">{tc("combinedReceiptHint")}</span>
+                    <button
+                        type="button"
+                        data-testid="combined-receipt-download"
+                        disabled={pickedIds.length === 0 || combining}
+                        onClick={() => { void combine(); }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer disabled:opacity-50"
+                    >
+                        {combining ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                        {tc("combinedReceipt", { count: pickedIds.length })}
+                    </button>
+                </div>
+            )}
+
             {gridKeys && <PasteReport report={paste.report} onDismiss={paste.dismiss} onAddRows={addPastedRows} testId="cheque-grid-paste-report" />}
             {gridKeys && cheques.length > 0 && (
                 <p className="px-4 py-1.5 text-[10.5px] text-muted border-b border-border" data-testid="cheque-grid-keys-hint">{tc("gridKeysHint")} · {t("mergeChequesHint")}</p>
@@ -578,6 +620,17 @@ export default function ChequeGrid({
                                                 aria-label={t("selectChequeToMerge", { row: i + 1 })}
                                                 checked={selected.has(c.id)}
                                                 onChange={() => toggle(c.id)}
+                                            />
+                                            {c.seqNo ?? i + 1}
+                                        </label>
+                                    ) : receiptable(c) ? (
+                                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                data-testid={`cheque-receipt-select-${i}`}
+                                                aria-label={tc("selectReceipt", { row: c.seqNo ?? i + 1 })}
+                                                checked={receiptPicked.has(c.id)}
+                                                onChange={() => togglePicked(c.id)}
                                             />
                                             {c.seqNo ?? i + 1}
                                         </label>

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { X, Loader2, CalendarCheck, Users } from "lucide-react";
+import { X, Loader2, CalendarCheck, Users, Download } from "lucide-react";
+import { chequeApi } from "@/lib/api/leasing";
 import { cn } from "@/lib/utils";
 import { fetchBooking, approveBooking, rejectBooking, releaseBooking, staffCancelBooking, ApiError } from "@/lib/api/facilities";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
@@ -244,6 +245,24 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
                   <p className="text-muted">
                     <span className="font-semibold">{t("decidedAt")}:</span>{" "}
                     {new Date(req.decidedAt).toLocaleDateString(dateLocale(locale))}
+                  </p>
+                )}
+                {req.feeStatus && (
+                  <p className="text-muted flex flex-wrap items-center gap-2" data-testid="booking-fee-status">
+                    <span className="font-semibold">{t("feeStatus")}:</span>
+                    {req.feeStatus === "CLEARED" ? t("feePaid") : t("feeUnpaid")}
+                    {req.receiptChequeId && (
+                      <a
+                        href={chequeApi.receiptUrl(req.receiptChequeId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="booking-receipt-link"
+                        className="inline-flex items-center gap-1 text-primary font-semibold hover:underline"
+                      >
+                        <Download size={12} />
+                        {req.receiptNumber ? t("receiptNumbered", { number: req.receiptNumber }) : t("receipt")}
+                      </a>
+                    )}
                   </p>
                 )}
               </div>

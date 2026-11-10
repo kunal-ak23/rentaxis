@@ -268,3 +268,20 @@ describe("RenterFacilitiesPage — tutorial 24", () => {
     });
 });
 
+describe("RenterFacilitiesPage booking fee receipt", () => {
+    it("shows the fee as paid with a receipt link once its collection row has cleared", async () => {
+        api.fetchMyFacilities.mockResolvedValue(facilitiesWithSpot(false));
+        api.fetchMyBookings.mockResolvedValue([
+            makeBooking({ id: "b1", status: "APPROVED", feeStatus: "CLEARED", receiptChequeId: "row-1", receiptNumber: "RR-0007" }),
+            makeBooking({ id: "b2", status: "APPROVED", feeStatus: "REGISTERED", receiptChequeId: null }),
+        ]);
+
+        render(<RenterFacilitiesPage />);
+
+        await waitFor(() => expect(screen.getByTestId("booking-receipt-b1")).toBeInTheDocument());
+        expect(screen.getByTestId("booking-receipt-b1")).toHaveAttribute("href", "/api/proxy/v1/cheques/row-1/receipt");
+        expect(screen.getByTestId("booking-fee-b1")).toHaveTextContent("feePaid");
+        expect(screen.getByTestId("booking-fee-b2")).toHaveTextContent("feeUnpaid");
+        expect(screen.queryByTestId("booking-receipt-b2")).not.toBeInTheDocument();
+    });
+});

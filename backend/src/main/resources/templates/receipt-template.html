@@ -43,7 +43,7 @@
                 </div>
             </td>
             <td style="vertical-align: top; text-align: right;">
-                <div class="receipt-title">RENT RECEIPT</div>
+                <div class="receipt-title">{{RECEIPT_TITLE}}</div>
                 <div class="receipt-number">{{RECEIPT_NUMBER}}</div>
                 <div class="receipt-number">Date: {{RECEIPT_DATE}}</div>
             </td>
@@ -88,6 +88,7 @@
         <table class="info-table">
             <tr><td class="label">Installment</td><td class="value">#{{INSTALLMENT_NUMBER}}</td></tr>
             <tr><td class="label">Particulars</td><td class="value">{{PARTICULARS}}</td></tr>
+            {{BOOKING_ROWS}}
             <tr><td class="label">Due Date</td><td class="value">{{DUE_DATE}}</td></tr>
             <tr><td class="label">Payment Method</td><td class="value">{{PAYMENT_METHOD}}</td></tr>
             <tr><td class="label">Cheque Number</td><td class="value">{{CHEQUE_NUMBER}}</td></tr>
@@ -99,7 +100,7 @@
 
     <!-- Footer -->
     <div class="footer">
-        This is a system-generated rent receipt from Miftah Property Management System.<br/>
+        This is a system-generated receipt from Miftah Property Management System.<br/>
         Generated on {{GENERATED_AT}}
     </div>
 </div>

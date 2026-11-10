@@ -88,6 +88,7 @@ class ChequeControllerIT extends AbstractPostgresIT {
     @Autowired JournalEntryRepository entries;
     @Autowired JdbcTemplate jdbc;
     @Autowired TransactionTemplate tx;
+    @Autowired com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService penalties;
 
     private static final LocalDate CONTRACT_DATE = LocalDate.of(2026, 1, 5);
     private static final LocalDate START = LocalDate.of(2026, 2, 1);
@@ -535,6 +536,73 @@ class ChequeControllerIT extends AbstractPostgresIT {
 
         assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(pdf.getBody()).isNotEmpty();
+    }
+
+    private static String pdfText(byte[] pdf) throws java.io.IOException {
+        try (org.apache.pdfbox.pdmodel.PDDocument d = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            return new org.apache.pdfbox.text.PDFTextStripper().getText(d);
+        }
+    }
+
+    private static int pages(byte[] pdf) throws java.io.IOException {
+        try (org.apache.pdfbox.pdmodel.PDDocument d = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            return d.getNumberOfPages();
+        }
+    }
+
+    /** Several receipts of one contract as one PDF: a page each, in the order the money landed. */
+    @Test
+    void aCombinedReceiptHasAPagePerClearedRowInTheOrderTheMoneyLanded() throws Exception {
+        UUID first = register.get(0).getId();
+        UUID second = register.get(1).getId();
+        // Each banked on its own date (a post-dated cheque cannot be presented early).
+        LocalDate firstOn = reread(first).getChequeDate();
+        LocalDate secondOn = reread(second).getChequeDate();
+        chequeService.deposit(first, ChequeActionRequest.on(firstOn));
+        chequeService.clear(first, ChequeActionRequest.on(firstOn.plusDays(2)));
+        chequeService.deposit(second, ChequeActionRequest.on(secondOn));
+        chequeService.clear(second, ChequeActionRequest.on(secondOn.plusDays(2)));
+
+        ResponseEntity<byte[]> pdf = request(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of(second, first))).toEntity(byte[].class);
+
+        assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(pdf.getHeaders().getFirst("Content-Disposition")).contains("receipts-");
+        assertThat(pages(pdf.getBody())).isEqualTo(2);
+        String text = pdfText(pdf.getBody());
+        String firstNo = reread(first).getReceiptNumber();
+        String secondNo = reread(second).getReceiptNumber();
+        assertThat(text.indexOf(firstNo)).isNotNegative().isLessThan(text.indexOf(secondNo));
+    }
+
+    @Test
+    void aCombinedReceiptRefusesARowThatHasNotCleared() {
+        UUID cleared = register.get(0).getId();
+        chequeService.deposit(cleared, ChequeActionRequest.on(LocalDate.of(2026, 2, 2)));
+        chequeService.clear(cleared, ChequeActionRequest.on(LocalDate.of(2026, 2, 5)));
+
+        assertThat(status(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of(cleared, register.get(1).getId()))))
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(status(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of()))).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /** A paid charge's receipt names the charge, not the "Penalty - ..." label of its row, and is not a rent receipt. */
+    @Test
+    void aChargesReceiptNamesTheChargeAndIsNotARentReceipt() throws Exception {
+        var proposed = penalties.propose(new com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest(
+                leaseId, null, com.datagami.rentaxis.domain.entity.enums.PenaltyReason.ADMIN_FEE,
+                new java.math.BigDecimal("100"), "Replacement access card"), null);
+        UUID row = penalties.approve(proposed.id(), null).collectionChequeId();
+        chequeService.receive(row, ChequeActionRequest.empty());
+
+        ResponseEntity<byte[]> pdf = request(accountant, HttpMethod.GET,
+                "/api/v1/cheques/" + row + "/receipt", null).toEntity(byte[].class);
+
+        assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String text = pdfText(pdf.getBody());
+        assertThat(text).contains("RECEIPT").doesNotContain("RENT RECEIPT").contains("Replacement access card");
     }
 
     /** Sanity: the fixture really did register four numbered instruments. */

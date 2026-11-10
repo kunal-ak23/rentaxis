@@ -1820,7 +1820,12 @@
     "preferredEndDateHint": "Leave blank for an open-ended booking.",
     "endBeforeStart": "The end date cannot be before the start date."
   },
-  "Bookings": { "cancelBooking": "Cancel booking", "cancelCreditHint": "The booking fee is reversed. If the tenant has already paid it, the payment stays on their account as a credit (with a tax credit note for its VAT).", "cancelReasonLabel": "Reason for cancelling (shown to the tenant)",
+  "Bookings": {
+    "feeStatus": "Fee",
+    "feePaid": "Fee paid",
+    "feeUnpaid": "Fee not yet paid",
+    "receipt": "Receipt",
+    "receiptNumbered": "Receipt {number}", "cancelBooking": "Cancel booking", "cancelCreditHint": "The booking fee is reversed. If the tenant has already paid it, the payment stays on their account as a credit (with a tax credit note for its VAT).", "cancelReasonLabel": "Reason for cancelling (shown to the tenant)",
     "navLabel": "Bookings",
     "title": "Booking Requests",
     "subtitle": "Review amenity and parking requests from tenants.",
@@ -2955,6 +2960,10 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "combinedReceipt": "Combined receipt ({count})",
+    "combinedReceiptHint": "Tick cleared rows to download their receipts as one PDF.",
+    "combinedReceiptFailed": "Could not build the combined receipt.",
+    "selectReceipt": "Select receipt for row {row}",
     "depositNotCleared": "Deposit not cleared — check with the bank",
     "depositedDaysAgo": "{n, plural, =0 {Deposited today} one {Deposited # day ago} other {Deposited # days ago}}",
     "awaitingClearing": "Deposited, awaiting clearing",
