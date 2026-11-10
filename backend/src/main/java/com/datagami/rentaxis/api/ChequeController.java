@@ -345,6 +345,23 @@ public class ChequeController {
                 .body(receipt.pdf());
     }
 
+    /** The cheques whose receipts go into one PDF. */
+    public record CombinedReceiptRequest(@jakarta.validation.constraints.NotEmpty java.util.List<UUID> chequeIds) { }
+
+    /**
+     * Several cleared rows of one contract as one PDF, a receipt per page. The same
+     * roles and the same per-row checks as a single receipt.
+     */
+    @PostMapping("/receipts/combined")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER', 'RENTER')")
+    public ResponseEntity<byte[]> downloadCombinedReceipt(@jakarta.validation.Valid @RequestBody CombinedReceiptRequest request) {
+        RentReceiptService.Receipt receipt = rentReceiptService.combined(request.chequeIds());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + receipt.fileName())
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(receipt.pdf());
+    }
+
     /**
      * The scan attached to a cheque, streamed from the organisation's private
      * container: staff within their scope (a property manager, their buildings), a

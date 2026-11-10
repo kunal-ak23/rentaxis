@@ -1913,6 +1913,15 @@ export const chequeApi = {
   cashReceipt: (leaseId: string, body: ChequeRowInput) => announcingChange(send<Cheque>("POST", `/cheques/lease/${leaseId}/cash-receipt`, body)),
   /** Not a fetch — the endpoint streams a PDF; callers open/download this path directly. */
   receiptUrl: (id: string) => `${BASE}/cheques/${id}/receipt`,
+  /**
+   * One PDF of several cleared rows' receipts (same lease, a page each, in the order
+   * the money landed). Not a fetch helper: the caller saves the streamed response.
+   */
+  combinedReceipt: (chequeIds: string[]) => fetch(`${BASE}/cheques/receipts/combined`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chequeIds }),
+  }),
   /** The attached scan, streamed by the app (cheque images sit in a private container; the stored blob URL answers 403). */
   scanUrl: (id: string) => `${BASE}/cheques/${id}/image`,
 };

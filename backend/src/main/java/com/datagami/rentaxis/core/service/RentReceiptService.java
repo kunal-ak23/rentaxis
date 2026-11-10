@@ -7,19 +7,27 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.RentReceiptPayload;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.BookingRequest;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.OnlinePayment;
+import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
+import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
+import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.OnlinePaymentRepository;
+import com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
+import org.apache.pdfbox.io.IOUtils;
+import org.apache.pdfbox.io.RandomAccessReadBuffer;
+import org.apache.pdfbox.multipdf.PDFMergerUtility;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -35,7 +43,10 @@ import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -61,6 +72,11 @@ public class RentReceiptService {
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
     private final BlobStorageService blobStorageService;
+    private final PenaltyAssessmentRepository penaltyAssessments;
+    private final BookingRequestRepository bookings;
+
+    /** The most receipts one combined PDF may hold. */
+    static final int MAX_COMBINED = 100;
 
     /**
      * The largest logo inlined into a receipt: anything bigger is left off rather
@@ -96,6 +112,67 @@ public class RentReceiptService {
     /** The PDF of {@link #generateReceipt} and its download name. */
     @Transactional(readOnly = true)
     public Receipt receipt(UUID chequeId) {
+        Cheque cheque = receiptable(chequeId);
+        UUID tenantId = TenantContextHolder.getTenantId();
+        LandlordOrg org = tenantId != null ? landlordOrgRepository.findById(tenantId).orElse(null) : null;
+
+        byte[] pdfBytes = renderPdf(html(cheque, org, tenantId, template()));
+
+        // NOTE: pdfBase64 can be large (typical receipt ~200–500 KB base64-encoded).
+        // If body_html storage becomes a concern, replace pdfBase64 with a signed URL
+        // and update RentReceiptPayload accordingly.
+        String receiptFileName = receiptFileName(cheque);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.RENT_RECEIPT_AVAILABLE,
+                tenantId,
+                RentReceiptPayload.ofCheque(cheque, money(cheque.getAmount()) + " AED",
+                        Base64.getEncoder().encodeToString(pdfBytes), receiptFileName),
+                "RENT_RECEIPT_AVAILABLE:" + chequeId));
+
+        return new Receipt(pdfBytes, receiptFileName);
+    }
+
+    /**
+     * Several receipts of one contract in one PDF, a page each, in the order the
+     * money landed.
+     *
+     * <p>Every row passes the same checks as a single receipt. One contract only:
+     * the PDF is handed to one renter, and the caller's right to read is decided per
+     * lease. No receipt e-mail is sent — each receipt was mailed when it was first
+     * downloaded, and this is a printout of them.</p>
+     */
+    @Transactional(readOnly = true)
+    public Receipt combined(List<UUID> chequeIds) {
+        List<UUID> ids = chequeIds == null ? List.of()
+                : new ArrayList<>(new LinkedHashSet<>(chequeIds.stream().filter(java.util.Objects::nonNull).toList()));
+        if (ids.isEmpty()) {
+            throw new BusinessRuleViolationException("Choose at least one receipt");
+        }
+        if (ids.size() > MAX_COMBINED) {
+            throw new BusinessRuleViolationException("A combined receipt holds at most " + MAX_COMBINED + " receipts");
+        }
+        List<Cheque> rows = new ArrayList<>();
+        for (UUID id : ids) rows.add(receiptable(id));
+        Lease lease = rows.get(0).getLease();
+        if (rows.stream().anyMatch(c -> !c.getLease().getId().equals(lease.getId()))) {
+            throw new BusinessRuleViolationException("A combined receipt holds the receipts of one contract");
+        }
+        rows.sort(Comparator.comparing(RentReceiptService::receivedOn)
+                .thenComparingInt(Cheque::getSeqNo));
+
+        UUID tenantId = TenantContextHolder.getTenantId();
+        LandlordOrg org = tenantId != null ? landlordOrgRepository.findById(tenantId).orElse(null) : null;
+        String template = template();
+        List<byte[]> pages = new ArrayList<>();
+        for (Cheque c : rows) pages.add(renderPdf(html(c, org, tenantId, template)));
+
+        String ref = lease.getExternalContractRef() != null && !lease.getExternalContractRef().isBlank()
+                ? lease.getExternalContractRef() : lease.getId().toString().substring(0, 8);
+        return new Receipt(merge(pages), "receipts-" + ref.replaceAll("[^A-Za-z0-9-]", "-") + ".pdf");
+    }
+
+    /** A row the caller may have a receipt for: readable, ours, and CLEARED. */
+    private Cheque receiptable(UUID chequeId) {
         Cheque cheque = chequeRepository.findById(chequeId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
 
@@ -111,30 +188,38 @@ public class RentReceiptService {
         if (cheque.getStatus() != ChequeStatus.CLEARED) {
             throw new BusinessRuleViolationException("Receipt can only be generated for cleared payments");
         }
+        return cheque;
+    }
 
+    private static LocalDate receivedOn(Cheque cheque) {
+        return cheque.getClearedAt() != null ? cheque.getClearedAt() : cheque.getChequeDate();
+    }
+
+    private static String template() {
+        try {
+            ClassPathResource resource = new ClassPathResource("templates/receipt-template.html");
+            return new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load receipt template", e);
+        }
+    }
+
+    private static String money(java.math.BigDecimal amount) {
+        NumberFormat nf = NumberFormat.getNumberInstance(Locale.US);
+        nf.setMinimumFractionDigits(2);
+        nf.setMaximumFractionDigits(2);
+        return nf.format(amount);
+    }
+
+    /** One receipt's page. */
+    private String html(Cheque cheque, LandlordOrg org, UUID tenantId, String template) {
         Unit unit = cheque.getUnit();
         Property property = cheque.getProperty();
         Renter renter = cheque.getRenter();
 
-        UUID tenantId = TenantContextHolder.getTenantId();
-        LandlordOrg org = tenantId != null ? landlordOrgRepository.findById(tenantId).orElse(null) : null;
-
-        String template;
-        try {
-            ClassPathResource resource = new ClassPathResource("templates/receipt-template.html");
-            template = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load receipt template", e);
-        }
-
-        NumberFormat nf = NumberFormat.getNumberInstance(Locale.US);
-        nf.setMinimumFractionDigits(2);
-        nf.setMaximumFractionDigits(2);
-        String formattedAmount = nf.format(cheque.getAmount());
-
         // RR-YYYY-MM-SHORT_ID, dated by when the money landed rather than by when
         // the PDF was asked for: two downloads of one receipt are one receipt.
-        LocalDate clearedAt = cheque.getClearedAt() != null ? cheque.getClearedAt() : cheque.getChequeDate();
+        LocalDate clearedAt = receivedOn(cheque);
         // F14-24: the sequence number given at clearing; rows cleared before it keep the old form.
         String receiptNumber = cheque.getReceiptNumber() != null ? cheque.getReceiptNumber()
                 : "RR-" + String.format("%d-%02d", clearedAt.getYear(), clearedAt.getMonthValue())
@@ -142,14 +227,26 @@ public class RentReceiptService {
 
         DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd MMM yyyy");
 
-        String html = template
+        // A charge's row (a booking fee, a fine, a recharge) says what was charged,
+        // not the "Penalty - ..." label its collection row carries; a booking also
+        // says which booking.
+        PenaltyAssessment charge = cheque.getPenaltyAssessmentId() == null ? null
+                : penaltyAssessments.findById(cheque.getPenaltyAssessmentId()).orElse(null);
+        BookingRequest booking = charge != null && BookingFeeService.SOURCE.equals(charge.getSourceType())
+                && charge.getSourceId() != null ? bookings.findById(charge.getSourceId()).orElse(null) : null;
+        String title = booking != null ? "BOOKING RECEIPT" : charge != null ? "RECEIPT" : "RENT RECEIPT";
+        String particulars = charge != null && charge.getDescription() != null && !charge.getDescription().isBlank()
+                ? charge.getDescription() : cheque.getNarration();
+
+        return template
                 .replace("{{ORG_LOGO}}", logoImg(org, tenantId))
                 .replace("{{ORG_NAME}}", org != null ? safe(org.getName()) : "Property Management")
                 .replace("{{ORG_ADDRESS}}", org != null && org.getAddress() != null ? safe(org.getAddress()) : "")
                 .replace("{{ORG_TRN}}", org != null && org.getTrn() != null ? "TRN: " + safe(org.getTrn()) : "")
+                .replace("{{RECEIPT_TITLE}}", title)
                 .replace("{{RECEIPT_NUMBER}}", receiptNumber)
                 .replace("{{RECEIPT_DATE}}", clearedAt.format(dateFmt))
-                .replace("{{AMOUNT}}", formattedAmount)
+                .replace("{{AMOUNT}}", money(cheque.getAmount()))
                 .replace("{{PROPERTY_NAME}}", property != null ? safe(property.getNameEn()) : "")
                 .replace("{{UNIT_NUMBER}}", unit != null ? safe(unit.getUnitNumber()) : "")
                 .replace("{{PROPERTY_ADDRESS}}", propertyAddress(property))
@@ -159,26 +256,46 @@ public class RentReceiptService {
                 .replace("{{INSTALLMENT_NUMBER}}", String.valueOf(cheque.getSeqNo()))
                 .replace("{{DUE_DATE}}", cheque.getChequeDate().format(dateFmt))
                 .replace("{{PAYMENT_METHOD}}", cheque.getMode().name())
-                .replace("{{PARTICULARS}}", cheque.getNarration() != null ? safe(cheque.getNarration()) : "N/A")
+                .replace("{{PARTICULARS}}", particulars != null ? safe(particulars) : "N/A")
+                .replace("{{BOOKING_ROWS}}", bookingRows(booking, dateFmt))
                 .replace("{{CHEQUE_NUMBER}}", cheque.getChequeNumber() != null ? safe(cheque.getChequeNumber()) : "N/A")
                 .replace("{{BANK_NAME}}", cheque.getPayeeBank() != null ? safe(cheque.getPayeeBank()) : "N/A")
-                .replace("{{ONLINE_PAYMENT_ID}}", safe(gatewayReference(chequeId)))
+                .replace("{{ONLINE_PAYMENT_ID}}", safe(gatewayReference(cheque.getId())))
                 .replace("{{GENERATED_AT}}", java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm")));
+    }
 
-        byte[] pdfBytes = renderPdf(html);
+    /** "Booking: Parking spot, 05 Nov 2026 – 07 Nov 2026" and its times, or nothing. */
+    private String bookingRows(BookingRequest b, DateTimeFormatter dateFmt) {
+        if (b == null) return "";
+        String kind = b.getResourceType() == BookingResourceType.PARKING_SPOT ? "Parking spot" : "Amenity";
+        StringBuilder when = new StringBuilder();
+        if (b.getPreferredDate() != null) {
+            when.append(b.getPreferredDate().format(dateFmt));
+            if (b.getPreferredEndDate() != null && !b.getPreferredEndDate().equals(b.getPreferredDate())) {
+                when.append(" – ").append(b.getPreferredEndDate().format(dateFmt));
+            }
+        }
+        if (b.getPreferredStartTime() != null) {
+            when.append(when.isEmpty() ? "" : ", ").append(b.getPreferredStartTime());
+            if (b.getPreferredEndTime() != null) when.append(" – ").append(b.getPreferredEndTime());
+        }
+        String row = "<tr><td class=\"label\">Booking</td><td class=\"value\">" + kind + "</td></tr>";
+        return when.isEmpty() ? row
+                : row + "<tr><td class=\"label\">Booked for</td><td class=\"value\">" + safe(when.toString()) + "</td></tr>";
+    }
 
-        // NOTE: pdfBase64 can be large (typical receipt ~200–500 KB base64-encoded).
-        // If body_html storage becomes a concern, replace pdfBase64 with a signed URL
-        // and update RentReceiptPayload accordingly.
-        String receiptFileName = receiptFileName(cheque);
-        events.publishEvent(new EmailEvent(this,
-                EmailEventType.RENT_RECEIPT_AVAILABLE,
-                tenantId,
-                RentReceiptPayload.ofCheque(cheque, formattedAmount + " AED",
-                        Base64.getEncoder().encodeToString(pdfBytes), receiptFileName),
-                "RENT_RECEIPT_AVAILABLE:" + chequeId));
-
-        return new Receipt(pdfBytes, receiptFileName);
+    /** One PDF out of several, in order. */
+    private static byte[] merge(List<byte[]> pdfs) {
+        if (pdfs.size() == 1) return pdfs.get(0);
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDFMergerUtility merger = new PDFMergerUtility();
+            for (byte[] pdf : pdfs) merger.addSource(new RandomAccessReadBuffer(pdf));
+            merger.setDestinationStream(out);
+            merger.mergeDocuments(IOUtils.createMemoryOnlyStreamCache());
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to combine receipts", e);
+        }
     }
 
     private static String propertyAddress(Property property) {

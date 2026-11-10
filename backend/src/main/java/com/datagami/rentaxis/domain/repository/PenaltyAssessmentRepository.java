@@ -24,6 +24,17 @@ import java.util.UUID;
 public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssessment, UUID> {
 
     /**
+     * The collection row of each charge: {@code [assessmentId, chequeId, status, receiptNumber]}.
+     * Tenant-scoped in the query itself, so it is safe outside a transaction (where the
+     * Hibernate tenant filter is off).
+     */
+    @Query("""
+            select p.id, c.id, c.status, c.receiptNumber from PenaltyAssessment p join p.collectionCheque c
+            where p.tenantId = :tenantId and p.id in :ids""")
+    List<Object[]> collectionRowsOf(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+                                    @org.springframework.data.repository.query.Param("ids") java.util.Collection<UUID> ids);
+
+    /**
      * The row, locked for the decision about to be taken.
      *
      * <p>Approving posts a journal and creates a register row. Two accountants

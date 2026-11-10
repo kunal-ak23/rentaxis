@@ -107,6 +107,14 @@ public class BookingController {
         this.bookingRequestRepository = bookingRequestRepository;
     }
 
+    private com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository charges;
+
+    /** The booking fee's collection row (paid status, receipt). Absent in unit tests: no receipt fields. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCharges(com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository charges) {
+        this.charges = charges;
+    }
+
     // ----------------------------------------------------------------- admin
 
     @GetMapping("/bookings")
@@ -130,8 +138,9 @@ public class BookingController {
         Map<UUID, User> renters = renterUsers(page.getContent());
         Map<UUID, String> resourceNames = resourceNames(page.getContent());
         Map<UUID, Property> properties = properties(page.getContent());
+        Map<UUID, Object[]> feeRows = feeRows(page.getContent());
         return ResponseEntity.ok(page.map(b -> toDTO(
-                b, unitNumbers, renters, resourceNames, properties)));
+                b, unitNumbers, renters, resourceNames, properties, feeRows.get(b.getChargeId()))));
     }
 
     @GetMapping("/bookings/{id}")
@@ -387,8 +396,9 @@ public class BookingController {
         Map<UUID, User> renters = renterUsers(bookings);
         Map<UUID, String> resourceNames = resourceNames(bookings);
         Map<UUID, Property> properties = properties(bookings);
+        Map<UUID, Object[]> feeRows = feeRows(bookings);
         return bookings.stream()
-                .map(b -> toDTO(b, unitNumbers, renters, resourceNames, properties))
+                .map(b -> toDTO(b, unitNumbers, renters, resourceNames, properties, feeRows.get(b.getChargeId())))
                 .toList();
     }
 
@@ -396,9 +406,24 @@ public class BookingController {
         return toDTOs(List.of(b)).getFirst();
     }
 
+    /** Each fee charge's collection row, {@code [chargeId, chequeId, status, receiptNumber]}, by charge id. */
+    private Map<UUID, Object[]> feeRows(List<BookingRequest> bookings) {
+        List<UUID> chargeIds = bookings.stream().map(BookingRequest::getChargeId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        // A mutable map: a booking with no charge looks itself up by a null key, which Map.of() refuses.
+        if (charges == null || chargeIds.isEmpty() || tenantId == null) return new HashMap<>();
+        Map<UUID, Object[]> out = new HashMap<>();
+        for (Object[] r : charges.collectionRowsOf(tenantId, chargeIds)) out.put((UUID) r[0], r);
+        return out;
+    }
+
     private BookingRequestDTO toDTO(BookingRequest b, Map<UUID, String> unitNumbers,
                                     Map<UUID, User> renters, Map<UUID, String> resourceNames,
-                                    Map<UUID, Property> properties) {
+                                    Map<UUID, Property> properties, Object[] feeRow) {
+        com.datagami.rentaxis.domain.entity.enums.ChequeStatus feeStatus = feeRow == null ? null
+                : (com.datagami.rentaxis.domain.entity.enums.ChequeStatus) feeRow[2];
+        boolean paid = feeStatus == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED;
         User renter = renters.get(b.getRenterUserId());
         Property property = properties.get(b.getPropertyId());
         UUID resourceId = b.getResourceType() == BookingResourceType.AMENITY
@@ -413,7 +438,8 @@ public class BookingController {
                 renter == null ? null : renter.getPhoneNumber(),
                 b.getNote(), b.getPreferredDate(), b.getPreferredEndDate(), b.getPreferredStartTime(),
                 b.getPreferredEndTime(), b.getStatus(), b.getAdminNote(),
-                b.getDecidedByUserId(), b.getDecidedAt(), b.getCreatedAt(), b.getFeeAmount(), b.getChargeId());
+                b.getDecidedByUserId(), b.getDecidedAt(), b.getCreatedAt(), b.getFeeAmount(), b.getChargeId(),
+                feeStatus, paid ? (UUID) feeRow[1] : null, paid ? (String) feeRow[3] : null);
     }
 
     private Map<UUID, String> unitNumbers(List<BookingRequest> bookings) {

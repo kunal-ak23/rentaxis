@@ -528,6 +528,22 @@ export default function LeaseDetailPage() {
         }
     };
 
+    // Combined receipt: the picked cleared rows as one PDF, named by the server.
+    const downloadCombinedReceipt = async (ids: string[]) => {
+        setChequeError(null);
+        try {
+            const res = await chequeApi.combinedReceipt(ids);
+            if (!res.ok) {
+                const body = await res.json().catch(() => null) as { message?: string } | null;
+                setChequeError(body?.message || tChequesReason("combinedReceiptFailed"));
+                return;
+            }
+            await saveResponse(res, "receipts.pdf");
+        } catch {
+            setChequeError(tChequesReason("combinedReceiptFailed"));
+        }
+    };
+
     const downloadBlob = async (url: string, name: string) => {
         const res = await fetch(url);
         if (!res.ok) return;
@@ -951,6 +967,7 @@ export default function LeaseDetailPage() {
                                     busy={chequeBusy}
                                     error={chequeError}
                                     onRowAction={canCheques ? openChequeAction : undefined}
+                                    onCombinedReceipt={canCheques ? downloadCombinedReceipt : undefined}
                                     onScanRow={canCheques ? c => { setScanRowId(c.id); setBulkUploadOpen(true); } : undefined}
                                     canCancelCheques={canCancelCheques}
                                     // Every row action is a transition, and

@@ -33,7 +33,9 @@ class RentReceiptLogoTest {
     private final RentReceiptService service = new RentReceiptService(
             mock(ChequeRepository.class), mock(LandlordOrgRepository.class),
             mock(OnlinePaymentRepository.class), mock(LeaseAccessPolicy.class),
-            mock(ApplicationEventPublisher.class), blobs);
+            mock(ApplicationEventPublisher.class), blobs,
+            mock(com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository.class),
+            mock(com.datagami.rentaxis.domain.repository.BookingRequestRepository.class));
     private final UUID tenantId = UUID.randomUUID();
 
     private LandlordOrg org(String logoUrl) {

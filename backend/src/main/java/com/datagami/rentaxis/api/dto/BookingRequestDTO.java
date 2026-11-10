@@ -34,7 +34,11 @@ public record BookingRequestDTO(
         Instant decidedAt,
         Instant createdAt,
         /* F14-50: the fee quoted, and the charge raised on approval */ java.math.BigDecimal feeAmount,
-        UUID chargeId) {
+        UUID chargeId,
+        /* The fee's collection row: its status (CLEARED = paid), and the row to fetch the receipt by once paid */
+        com.datagami.rentaxis.domain.entity.enums.ChequeStatus feeStatus,
+        UUID receiptChequeId,
+        String receiptNumber) {
     public BookingRequestDTO(UUID id,
         BookingResourceType resourceType,
         UUID amenityId,
@@ -59,7 +63,7 @@ public record BookingRequestDTO(
         UUID decidedByUserId,
         Instant decidedAt,
         Instant createdAt) {
-        this(id, resourceType, amenityId, parkingSpotId, resourceName, propertyId, propertyNameEn, propertyNameAr, unitId, unitNumber, renterUserId, renterName, renterEmail, renterPhone, note, preferredDate, preferredEndDate, preferredStartTime, preferredEndTime, status, adminNote, decidedByUserId, decidedAt, createdAt, java.math.BigDecimal.ZERO, null);
+        this(id, resourceType, amenityId, parkingSpotId, resourceName, propertyId, propertyNameEn, propertyNameAr, unitId, unitNumber, renterUserId, renterName, renterEmail, renterPhone, note, preferredDate, preferredEndDate, preferredStartTime, preferredEndTime, status, adminNote, decidedByUserId, decidedAt, createdAt, java.math.BigDecimal.ZERO, null, null, null, null);
     }
 
 }

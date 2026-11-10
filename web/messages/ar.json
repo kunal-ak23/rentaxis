@@ -1820,7 +1820,12 @@
     "preferredEndDateHint": "اتركه فارغًا لحجز مفتوح المدة.",
     "endBeforeStart": "لا يمكن أن يكون تاريخ الانتهاء قبل تاريخ البدء."
   },
-  "Bookings": { "cancelBooking": "إلغاء الحجز", "cancelCreditHint": "تُعكس رسوم الحجز. إذا كان المستأجر قد دفعها، يبقى المبلغ رصيداً دائناً في حسابه (مع إشعار دائن ضريبي لضريبتها).", "cancelReasonLabel": "سبب الإلغاء (يظهر للمستأجر)",
+  "Bookings": {
+    "feeStatus": "الرسوم",
+    "feePaid": "تم دفع الرسوم",
+    "feeUnpaid": "لم تُدفع الرسوم بعد",
+    "receipt": "إيصال",
+    "receiptNumbered": "إيصال {number}", "cancelBooking": "إلغاء الحجز", "cancelCreditHint": "تُعكس رسوم الحجز. إذا كان المستأجر قد دفعها، يبقى المبلغ رصيداً دائناً في حسابه (مع إشعار دائن ضريبي لضريبتها).", "cancelReasonLabel": "سبب الإلغاء (يظهر للمستأجر)",
     "navLabel": "الحجوزات",
     "title": "طلبات الحجز",
     "subtitle": "مراجعة طلبات المرافق والمواقف من المستأجرين.",
@@ -2949,6 +2954,10 @@
     "runFailed": "تعذّر ترحيل نقاط الاستحقاق الضريبي."
   },
   "Cheques": {
+    "combinedReceipt": "إيصال مجمع ({count})",
+    "combinedReceiptHint": "حدد الصفوف المحصلة لتنزيل إيصالاتها في ملف PDF واحد.",
+    "combinedReceiptFailed": "تعذر إنشاء الإيصال المجمع.",
+    "selectReceipt": "تحديد إيصال الصف {row}",
     "depositNotCleared": "لم يُحصَّل الإيداع — راجِع البنك",
     "depositedDaysAgo": "{n, plural, =0 {أودع اليوم} one {أودع منذ يوم واحد} two {أودع منذ يومين} few {أودع منذ # أيام} many {أودع منذ # يومًا} other {أودع منذ # يوم}}",
     "awaitingClearing": "مودع، بانتظار التحصيل",

@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useSession } from "next-auth/react";
-import { ArrowLeft, Dumbbell, Car, Loader2 } from "lucide-react";
+import { ArrowLeft, Dumbbell, Car, Download, Loader2 } from "lucide-react";
+import { chequeApi } from "@/lib/api/leasing";
 import { cn } from "@/lib/utils";
 import { tenantCanCancel } from "@/lib/bookings/cancellable";
 import { Link } from "@/i18n/routing";
@@ -584,9 +585,26 @@ export default function RenterFacilitiesPage() {
                                                 )}>
                                                     {tB(`status${b.status}`)}
                                                 </span>
+                                                {b.feeStatus && (
+                                                    <p className="text-[10px] text-muted mt-1" data-testid={`booking-fee-${b.id}`}>
+                                                        {b.feeStatus === "CLEARED" ? tB("feePaid") : tB("feeUnpaid")}
+                                                    </p>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4">
-                                                <div className="flex justify-end">
+                                                <div className="flex justify-end gap-2">
+                                                    {b.receiptChequeId && (
+                                                        <a
+                                                            href={chequeApi.receiptUrl(b.receiptChequeId)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            data-testid={`booking-receipt-${b.id}`}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-[11px] font-bold hover:bg-primary/20 transition-colors cursor-pointer"
+                                                        >
+                                                            <Download size={12} />
+                                                            {tB("receipt")}
+                                                        </a>
+                                                    )}
                                                     {/* Pending, or an approved amenity before its slot
                                                         starts (the backend reverses its fee) — tutorial 24. */}
                                                     {tenantCanCancel(b) && (
