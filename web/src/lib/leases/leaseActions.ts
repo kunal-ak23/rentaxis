@@ -3,7 +3,7 @@ import { hasPermission, type UserRole } from "../rbac";
 
 export type LeaseActionId =
     | "edit" | "post" | "recordPayment" | "renew" | "settlement" | "extend" | "amend" | "addCharge" | "transfer"
-    | "assignment" | "reduce" | "raisePenalty" | "giveNotice" | "terminate" | "writeOff" | "downloadContract" | "ledger" | "delete"
+    | "assignment" | "reduce" | "raisePenalty" | "journalVoucher" | "giveNotice" | "terminate" | "writeOff" | "downloadContract" | "ledger" | "delete"
     | "holdoverVacate";
 export interface LeaseActionFacts { status: LeaseStatus; posted: boolean; hasContract: boolean; transferredOut: boolean }
 export interface LeasePerms {
@@ -87,6 +87,8 @@ export function availableLeaseActions(f: LeaseActionFacts, p: LeasePerms): Lease
         assignment: f.posted,
         reduce: live && f.posted && (p.canExtend || p.canRenew),
         raisePenalty: PENALTY_CHARGEABLE.includes(f.status) && p.canRaisePenalty,
+        // A one-off charge as a JV (extra parking, a key): finance, on a posted contract still chargeable.
+        journalVoucher: f.posted && PENALTY_CHARGEABLE.includes(f.status) && p.canRaisePenalty,
         giveNotice: f.status === "ACTIVE" && p.canGiveNotice,
         terminate: live && p.canPreviewTermination,
         // BadDebtService refuses a contract still in drafting (break-it R4).
@@ -110,7 +112,7 @@ export const PRIMARY_BY_STATUS: Record<LeaseStatus, LeaseActionId[]> = {
 
 /** Spec §5 order, then the actions that are primary in some other status — every LeaseActionId exactly once. */
 export const MENU_ORDER: LeaseActionId[] = [
-    "extend", "amend", "addCharge", "transfer", "assignment", "reduce", "raisePenalty", "giveNotice", "terminate",
+    "extend", "amend", "addCharge", "transfer", "assignment", "reduce", "raisePenalty", "journalVoucher", "giveNotice", "terminate",
     "writeOff", "downloadContract", "ledger", "post", "renew", "holdoverVacate", "settlement", "recordPayment", "edit", "delete",
 ];
 

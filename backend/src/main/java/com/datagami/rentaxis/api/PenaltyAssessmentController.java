@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.penalty.LeaseJournalVoucherRequest;
 import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
 import com.datagami.rentaxis.api.dto.penalty.PenaltyDecisionRequest;
 import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
@@ -97,6 +98,19 @@ public class PenaltyAssessmentController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<PenaltyAssessmentDTO> propose(@Valid @RequestBody ProposePenaltyRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.propose(request, currentUserId()));
+    }
+
+    /**
+     * A contract-level journal voucher: a one-off charge (extra parking, a key) to an
+     * income account staff pick, posted as a {@code JV} and collected like any charge.
+     * Finance only, as every JV is (spec §RBAC).
+     */
+    @PostMapping("/lease/{leaseId}/journal-voucher")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<PenaltyAssessmentDTO> journalVoucher(@PathVariable UUID leaseId,
+                                                               @Valid @RequestBody LeaseJournalVoucherRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.raiseJournalVoucher(leaseId, request, currentUserId()));
     }
 
     @PostMapping("/{id}/approve")

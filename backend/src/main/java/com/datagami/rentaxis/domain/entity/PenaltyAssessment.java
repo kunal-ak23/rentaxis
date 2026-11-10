@@ -138,4 +138,11 @@ public class PenaltyAssessment extends BaseTenantEntity {
 
     @Column(name = "source_id")
     private UUID sourceId;
+
+    /**
+     * A contract-level journal voucher ({@code JOURNAL_VOUCHER}): the income leaf the
+     * user picked to credit. Null on every other charge, which credits its reason's role.
+     */
+    @Column(name = "income_account_id")
+    private UUID incomeAccountId;
 }

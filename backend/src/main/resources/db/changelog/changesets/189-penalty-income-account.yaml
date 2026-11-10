@@ -1,0 +1,20 @@
+databaseChangeLog:
+  # Contract-level journal voucher (Nov 2026): staff charge the renter a one-off
+  # amount (extra parking, a key replacement) to an income account they pick. It
+  # rides on penalty_assessments (reason JOURNAL_VOUCHER) for its collection row,
+  # VAT and reversal; this is the account picked. Null = the reason's own role
+  # (every other charge, as before).
+  - changeSet:
+      id: 189-penalty-income-account
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: penalty_assessments
+            columns:
+              - column:
+                  name: income_account_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+                    foreignKeyName: fk_penalty_assessments_income_account
+                    references: accounts(id)

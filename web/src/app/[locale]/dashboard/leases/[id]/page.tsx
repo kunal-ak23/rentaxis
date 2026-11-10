@@ -52,6 +52,7 @@ import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
 import RaisePenaltyDialog, { PENALTY_REASONS } from "@/components/penalties/RaisePenaltyDialog";
+import JournalVoucherDialog from "@/components/penalties/JournalVoucherDialog";
 import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import HoldoverVacateDialog from "@/components/leases/HoldoverVacateDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
@@ -232,6 +233,7 @@ export default function LeaseDetailPage() {
     const [vacateOpen, setVacateOpen] = useState(false);
     const [noticeError, setNoticeError] = useState<string | null>(null);
     const [penaltyOpen, setPenaltyOpen] = useState(false);
+    const [voucherOpen, setVoucherOpen] = useState(false);
     const [penaltyKey, setPenaltyKey] = useState(0);
     const [noticeBusy, setNoticeBusy] = useState(false);
     const [chequeAction, setChequeAction] = useState<{ action: ChequeAction; cheque: Cheque } | null>(null);
@@ -600,6 +602,7 @@ export default function LeaseDetailPage() {
         assignment: { label: tA("assignment"), testId: "lease-assignment", icon: UserCog, onSelect: () => setDrawer("assignment") },
         reduce: { label: t("reduction.open"), testId: "lease-reduce", icon: MinusCircle, onSelect: () => setReduceOpen(true) },
         raisePenalty: { label: t("raisePenalty"), testId: "lease-raise-penalty", icon: Gavel, onSelect: () => setPenaltyOpen(true) },
+        journalVoucher: { label: t("journalVoucher"), testId: "lease-journal-voucher", icon: BookOpen, onSelect: () => setVoucherOpen(true) },
         giveNotice: {
             label: t("giveNotice"), testId: "lease-give-notice", icon: BellRing,
             onSelect: () => { setNoticeError(null); setNoticeOpen(true); },
@@ -1382,6 +1385,21 @@ export default function LeaseDetailPage() {
                     setBanner(PENALTY_REASONS.includes(p.reason) ? t("penaltyRaisedBanner")
                         : t("chargeRaisedBanner", { type: tChequesReason(`reason.${p.reason}`) }));
                     setPenaltyKey(k => k + 1);
+                    selectTab("payments", "penalties");
+                }}
+            />
+
+            <JournalVoucherDialog
+                open={voucherOpen}
+                leaseId={leaseId}
+                propertyId={lease.propertyId}
+                onClose={() => setVoucherOpen(false)}
+                onPosted={() => {
+                    setVoucherOpen(false);
+                    setBanner(t("journalVoucherBanner"));
+                    // The JV lists with the charges and its collection row joins the grid.
+                    setPenaltyKey(k => k + 1);
+                    void loadLease();
                     selectTab("payments", "penalties");
                 }}
             />

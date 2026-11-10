@@ -110,7 +110,7 @@ describe("contract header", () => {
         await screen.findByTestId("lease-actions");
         expect(primaryIds()).toEqual(["lease-record-payment", "lease-renew"]);
         expect(menuIds()).toEqual(["lease-extend", "lease-amend", "lease-add-charge", "lease-transfer",
-            "lease-assignment", "lease-reduce", "lease-raise-penalty", "lease-give-notice", "lease-terminate", "lease-write-off", "lease-ledger"]);
+            "lease-assignment", "lease-reduce", "lease-raise-penalty", "lease-journal-voucher", "lease-give-notice", "lease-terminate", "lease-write-off", "lease-ledger"]);
         expect(screen.getByTestId("lease-record-payment")).toHaveAttribute("href", "/dashboard/collections?tab=all&leaseId=lease-1&receive=1");
         expect(screen.getByTestId("lease-more-actions-menu")).not.toBeVisible();
         fireEvent.click(screen.getByTestId("lease-more-actions"));

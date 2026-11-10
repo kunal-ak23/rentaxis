@@ -39,7 +39,16 @@ public enum PenaltyReason {
      * the day the renter moved out, at the old day rate. Rent in substance, so it
      * earns rental income and carries VAT where the rent did.
      */
-    USE_AND_OCCUPATION(AccountRole.RENTAL_INCOME, "Use and occupation", true);
+    USE_AND_OCCUPATION(AccountRole.RENTAL_INCOME, "Use and occupation", true),
+
+    /**
+     * A one-off charge staff raise on a contract as a journal voucher (extra
+     * parking, a replacement key): posted as a {@code JV} to the income account
+     * they pick ({@code PenaltyAssessment.incomeAccountId}); the role here is
+     * only the fallback. Raised through the lease's journal-voucher endpoint,
+     * never proposed.
+     */
+    JOURNAL_VOUCHER(AccountRole.OTHER_INCOME, "Journal voucher", false);
 
     private final AccountRole incomeRole;
     private final String label;
