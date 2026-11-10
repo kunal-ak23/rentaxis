@@ -160,6 +160,8 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
     private static final LocalDate SETTLED_ON = LocalDate.of(2027, 2, 20);
     /** The day the kept paper is finally banked, a fortnight after the move-out. */
     private static final LocalDate BANKED_ON = LocalDate.of(2027, 3, 1);
+    /** A cheque still in clearing comes back before the statement is drawn (#297). */
+    private static final LocalDate RETURNED_BEFORE_SETTLEMENT = LocalDate.of(2027, 2, 18);
     /** A fine approved before T, so its collection row is kept rather than handed back. */
     private static final LocalDate PENALTY_ON = LocalDate.of(2027, 1, 20);
 
@@ -187,6 +189,13 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
      * ever late — and the January rent is left in the drawer.
      */
     private UUID sampleResidencesWithOneChequeStillInTheDrawer() {
+        UUID leaseId = sampleResidencesWithOctoberBanked();
+        cheques.clear(chequeOn(leaseId, RENT_1).getId(), ChequeActionRequest.on(RENT_1));
+        return leaseId;
+    }
+
+    /** The same contract with October's cheque banked but not yet cleared. */
+    private UUID sampleResidencesWithOctoberBanked() {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000"),
                         line("SECURITY_DEPOSIT", "3000")));
@@ -200,7 +209,8 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         posting.post(leaseId);
         clearOnItsOwnDate(chequeOn(leaseId, ADMIN_CHEQUE));
         clearOnItsOwnDate(chequeOn(leaseId, DEPOSIT_CHEQUE));
-        clearOnItsOwnDate(chequeOn(leaseId, RENT_1));
+        Cheque october = chequeOn(leaseId, RENT_1);
+        cheques.deposit(october.getId(), ChequeActionRequest.on(october.getChequeDate()));
         return leaseId;
     }
 
@@ -817,9 +827,80 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         return chequeQueries.aging(null, on).buckets().stream().flatMap(b -> b.rows().stream()).toList();
     }
 
-    // Issue #297's regression test (a cheque cleared, returned before the settlement,
-    // absorbed by the STL) was removed on 2026-11-10: a cleared cheque no longer
-    // bounces, so this fixture can no longer reach that state.
+    /**
+     * Issue #297: two bounces on one contract, and the settlement's own one must
+     * stay shut.
+     *
+     * <p>The October cheque (A) was banked, then returned before the statement was
+     * drawn (a cleared cheque cannot bounce, so it never cleared), so the {@code STL} netted its 12,750 against the deposit and raised a
+     * CASH row for the remainder — A has been paid for. The January cheque (B) is
+     * the one §9.1 kept; it bounces a fortnight <em>after</em> finalise, and that
+     * genuinely puts 12,750 back on the contract.</p>
+     *
+     * <p>Deciding from the lease's receivable alone, as the guard used to, that
+     * positive balance re-opened {@code replace} on <b>A</b>: its replacement would
+     * credit the receivable over money the landlord had already been paid, B would
+     * then be locked out of its own replacement, and a contract whose absorbed
+     * cheque was the larger of the two could never reach CLOSED. Per cheque, the two
+     * are not the same question — A's {@code CBR} is older than the {@code STL} and
+     * B's is not — so A stays refused through both doors and B is replaced, cleared
+     * and closes the tenancy.</p>
+     */
+    @Test
+    void aBounceAfterFinaliseDoesNotReopenReplaceOnAChequeTheSettlementAbsorbed() {
+        UUID leaseId = sampleResidencesWithOctoberBanked();
+        recognition.runTo(RECOGNISED_TO, false);
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Renter relocating"), null);
+        recognition.runTo(T, false);
+        UUID absorbed = chequeOn(leaseId, RENT_1).getId();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+
+        // A: banked in October, returned by the bank before the statement is drawn.
+        cheques.bounce(absorbed, ChequeActionRequest.on(RETURNED_BEFORE_SETTLEMENT));
+        assertThat(statusOf(absorbed)).isEqualTo(ChequeStatus.BOUNCED);
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId)).isEqualByComparingTo("7510.27");
+
+        SettlementResponseDTO settled = finalizeSettlement(leaseId, null);
+        UUID collection = settled.getCollectionChequeId();
+        assertThat(collection).as("the row raised for what the deposit could not cover").isNotNull();
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("the STL settled everything that was owed when it was posted")
+                .isEqualByComparingTo("0.00");
+
+        // B: the kept instrument is banked afterwards and comes back.
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, leaseId))
+                .as("B's failure is a debt nobody has been paid for")
+                .isEqualByComparingTo("12750.00");
+
+        // A is still the settlement's business, whatever B has done to the balance.
+        assertThatThrownBy(() -> cheques.replace(absorbed, new ReplaceChequeRequest(
+                List.of(row("100056", BANKED_ON, BANKED_ON, "12750")), BANKED_ON, "Renter paid again")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This cheque was settled through the lease settlement");
+        assertThatThrownBy(() -> cheques.replaceForOnlinePayment(absorbed, BANKED_ON))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("This cheque was settled through the lease settlement");
+        assertThat(register(leaseId))
+                .as("six contract rows plus the settlement's CASH row: no replacement was registered")
+                .hasSize(7);
+
+        // B is replaced, and the replacement is what finishes the contract off.
+        UUID replacement = cheques.replace(kept, new ReplaceChequeRequest(
+                        List.of(row("100057", BANKED_ON, BANKED_ON, "12750")), BANKED_ON, "Renter paid by new cheque"))
+                .get(0).id();
+        assertThat(statusOf(kept)).isEqualTo(ChequeStatus.REPLACED);
+        clearOnItsOwnDate(chequeById(replacement));
+        cheques.receive(collection, ChequeActionRequest.on(SETTLED_ON));
+
+        assertThat(statusOf(absorbed)).as("A stays on the register as the thing that failed")
+                .isEqualTo(ChequeStatus.BOUNCED);
+        assertThat(statusOfLease(leaseId)).isEqualTo(LeaseStatus.CLOSED);
+        assertThat(closedEvents(leaseId)).isEqualTo(1);
+        assertNothingLeftOnTheLease(leaseId);
+        assertTrialBalanceBalances();
+    }
 
     /**
      * A cheque that bounces <em>after</em> the settlement is finalised is a real

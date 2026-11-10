@@ -834,9 +834,9 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
     }
 
     /**
-     * An applied capture redelivered after its row bounced from CLEARED (a
-     * chargeback) is still the applied capture: it neither turns into a refund
-     * nor moves its capture time.
+     * A captured (CLEARED) row refuses a bounce, and an applied capture
+     * redelivered afterwards is still the applied capture: it neither turns into
+     * a refund nor moves its capture time.
      */
     @Test
     void aCapturedRowCannotBounceAndARedeliveredCaptureStaysAppliedWithItsFirstCaptureTime() throws Exception {
