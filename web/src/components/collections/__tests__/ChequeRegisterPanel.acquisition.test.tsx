@@ -62,14 +62,15 @@ describe("ChequeRegisterPanel — acquisition cheques", () => {
         expect(screen.queryByTestId("cheque-row-action-receipt-c1")).not.toBeInTheDocument();
     });
 
-    it("still offers bounce/receipt on an ordinary CLEARED PDC row", async () => {
+    it("still offers a receipt on an ordinary CLEARED PDC row, and never a bounce", async () => {
         api.list.mockResolvedValue(page([cheque({ id: "c2", seqNo: 2 })]));
         api.summary.mockResolvedValue({});
         api.aging.mockResolvedValue({ buckets: [], totalCount: 0 });
         renderPanel();
 
-        expect(await screen.findByTestId("cheque-row-action-bounce-c2")).toBeInTheDocument();
-        expect(screen.getByTestId("cheque-row-action-receipt-c2")).toBeInTheDocument();
+        expect(await screen.findByTestId("cheque-row-action-receipt-c2")).toBeInTheDocument();
+        // Ruling 2026-11-10: a cleared cheque has been paid and cannot bounce.
+        expect(screen.queryByTestId("cheque-row-action-bounce-c2")).not.toBeInTheDocument();
         expect(screen.queryByTestId("cheque-settled-before-acquisition-c2")).not.toBeInTheDocument();
     });
 
