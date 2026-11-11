@@ -86,6 +86,17 @@ public class UnitController {
         return ResponseEntity.ok(service.getUnitsByProperty(propertyId));
     }
 
+    /** The unit's DEWA premise number (DLD rental index): nine digits, or blank to clear. */
+    public record DewaPremiseNumberBody(String dewaPremiseNumber) {
+    }
+
+    @PatchMapping("/{id}/dewa-premise-number")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<Unit> setDewaPremiseNumber(@PathVariable UUID id,
+                                                     @RequestBody DewaPremiseNumberBody body) {
+        return ResponseEntity.ok(service.setDewaPremiseNumber(id, body == null ? null : body.dewaPremiseNumber()));
+    }
+
     @PostMapping("/bulk")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<?> bulkUploadUnits(

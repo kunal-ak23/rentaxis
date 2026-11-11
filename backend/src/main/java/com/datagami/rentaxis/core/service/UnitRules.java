@@ -87,6 +87,23 @@ public final class UnitRules {
         return problems;
     }
 
+    /** The DEWA premise number as stored: trimmed, or null when blank. */
+    public static String dewaPremiseNumber(String raw) {
+        if (raw == null) return null;
+        String s = raw.trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    /**
+     * Why this DEWA premise number is refused, or null. The DLD rental index
+     * calculator takes exactly nine digits; blank is "not entered", never an error.
+     */
+    public static String dewaPremiseNumberProblem(String raw) {
+        String s = dewaPremiseNumber(raw);
+        if (s == null) return null;
+        return s.matches("\\d{9}") ? null : "DEWA premise number must be exactly 9 digits";
+    }
+
     /** Why this unit number is refused, or null. */
     public static String numberProblem(String unitNumber) {
         String number = display(unitNumber);

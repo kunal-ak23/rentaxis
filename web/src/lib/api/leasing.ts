@@ -423,6 +423,23 @@ export type RenewalPreview = {
   exceedsWarn: boolean;
   /** PR #358 R1 P2-3: the current lease's rent discount, which does not renew. */
   droppedDiscount?: number | null;
+  /**
+   * Decree 43 (RERA) cap from the DLD index range entered for the unit's property,
+   * type and the new end year; every field null (or absent on an older server)
+   * when no range matches. Advisory only.
+   */
+  indexYear?: number | null;
+  indexMin?: number | null;
+  indexMax?: number | null;
+  indexAverage?: number | null;
+  belowAveragePercent?: number | null;
+  capPercent?: number | null;
+  maxRent?: number | null;
+  exceedsCap?: boolean | null;
+  /** When the range was entered (ISO instant). */
+  indexEnteredAt?: string | null;
+  /** The unit's DEWA premise number, for "Check on DLD" to copy. */
+  dewaPremiseNumber?: string | null;
 };
 
 /** ChequeRowInput — one row of a lease's cheque grid, or an extension's registered cheques. */

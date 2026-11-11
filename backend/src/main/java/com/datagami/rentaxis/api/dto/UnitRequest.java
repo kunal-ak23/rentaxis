@@ -30,6 +30,8 @@ public record UnitRequest(
         @com.datagami.rentaxis.api.validation.Money(max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
         BigDecimal actualRent,
         String currentTenantName,
+        /** The 9-digit DEWA premise number (DLD rental index); blank clears it. */
+        String dewaPremiseNumber,
         IdRef property,
         IdRef building) {
 }

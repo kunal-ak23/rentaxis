@@ -110,3 +110,23 @@ describe("RenewalCard while an answer is being saved", () => {
         expect(onSetIntent).not.toHaveBeenCalled();
     });
 });
+
+/** Decree 43: one read-only line when the server says where the drafted rent sits against the RERA cap. */
+describe("RenewalCard RERA cap line", () => {
+    it("says within the cap", () => {
+        render(<RenewalCard {...base} reraCap="WITHIN" />);
+        expect(screen.getByTestId("renewal-rera-cap")).toHaveTextContent("reraWithin");
+    });
+
+    it("says above the cap", () => {
+        render(<RenewalCard {...base} reraCap="ABOVE" />);
+        expect(screen.getByTestId("renewal-rera-cap")).toHaveTextContent("reraAbove");
+    });
+
+    it("shows nothing when the server does not know", () => {
+        render(<RenewalCard {...base} />);
+        expect(screen.queryByTestId("renewal-rera-cap")).toBeNull();
+        render(<RenewalCard {...base} reraCap={null} />);
+        expect(screen.queryByTestId("renewal-rera-cap")).toBeNull();
+    });
+});

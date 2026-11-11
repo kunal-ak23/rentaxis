@@ -257,7 +257,9 @@ public class LeaseRenewalService {
                               List<LeaseLineInput> lines, List<LeaseLine> copiedSources,
                               List<LeaseLine> skippedOneOff, BigDecimal warnPercent, boolean exceedsWarn,
                               /* PR #358 R1 P2-3: the predecessor's rent discount, which does not renew. */
-                              BigDecimal droppedDiscount) {
+                              BigDecimal droppedDiscount,
+                              /* Decree 43 cap from the DLD index range for the unit and the new end year; null when none. */
+                              RentalIndexService.ReraCap reraCap) {
     }
 
     /** The renewal a request would draft, with nothing written (the preview endpoint). */
@@ -275,9 +277,15 @@ public class LeaseRenewalService {
                     type == null || type.getBehaviour() == null ? null : type.getBehaviour().name(),
                     in.grossAmount(), in.discountAmount(), Boolean.TRUE.equals(in.vatApplicable())));
         }
+        RentalIndexService.ReraCap cap = plan.reraCap();
         return new com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO(plan.baseRent(), plan.newRent(),
                 plan.changePercent(), lines, plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList(),
-                plan.warnPercent(), plan.exceedsWarn(), plan.droppedDiscount());
+                plan.warnPercent(), plan.exceedsWarn(), plan.droppedDiscount(),
+                cap == null ? null : cap.indexYear(), cap == null ? null : cap.indexMin(),
+                cap == null ? null : cap.indexMax(), cap == null ? null : cap.indexAverage(),
+                cap == null ? null : cap.belowAveragePercent(), cap == null ? null : cap.capPercent(),
+                cap == null ? null : cap.maxRent(), cap == null ? null : cap.exceedsCap(),
+                cap == null ? null : cap.indexEnteredAt(), cap == null ? null : cap.dewaPremiseNumber());
     }
 
     /** The plan itself, for tests and the preview. */
@@ -398,8 +406,13 @@ public class LeaseRenewalService {
         BigDecimal warn = warnPercentFor(predecessor);
         boolean changed = mode != RenewLeaseRequest.RentChange.Mode.NONE;
         boolean exceeds = warn != null && percent != null && percent.compareTo(warn) > 0;
+        // Decree 43: measured on what the renter pays now (the base, net of the
+        // discount that does not renew) against the DLD range for the new end year.
+        // Advisory, like the notice threshold above: it is reported, never enforced.
+        RentalIndexService.ReraCap cap = rentalIndex == null || base == null ? null
+                : rentalIndex.capFor(predecessor.getUnit(), r.endDate().getYear(), base, newRent).orElse(null);
         return new RenewalPlan(base, newRent, changed ? percent : null, changed, List.copyOf(lines), sources,
-                skipped, warn, exceeds, dropped);
+                skipped, warn, exceeds, dropped, cap);
     }
 
     /**
@@ -438,6 +451,13 @@ public class LeaseRenewalService {
     }
 
     private com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository rentSettings;
+
+    private RentalIndexService rentalIndex;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setRentalIndex(RentalIndexService rentalIndex) {
+        this.rentalIndex = rentalIndex;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public void setRentSettings(com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository repo) {

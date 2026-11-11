@@ -16,6 +16,8 @@ type Props = {
   endedDaysAgo?: number;
   /** An answer is being saved: every choice is disabled (F3, no double post). */
   busy?: boolean;
+  /** Decree 43: the drafted renewal's rent against the RERA cap, when the server knows it. */
+  reraCap?: "WITHIN" | "ABOVE" | null;
   onSetIntent?: (intent: "RENEW" | "MOVE_OUT" | "DISCUSS") => void;
 };
 
@@ -45,6 +47,11 @@ export default function RenewalCard(p: Props) {
     <div className="rounded border border-border p-4">
       <p className="text-sm font-medium">{title}</p>
       <p className="text-xs text-muted">{t("endDateLine", { date: p.endDate, days: Math.max(0, p.daysRemaining) })}</p>
+      {p.reraCap && (
+        <p data-testid="renewal-rera-cap" className={`text-xs mt-1 ${p.reraCap === "ABOVE" ? "text-error" : "text-muted"}`}>
+          {p.reraCap === "ABOVE" ? t("reraAbove") : t("reraWithin")}
+        </p>
+      )}
       {noIntent
         ? <div className="mt-3 flex gap-2 flex-wrap">
             <button disabled={p.busy} onClick={() => choose("RENEW")} className="rounded bg-primary text-primary-foreground px-3 py-1 text-xs disabled:opacity-60">{t("renew")}</button>

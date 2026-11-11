@@ -57,6 +57,14 @@ public class Unit extends BaseTenantEntity {
     @Column(name = "current_tenant_name")
     private String currentTenantName;
 
+    /**
+     * The 9-digit DEWA premise number the DLD rental index calculator resolves a
+     * unit from (area, building, bedroom category). Null until a manager enters it;
+     * the renewal's "Check on DLD" button copies it for the operator to paste.
+     */
+    @Column(name = "dewa_premise_number", length = 9)
+    private String dewaPremiseNumber;
+
     @Version
     private Long version;
 

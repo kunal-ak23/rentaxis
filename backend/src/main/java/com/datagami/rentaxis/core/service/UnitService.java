@@ -40,6 +40,8 @@ public class UnitService {
     public Unit createUnit(UnitRequest r) {
         // Break-it R3 ops3 F2: the field rules the CSV upload shares (UnitRules).
         List<String> problems = UnitRules.fieldProblems(r.unitNumber(), r.sizeSqft(), r.expectedRent(), r.actualRent());
+        String dewaProblem = UnitRules.dewaPremiseNumberProblem(r.dewaPremiseNumber());
+        if (dewaProblem != null) problems.add(dewaProblem);
         if (!problems.isEmpty()) {
             throw new BusinessRuleViolationException(problems.get(0));
         }
@@ -66,9 +68,22 @@ public class UnitService {
         if (r.expectedRent() != null) u.setExpectedRent(r.expectedRent());
         if (r.actualRent() != null) u.setActualRent(r.actualRent());
         u.setCurrentTenantName(r.currentTenantName());
+        u.setDewaPremiseNumber(UnitRules.dewaPremiseNumber(r.dewaPremiseNumber()));
         Unit saved = repository.save(u);
         flushTranslatingNumberClash(number, property, building);
         return Loaded.with(saved, Unit::getProperty, Unit::getBuilding);
+    }
+
+    /** Set (or clear) the DEWA premise number on a unit of the caller's tenant. */
+    @Transactional
+    public Unit setDewaPremiseNumber(UUID unitId, String raw) {
+        String problem = UnitRules.dewaPremiseNumberProblem(raw);
+        if (problem != null) throw new BusinessRuleViolationException(problem);
+        UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        Unit u = repository.findWithPlaceByTenantIdAndId(tenantId, unitId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Unit not found"));
+        u.setDewaPremiseNumber(UnitRules.dewaPremiseNumber(raw));
+        return Loaded.with(repository.save(u), Unit::getProperty, Unit::getBuilding);
     }
 
     /** The normalised unit numbers already taken in the scope a new unit in {@code building} (or none) joins. */
