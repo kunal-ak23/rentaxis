@@ -82,6 +82,7 @@ public class UnitService {
         UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
         Unit u = repository.findWithPlaceByTenantIdAndId(tenantId, unitId)
                 .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Unit not found"));
+        propertyScope.requireCanAccessUnit(u, "Unit not found");
         u.setDewaPremiseNumber(UnitRules.dewaPremiseNumber(raw));
         return Loaded.with(repository.save(u), Unit::getProperty, Unit::getBuilding);
     }

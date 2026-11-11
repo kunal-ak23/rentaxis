@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.rentalindex.RentalIndexRangeDTO;
 import com.datagami.rentaxis.api.dto.rentalindex.RentalIndexRangeInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.core.service.TenantReferences;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.RentalIndexRange;
@@ -40,10 +41,18 @@ public class RentalIndexService {
 
     private final RentalIndexRangeRepository ranges;
     private final TenantReferences refs;
+    private final PropertyScope propertyScope;
 
-    public RentalIndexService(RentalIndexRangeRepository ranges, TenantReferences refs) {
+    public RentalIndexService(RentalIndexRangeRepository ranges, TenantReferences refs, PropertyScope propertyScope) {
         this.ranges = ranges;
         this.refs = refs;
+        this.propertyScope = propertyScope;
+    }
+
+    /** The property, in the caller's tenant and (for a property manager) in their scope. */
+    private Property scopedProperty(UUID propertyId) {
+        propertyScope.requireCanAccessProperty(propertyId);
+        return refs.property(propertyId);
     }
 
     /**
@@ -57,7 +66,7 @@ public class RentalIndexService {
 
     @Transactional(readOnly = true)
     public List<RentalIndexRangeDTO> list(UUID propertyId) {
-        Property property = refs.property(propertyId);
+        Property property = scopedProperty(propertyId);
         return ranges.findByPropertyIdOrderByIndexYearDescUnitTypeAsc(property.getId()).stream()
                 .map(RentalIndexRangeDTO::of).toList();
     }
@@ -65,7 +74,7 @@ public class RentalIndexService {
     /** Add the range for (unit type, year), or replace the one already there: the key is the identity. */
     @Transactional
     public RentalIndexRangeDTO upsert(UUID propertyId, RentalIndexRangeInput in, UUID callerId) {
-        Property property = refs.property(propertyId);
+        Property property = scopedProperty(propertyId);
         return RentalIndexRangeDTO.of(save(property, validate(property, in), callerId));
     }
 
@@ -76,7 +85,7 @@ public class RentalIndexService {
      */
     @Transactional
     public RentalIndexImportResult importRows(UUID propertyId, List<RentalIndexRangeInput> rows, UUID callerId) {
-        Property property = refs.property(propertyId);
+        Property property = scopedProperty(propertyId);
         if (rows == null || rows.isEmpty()) {
             throw new BusinessRuleViolationException("The sheet has no rows");
         }
@@ -104,7 +113,7 @@ public class RentalIndexService {
 
     @Transactional
     public void delete(UUID propertyId, UUID id) {
-        Property property = refs.property(propertyId);
+        Property property = scopedProperty(propertyId);
         RentalIndexRange r = ranges.findById(id)
                 .filter(x -> x.getProperty().getId().equals(property.getId()))
                 .orElseThrow(() -> new NotFoundException("Rental index range not found"));
