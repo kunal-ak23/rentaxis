@@ -143,11 +143,11 @@ class MoneyValidatorTest {
     @Test
     void unitRentsAreBoundedByTheColumnsTwelveTwoNotTheSchemaWideMax() {
         UnitRequest overTwelveTwo = new UnitRequest("U-1", null, null, null,
-                new BigDecimal("10000000000.00"), null, null, null, null);
+                new BigDecimal("10000000000.00"), null, null, null, null, null);
         assertThat(messages(validator.validate(overTwelveTwo))).containsExactly(TWELVE_TWO_TOO_LARGE);
 
         UnitRequest atTwelveTwo = new UnitRequest("U-1", null, null, null,
-                new BigDecimal("9999999999.99"), new BigDecimal("9999999999.99"), null, null, null);
+                new BigDecimal("9999999999.99"), new BigDecimal("9999999999.99"), null, null, null, null);
         assertThat(validator.validate(atTwelveTwo)).isEmpty();
     }
 

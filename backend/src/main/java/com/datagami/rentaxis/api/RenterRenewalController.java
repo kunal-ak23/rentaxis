@@ -47,6 +47,7 @@ public class RenterRenewalController {
     private final RenewalOpportunityRepository oppRepo;
     private final LeaseReminderRepository reminderRepo;
     private final RenewalIntentService intentService;
+    private final com.datagami.rentaxis.core.service.lease.RentalIndexService rentalIndex;
 
     @GetMapping
     @PreAuthorize("hasAuthority('ROLE_RENTER')")
@@ -95,9 +96,28 @@ public class RenterRenewalController {
                     o != null && o.getIntent() != null ? o.getIntent().name() : null,
                     rems,
                     com.datagami.rentaxis.core.service.renewal.LeaseEnded.hasEnded(l, today),
-                    com.datagami.rentaxis.core.service.renewal.LeaseEnded.daysSinceEnded(l, today)));
+                    com.datagami.rentaxis.core.service.renewal.LeaseEnded.daysSinceEnded(l, today),
+                    reraCapOf(l)));
         }
         return new RenewalSummaryDTO(views);
+    }
+
+    /**
+     * Decree 43 for the renter: the drafted successor's rent against the cap, or null
+     * when nothing has been drafted or no DLD range covers the unit for the new end
+     * year. The current rent is what the draft recorded as the rent it revised
+     * ({@code renewalPreviousRent}, the base the manager's preview used), so renter
+     * and manager read the same answer.
+     */
+    private String reraCapOf(Lease l) {
+        Lease successor = leaseRepo.findByRenewedFromLeaseId(l.getId()).stream()
+                .filter(s -> s.getStatus() == com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT)
+                .findFirst().orElse(null);
+        if (successor == null || successor.getEndDate() == null) return null;
+        java.math.BigDecimal current = successor.getRenewalPreviousRent() != null
+                ? successor.getRenewalPreviousRent() : l.getRentAmount();
+        return rentalIndex.capFor(l.getUnit(), successor.getEndDate().getYear(), current, successor.getRentAmount())
+                .map(c -> c.exceedsCap() ? "ABOVE" : "WITHIN").orElse(null);
     }
 
     @PostMapping("/{opportunityId}/intent")

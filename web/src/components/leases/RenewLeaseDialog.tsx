@@ -16,6 +16,7 @@ import { MoneyFieldError } from "@/components/ui/NumberInput";
 import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
 import { formatDate } from "@/lib/format";
+import { dldRentalIndexUrl } from "@/lib/api/rentalIndex";
 
 /**
  * Spec §4c: the one-off lines a renewal will not copy (an admin fee, last
@@ -339,6 +340,9 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                                 {tr.rich("aboveNotice", { percent: preview.warnPercent, ...bdi })}
                             </p>
                         )}
+                        {preview && preview.maxRent != null && preview.indexMin != null && preview.indexMax != null && (
+                            <ReraCapBlock preview={preview} />
+                        )}
                         {previewError && (
                             <p role="alert" data-testid="renew-preview-error" className="text-[11px] font-semibold text-error">{previewError}</p>
                         )}
@@ -442,5 +446,57 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                 )}
             </div>
         </LeaseDialog>
+    );
+}
+
+/**
+ * Decree 43 (RERA): what the DLD index range entered for this unit's building,
+ * type and the new end year permits, next to what is being proposed. An estimate
+ * from a manager-typed range — it never blocks, and "Check on DLD" is the way to
+ * verify it: the DEWA premise number goes to the clipboard and the calculator
+ * opens in a new tab. Nothing is fetched from dubailand.gov.ae.
+ */
+export function ReraCapBlock({ preview }: { preview: RenewalPreview }) {
+    const tr = useTranslations("Renewal");
+    const locale = useLocale();
+    const [copied, setCopied] = useState(false);
+    const above = preview.exceedsCap === true;
+    const below = preview.belowAveragePercent ?? 0;
+    const enteredOn = preview.indexEnteredAt ? formatDate(preview.indexEnteredAt.slice(0, 10)) : "";
+    const check = async () => {
+        const number = preview.dewaPremiseNumber ?? "";
+        if (number) {
+            try { await navigator.clipboard?.writeText(number); setCopied(true); } catch { /* clipboard refused: the number is on screen */ }
+        }
+        window.open(dldRentalIndexUrl(locale), "_blank", "noopener,noreferrer");
+    };
+    return (
+        <div role="note" data-testid="renew-rera-cap" data-above={above ? "true" : "false"}
+            className={`text-[11px] rounded-lg px-3 py-2 border space-y-1 ${above ? "border-error/30 bg-error/5" : "border-border bg-background"}`}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="font-semibold text-foreground">{tr("reraTitle")}</span>
+                <span data-testid="renew-rera-badge"
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${above ? "bg-error text-white" : "bg-success/15 text-success"}`}>
+                    {above ? tr("reraAboveBadge") : tr("reraWithinBadge")}
+                </span>
+            </div>
+            <p className="tabular-nums">{tr.rich("reraRange", { ...bdi, min: fmtAmount(preview.indexMin!), max: fmtAmount(preview.indexMax!), year: String(preview.indexYear ?? "") })}</p>
+            <p className="tabular-nums">
+                {below > 0
+                    ? tr.rich("reraAverage", { ...bdi, average: fmtAmount(preview.indexAverage ?? 0), percent: below.toFixed(1) })
+                    : tr.rich("reraAverageAbove", { ...bdi, average: fmtAmount(preview.indexAverage ?? 0) })}
+            </p>
+            <p className="tabular-nums font-semibold">{tr.rich("reraBand", { ...bdi, band: String(preview.capPercent ?? 0), max: fmtAmount(preview.maxRent!) })}</p>
+            <p className="text-muted">{tr.rich("reraNote", { ...bdi, date: enteredOn })}</p>
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+                <button type="button" onClick={() => void check()} data-testid="renew-rera-check" title={tr("reraCheckHint")}
+                    className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground hover:bg-input cursor-pointer">
+                    {tr("reraCheck")}
+                </button>
+                {preview.dewaPremiseNumber
+                    ? <span className="text-muted tabular-nums"><bdi dir="ltr">{preview.dewaPremiseNumber}</bdi>{copied ? ` · ${tr("reraCopied", { number: preview.dewaPremiseNumber })}` : ""}</span>
+                    : <span className="text-muted">{tr("reraNoDewa")}</span>}
+            </div>
+        </div>
     );
 }

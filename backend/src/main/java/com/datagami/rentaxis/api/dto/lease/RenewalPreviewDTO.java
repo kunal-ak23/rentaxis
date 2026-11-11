@@ -17,7 +17,24 @@ public record RenewalPreviewDTO(BigDecimal baseRent,
                                 BigDecimal warnPercent,
                                 boolean exceedsWarn,
                                 /* PR #358 R1 P2-3: the current lease's discount, which the renewal does not carry. */
-                                BigDecimal droppedDiscount) {
+                                BigDecimal droppedDiscount,
+                                /*
+                                 * Decree 43 (RERA) cap from the DLD index range entered for the unit's
+                                 * property, type and the successor's end year; every field null when no
+                                 * range matches. Advisory: the renewal is never refused over it.
+                                 */
+                                Integer indexYear,
+                                BigDecimal indexMin,
+                                BigDecimal indexMax,
+                                BigDecimal indexAverage,
+                                BigDecimal belowAveragePercent,
+                                BigDecimal capPercent,
+                                BigDecimal maxRent,
+                                Boolean exceedsCap,
+                                /* When the range was entered ("estimate from the DLD index range entered on …"). */
+                                java.time.Instant indexEnteredAt,
+                                /* The unit's DEWA premise number, for the "Check on DLD" button to copy. */
+                                String dewaPremiseNumber) {
 
     /** One copied line as the successor will carry it. */
     public record Line(UUID chargeTypeId, String chargeTypeCode, String chargeTypeName, String chargeTypeNameAr,

@@ -1,0 +1,43 @@
+databaseChangeLog:
+  # Decree 43/2013 rent cap in renewals (Nov 2026). The DLD rental index
+  # calculator resolves a unit from its 9-digit DEWA premise number and answers
+  # one index range (AED/year) per building x bedroom category x contract-end
+  # year. Managers enter that range here; the renewal preview computes the
+  # permitted increase from it (advisory, never a block) and links out to DLD.
+  - changeSet:
+      id: 190-units-dewa-premise-number
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: units
+            columns:
+              - column:
+                  name: dewa_premise_number
+                  type: varchar(9)
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn: { tableName: units, columnName: dewa_premise_number }
+  - changeSet:
+      id: 190-rental-index-ranges
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: rental_index_ranges
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_rental_index_ranges, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_rental_index_ranges_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_rental_index_ranges_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: unit_type, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: index_year, type: int, constraints: { nullable: false } }
+              - column: { name: min_value, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: max_value, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: source_note, type: varchar(500) }
+              - column: { name: entered_by, type: uuid }
+              - column: { name: entered_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addUniqueConstraint:
+            tableName: rental_index_ranges
+            columnNames: tenant_id, property_id, unit_type, index_year
+            constraintName: uq_rental_index_ranges_key
+      rollback:
+        - dropTable: { tableName: rental_index_ranges }

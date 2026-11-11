@@ -110,6 +110,25 @@ class _RenewalsScreenState extends ConsumerState<RenewalsScreen> {
                                 Text(
                                   '${ar ? 'اختيارك' : 'Your choice'}: ${choice(row['intent'] as String)}',
                                 ),
+                              // Decree 43: where the drafted renewal's rent sits against
+                              // the RERA cap, when the server knows it. Read-only.
+                              if (row['reraCap'] == 'ABOVE' ||
+                                  row['reraCap'] == 'WITHIN')
+                                Text(
+                                  key: const Key('renewal-rera-cap'),
+                                  row['reraCap'] == 'ABOVE'
+                                      ? (ar
+                                            ? 'الإيجار المقترح أعلى من حد ريرا'
+                                            : 'Proposed rent is above the RERA cap')
+                                      : (ar
+                                            ? 'الإيجار المقترح ضمن حد ريرا'
+                                            : 'Proposed rent is within the RERA cap'),
+                                  style: TextStyle(
+                                    color: row['reraCap'] == 'ABOVE'
+                                        ? Theme.of(context).colorScheme.error
+                                        : context.miftah.textSecondary,
+                                  ),
+                                ),
                               if (row['opportunityId'] == null)
                                 Text(
                                   ar

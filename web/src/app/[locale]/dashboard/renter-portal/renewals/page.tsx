@@ -16,6 +16,8 @@ type LeaseRenewalView = {
   /** Break-it R3 portal3 F8: the contract is over — shown as ended, no renewal choice. */
   ended?: boolean;
   endedDaysAgo?: number;
+  /** Decree 43: "WITHIN" / "ABOVE" the RERA cap for the drafted renewal, when known. */
+  reraCap?: "WITHIN" | "ABOVE" | null;
 };
 
 export default function RenterRenewalsPage() {

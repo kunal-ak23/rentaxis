@@ -10,6 +10,7 @@ import CardFlip from "@/components/ui/card-flip";
 import { Link } from "@/i18n/routing";
 import { formatCurrency, formatCurrencyCompact, formatDate } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { dewaPremiseNumberValid } from "@/lib/api/rentalIndex";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { MONEY_MAX_12_2 } from "@/lib/money";
@@ -130,6 +131,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
         actualRent: 0,
         status: "VACANT",
         currentTenantName: "",
+        dewaPremiseNumber: "",
         property: { id: propertyId }
     });
 
@@ -184,13 +186,17 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        if (!dewaPremiseNumberValid(formData.dewaPremiseNumber)) {
+            setFormError(t("dewaPremiseNumberInvalid"));
+            return;
+        }
         setSubmitting(true);
         setFormError(null);
         try {
             const res = await fetch("/api/proxy/v1/units", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData)
+                body: JSON.stringify({ ...formData, dewaPremiseNumber: formData.dewaPremiseNumber.trim() || null })
             });
             await throwIfNotOk(res);
             setShowForm(false);
@@ -203,6 +209,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                 actualRent: 0,
                 status: "VACANT",
                 currentTenantName: "",
+                dewaPremiseNumber: "",
                 property: { id: propertyId }
             });
         } catch (err) {
@@ -274,6 +281,11 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("sizeSqft")}</label>
                                     <NumberInput placeholder="Sq. Ft." className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.sizeSqft} onChange={(v) => setFormData({ ...formData, sizeSqft: v })} />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("dewaPremiseNumber")}</label>
+                                <input inputMode="numeric" dir="ltr" maxLength={9} data-testid="unit-dewa" placeholder={t("dewaPremiseNumberPlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.dewaPremiseNumber} onChange={ev => setFormData({ ...formData, dewaPremiseNumber: ev.target.value })} />
+                                <p className="text-[10px] text-muted mt-1">{t("dewaPremiseNumberHint")}</p>
                             </div>
                             {formError && (
                                 <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">

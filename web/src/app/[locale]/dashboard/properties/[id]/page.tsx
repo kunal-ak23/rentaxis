@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell, Car, BookOpen } from "lucide-react";
+import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell, Car, BookOpen, Scale } from "lucide-react";
 import { AmenitiesTab } from "./_components/AmenitiesTab";
 import { ParkingTab } from "./_components/ParkingTab";
+import { RentalIndexTab } from "./_components/RentalIndexTab";
 import { OverviewCounts } from "./_components/OverviewCounts";
 import PropertyAccountsTab from "@/components/finance/PropertyAccountsTab";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { dewaPremiseNumberValid } from "@/lib/api/rentalIndex";
 import { NumberInput, MoneyTextInput, focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { MONEY_MAX_12_2, moneyValueOrNull } from "@/lib/money";
 import { AccessDeniedState, LoadFailedState, NotFoundState } from "@/components/ui/PageStates";
@@ -98,8 +100,10 @@ export default function PropertyDetailPage() {
     // canViewPropertyManagers. Gate both the fetch and the card on it so an
     // ACCOUNTANT visit doesn't log a 403 on every load.
     const canViewManagers = hasPermission(userRole, 'canViewPropertyManagers');
+    // RentalIndexController and the unit DEWA patch: SUPER_ADMIN, TENANT_ADMIN, PROPERTY_MANAGER.
+    const canManageRentalIndex = userRole === "SUPER_ADMIN" || userRole === "TENANT_ADMIN" || userRole === "PROPERTY_MANAGER";
 
-    const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts" | "rentalIndex">("overview");
     const [property, setProperty] = useState<any>(null);
     const [propertyLoad, setPropertyLoad] = useState<"loading" | "ok" | "notFound" | "forbidden" | "failed">("loading");
     const [buildings, setBuildings] = useState<any[]>([]);
@@ -319,6 +323,10 @@ export default function PropertyDetailPage() {
                     { id: "buildings", label: t("tabBuildings"), icon: Building2 },
                     { id: "units", label: t("tabUnits"), icon: Home },
                     { id: "leases", label: t("tabContracts"), icon: FileText },
+                    // Decree 43: the DLD index ranges the renewal cap is computed from.
+                    // Read by every role that reads the property; edited by the roles
+                    // RentalIndexController lets write (canManage below).
+                    { id: "rentalIndex", label: t("tabRentalIndex"), icon: Scale },
                     // Gated behind the same canManageFacilities flag passed as
                     // `canManage` to AmenitiesTab/ParkingTab below, so the nav
                     // tabs and the in-tab edit controls can't drift out of sync.
@@ -600,6 +608,10 @@ export default function PropertyDetailPage() {
                 <ParkingTab propertyId={propertyId} buildings={buildings} canManage={canManageFacilities} />
             )}
 
+            {activeTab === "rentalIndex" && (
+                <RentalIndexTab propertyId={propertyId} units={units} canManage={canManageRentalIndex} onUnitsChanged={fetchUnits} />
+            )}
+
             {activeTab === "accounts" && canManageAccountSetup && (
                 <PropertyAccountsTab propertyId={propertyId} />
             )}
@@ -725,7 +737,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const [file, setFile] = useState<File | null>(null);
     const [uploadBuildingId, setUploadBuildingId] = useState<string>("");
     const [unitForm, setUnitForm] = useState({
-        unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: ""
+        unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "", dewaPremiseNumber: ""
     });
 
     const unitTypes = ["STUDIO", "BHK1", "BHK2", "BHK3", "PENTHOUSE", "RETAIL", "OFFICE"];
@@ -738,6 +750,10 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             setAddUnitError(t("unitSizePositive"));
             return;
         }
+        if (!dewaPremiseNumberValid(unitForm.dewaPremiseNumber)) {
+            setAddUnitError(t("dewaPremiseNumberInvalid"));
+            return;
+        }
         setSubmitting(true);
         setAddUnitError(null);
         try {
@@ -748,6 +764,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 expectedRent: moneyValueOrNull(unitForm.expectedRent, { allowZero: true, max: MONEY_MAX_12_2 }),
                 status: "VACANT",
                 property: { id: propertyId },
+                dewaPremiseNumber: unitForm.dewaPremiseNumber.trim() || null,
             };
             if (unitForm.buildingId) {
                 body.building = { id: unitForm.buildingId };
@@ -759,7 +776,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             });
             await throwIfNotOk(res);
             setShowForm(false);
-            setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "" });
+            setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "", dewaPremiseNumber: "" });
             onUpdate();
         } catch (err) {
             // Break-it R3 ops3 F1: "Unit 101 already exists in Tower A", in the user's language.
@@ -857,6 +874,11 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                             <option value="">{t("noBuilding")}</option>
                             {buildings.map((b: any) => <option key={b.id} value={b.id}>{buildingLabel(b)}</option>)}
                         </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("dewaPremiseNumber")}</label>
+                        <input inputMode="numeric" dir="ltr" maxLength={9} data-testid="unit-dewa" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder={t("dewaPremiseNumberPlaceholder")} value={unitForm.dewaPremiseNumber} onChange={e => setUnitForm({ ...unitForm, dewaPremiseNumber: e.target.value })} />
+                        <p className="text-[10px] text-muted mt-1">{t("dewaPremiseNumberHint")}</p>
                     </div>
                     {addUnitError && (
                         <div className="col-span-2 md:col-span-5 bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">

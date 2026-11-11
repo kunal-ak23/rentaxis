@@ -383,3 +383,5 @@ databaseChangeLog:
       file: db/changelog/changesets/188-lease-income-from.yaml
   - include:
       file: db/changelog/changesets/189-penalty-income-account.yaml
+  - include:
+      file: db/changelog/changesets/190-rental-index-ranges.yaml
