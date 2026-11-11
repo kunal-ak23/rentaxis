@@ -59,11 +59,11 @@ export default function RenewalCard(p: Props) {
             <button disabled={p.busy} onClick={() => choose("DISCUSS")} className="rounded border border-border px-3 py-1 text-xs disabled:opacity-60">{t("discuss")}</button>
           </div>
         : <div className="mt-2">
-            <p className="text-xs text-green-700">✅ {t("statusYouSelected", { intent: t(`intent.${p.intent}` as any) })}</p>
+            <p className="text-xs text-green-700">✅ {t("statusYouSelected", { intent: t(`intent.${p.intent}` as never) })}</p>
             <p className="text-xs text-muted mt-2">{t("changeYourMind")}</p>
             <div className="mt-1 flex gap-2 flex-wrap">
               {["RENEW", "MOVE_OUT", "DISCUSS"].filter(i => i !== p.intent).map(i => (
-                <button key={i} disabled={p.busy} onClick={() => choose(i as "RENEW" | "MOVE_OUT" | "DISCUSS")} className="rounded border border-border px-2 py-0.5 text-[11px] disabled:opacity-60">{t(`intent.${i}` as any)}</button>
+                <button key={i} disabled={p.busy} onClick={() => choose(i as "RENEW" | "MOVE_OUT" | "DISCUSS")} className="rounded border border-border px-2 py-0.5 text-[11px] disabled:opacity-60">{t(`intent.${i}` as never)}</button>
               ))}
             </div>
           </div>}
