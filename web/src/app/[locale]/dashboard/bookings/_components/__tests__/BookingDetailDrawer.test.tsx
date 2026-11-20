@@ -242,14 +242,16 @@ describe("BookingDetailDrawer staff cancel (ruling R12)", () => {
 
   // Spec 2026-11-19 §6: staff cancel an approved parking booking only before its start
   // date (Dubai); from its start date on it is released (the unused days are credited).
-  it("cancels an approved parking booking that starts after today, beside release", async () => {
+  // Final review: the server refuses a release before the start (booking.releaseBeforeStart), so
+  // the drawer offers cancel only.
+  it("cancels an approved parking booking that starts after today, with no release offered", async () => {
     const tomorrow = addDaysIso(businessTodayIso(), 1);
     const parking = makeRequest({ status: "APPROVED", preferredDate: tomorrow, preferredEndDate: addDaysIso(tomorrow, 30) });
     api.fetchBooking.mockResolvedValue({ request: parking, otherRequests: [] });
     api.staffCancelBooking.mockResolvedValue({ ...parking, status: "CANCELLED", adminNote: "Bay under repair" });
     render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={() => {}} />);
     const button = await screen.findByTestId("booking-staff-cancel");
-    expect(screen.getByText("release")).toBeInTheDocument();
+    expect(screen.queryByText("release")).toBeNull();
     expect(button).toBeDisabled();
     fireEvent.change(screen.getByTestId("booking-cancel-reason"), { target: { value: "Bay under repair" } });
     fireEvent.click(button);

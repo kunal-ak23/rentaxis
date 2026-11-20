@@ -97,6 +97,7 @@ class BookingNotificationServiceTest {
     @Test
     void onBookingRequested_notifiesAdminsAndPMsOnly() {
         BookingRequest b = amenityBooking();
+        b.setStatus(BookingRequestStatus.PENDING);
         User admin = user(UserRole.TENANT_ADMIN);
         User pm = user(UserRole.PROPERTY_MANAGER);
         User renter = user(UserRole.RENTER);
@@ -125,6 +126,7 @@ class BookingNotificationServiceTest {
     @Test
     void onBookingRequested_oneFailingRecipientDoesNotStopOthers() {
         BookingRequest b = amenityBooking();
+        b.setStatus(BookingRequestStatus.PENDING);
         User admin1 = user(UserRole.TENANT_ADMIN);
         User admin2 = user(UserRole.TENANT_ADMIN);
         when(userRepository.findByTenantId(tenantId)).thenReturn(List.of(admin1, admin2));
@@ -135,6 +137,17 @@ class BookingNotificationServiceTest {
 
         verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(admin2.getId()), eq("BOOKING_REQUESTED"),
                 anyString(), anyString(), eq("BOOKING"), eq(b.getId()), any());
+    }
+
+    /** Final review m5: staff booked it for the renter and it is approved already; no "New booking request". */
+    @Test
+    void onBookingRequested_bookingNoLongerPending_noOps() {
+        BookingRequest b = amenityBooking();
+        b.setStatus(BookingRequestStatus.APPROVED);
+
+        service.onBookingRequested(new BookingRequestedEvent(b.getId(), tenantId));
+
+        verifyNoInteractions(notificationService);
     }
 
     @Test

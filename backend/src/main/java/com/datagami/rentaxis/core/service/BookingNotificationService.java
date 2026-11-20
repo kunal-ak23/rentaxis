@@ -88,6 +88,11 @@ public class BookingNotificationService {
             log.warn("BookingRequestedEvent for missing booking {}", event.bookingId());
             return;
         }
+        // Final review m5: a booking staff made for a renter is approved in the same transaction,
+        // so by now it is no request: nobody needs telling "New booking request".
+        if (bookingOpt.get().getStatus() != com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.PENDING) {
+            return;
+        }
         String resourceName = resourceName(bookingOpt.get());
         NotificationMessage structured = structured("BOOKING_REQUESTED", bookingOpt.get());
 

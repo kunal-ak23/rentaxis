@@ -143,7 +143,9 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
   // From its start date on, a parking booking is released instead (the unused days are credited).
   const cancellable = req?.status === "APPROVED"
     && (req.resourceType === "AMENITY" || (req.resourceType === "PARKING_SPOT" && isAfterBusinessToday(req.preferredDate)));
-  const hasActions = !!req && (req.status === "PENDING" || (req.status === "APPROVED" && req.resourceType === "PARKING_SPOT") || cancellable);
+  // The server refuses a release before the start date (booking.releaseBeforeStart): it is cancelled then.
+  const releasable = req?.status === "APPROVED" && req.resourceType === "PARKING_SPOT" && !isAfterBusinessToday(req.preferredDate);
+  const hasActions = !!req && (req.status === "PENDING" || releasable || cancellable);
   const statusLabel = (s: BookingRequestStatus) => t(`status${s}`);
 
   return (
@@ -343,7 +345,7 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
                 </div>
               </>
             )}
-            {req.status === "APPROVED" && req.resourceType === "PARKING_SPOT" && (
+            {releasable && (
               <button
                 onClick={() => act("release")}
                 disabled={working}
