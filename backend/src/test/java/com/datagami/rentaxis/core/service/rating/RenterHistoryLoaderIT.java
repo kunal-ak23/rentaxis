@@ -186,6 +186,44 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
                 .containsExactlyInAnyOrder(ids.get(0), ids.get(3));
     }
 
+    private UUID insertPenalty(LeaseTestFixtures f, UUID leaseId, String status, LocalDate incident,
+                               Instant proposedAt, Instant approvedAt) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("insert into penalty_assessments (id, tenant_id, lease_id, renter_id, property_id, reason, amount, "
+                        + "status, proposed_at, approved_at, vatable, vat_amount, incident_date) "
+                        + "values (?,?,?,?,?, 'DAMAGE', 100, ?, ?, ?, false, 0, ?)",
+                id, f.tenantId(), leaseId, f.renter().getId(), f.property().getId(), status,
+                java.sql.Timestamp.from(proposedAt), approvedAt == null ? null : java.sql.Timestamp.from(approvedAt),
+                incident);
+        return id;
+    }
+
+    /**
+     * Round 3 M-a: a penalty with no incident date is dated by its approval, else its proposal, as the app's zone
+     * sees that instant (the DB session runs in UTC). 21:30Z on 25 Oct is 26 Oct in Dubai, so with since = 26 Oct
+     * the approved fine is in, and it is dated the 26th.
+     */
+    @Test
+    void penaltyWithoutIncidentDateIsDatedByApprovalElseProposal() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLeaseId(f);
+        UUID approved = insertPenalty(f, leaseId, "APPROVED", null,
+                Instant.parse("2026-10-20T08:00:00Z"), Instant.parse("2026-10-25T21:30:00Z"));
+        UUID proposed = insertPenalty(f, leaseId, "PROPOSED", null, Instant.parse("2026-10-27T20:30:00Z"), null);
+        UUID tooOld = insertPenalty(f, leaseId, "APPROVED", null,
+                Instant.parse("2026-10-20T08:00:00Z"), Instant.parse("2026-10-25T19:30:00Z"));
+
+        RenterHistory h = loader.load(f.tenantId(), List.of(f.renter().getId()), LocalDate.of(2026, 10, 26))
+                .get(f.renter().getId());
+
+        assertThat(h.penalties()).extracting(RenterHistory.PenaltyRow::id).doesNotContain(tooOld);
+        assertThat(h.penalties())
+                .extracting(RenterHistory.PenaltyRow::id, RenterHistory.PenaltyRow::incidentDate)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(approved, LocalDate.of(2026, 10, 26)),
+                        org.assertj.core.groups.Tuple.tuple(proposed, LocalDate.of(2026, 10, 28)));
+    }
+
     @Test
     void loaderNeverReturnsAnotherOrgsRows() {
         Seeded a = seedFull(newOrgFixtures());

@@ -96,8 +96,8 @@ Caps apply after age weighting.
 |---|---|---|
 | Cheque bounced: `bouncedAt` or `importedBouncedOn` is set, whatever the current status (a replaced bounce ends as `REPLACED` and still counts). Counted once per cheque. Excluded when `failureReason = TECHNICAL_RETURN` | −15 | `bouncedAt`, else `importedBouncedOn` |
 | Cheque cleared late (more than 7 days after `chequeDate`). Not counted when an `APPROVED`/`WRITTEN_OFF` `LATE_PAYMENT` penalty is linked to the same cheque (`chequeId`): one deduction per late cheque, and the penalty's −8 is kept | −3 | `clearedAt` |
-| Late-payment penalty (`LATE_PAYMENT`, status `APPROVED` or `WRITTEN_OFF`) | −8 | `incidentDate` |
-| Other misconduct penalty (`DAMAGE`, and `CHEQUE_RETURN` without a linked cheque; status `APPROVED` or `WRITTEN_OFF`) | −10 | `incidentDate` |
+| Late-payment penalty (`LATE_PAYMENT`, status `APPROVED` or `WRITTEN_OFF`) | −8 | `incidentDate`, else the approval date, else the proposal date (app zone) |
+| Other misconduct penalty (`DAMAGE`, and `CHEQUE_RETURN` without a linked cheque; status `APPROVED` or `WRITTEN_OFF`) | −10 | `incidentDate`, else the approval date, else the proposal date (app zone) |
 | Bad-debt write-off (status `WRITTEN_OFF`) | −30 | `writeOffDate` |
 | Long hold: the lease stayed `ON_HOLD` more than 14 days, whoever caused it (user decision). Duration runs from the `LeaseEvent` into `ON_HOLD` to the next state-change event out of it, or to today if still on hold | −10, once per lease | `ON_HOLD` date + 15 days |
 | Renewal ended with no response (`RenewalOpportunity.outcome = EXPIRED_NO_RESPONSE`). Not counted when the lease has a notice date, is `RENEWED`, or a started lease names it in `renewed_from_lease_id`: the renewal sweep writes this outcome for any non-`ACTIVE` lease without a captured intent, which includes a renter who gave notice or renewed after a short hold | −5 | `closedAt` |

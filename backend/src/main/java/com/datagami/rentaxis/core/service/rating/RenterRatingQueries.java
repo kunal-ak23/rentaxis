@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.rating;
 
+import com.datagami.rentaxis.config.AppTimeZone;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Component;
@@ -24,6 +25,14 @@ class RenterRatingQueries {
     /** The renters' leases, tenant-scoped; binds :tenantId and :renterIds. */
     private static final String RENTER_LEASE_IDS =
             "(select ls.id from leases ls where ls.tenant_id = :tenantId and ls.renter_id in (:renterIds))";
+
+    /**
+     * A penalty's scored date: its incident date, else the day it was approved, else the day it was proposed,
+     * each as the app's zone sees the instant (the DB session runs in UTC). Used in the select and the filter.
+     */
+    private static final String PENALTY_DATE = "coalesce(p.incident_date, "
+            + "cast(p.approved_at at time zone '" + AppTimeZone.DEFAULT.getId() + "' as date), "
+            + "cast(p.proposed_at at time zone '" + AppTimeZone.DEFAULT.getId() + "' as date))";
 
     @PersistenceContext
     private EntityManager em;
@@ -64,8 +73,8 @@ class RenterRatingQueries {
     }
 
     /**
-     * id, renter_id, lease_id, reason, status, incident_date, linked cheque id (only if that cheque exists
-     * in this tenant).
+     * id, renter_id, lease_id, reason, status, scored date ({@link #PENALTY_DATE}: incident date, else
+     * approval, else proposal), linked cheque id (only if that cheque exists in this tenant).
      *
      * <p>The linked cheque is {@code cheque_id}: the cheque-return fine the system proposes on a bounce
      * (PenaltyRuleEngine.onBounce -> PenaltyAssessmentService.proposeBySystem) and a fine raised by hand
@@ -73,10 +82,11 @@ class RenterRatingQueries {
      * cheque as {@code source_type}/{@code source_id} (those are JOURNAL, BOOKING, HOLDOVER, TICKET).</p>
      */
     List<Object[]> penalties(UUID tenantId, Collection<UUID> renterIds, LocalDate since) {
-        return rows("select p.id, p.renter_id, p.lease_id, p.reason, p.status, p.incident_date, sc.id "
+        return rows("select p.id, p.renter_id, p.lease_id, p.reason, p.status, " + PENALTY_DATE + ", sc.id "
                         + "from penalty_assessments p "
                         + "left join cheques sc on sc.id = p.cheque_id and sc.tenant_id = :tenantId "
-                        + "where p.tenant_id = :tenantId and p.renter_id in (:renterIds) and p.incident_date >= :since",
+                        + "where p.tenant_id = :tenantId and p.renter_id in (:renterIds) and " + PENALTY_DATE
+                        + " >= :since",
                 tenantId, renterIds, since);
     }
 
