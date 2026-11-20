@@ -25,6 +25,12 @@ databaseChangeLog:
       rollback:
         - sql:
             sql: |
-              DELETE FROM property_account_template_rows WHERE role = 'AMENITY_INCOME';
               ALTER TABLE property_amenities DROP COLUMN income_account_id;
               ALTER TABLE parking_spots DROP COLUMN income_account_id;
+              DELETE FROM property_account_mappings WHERE role = 'AMENITY_INCOME';
+              DELETE FROM tenant_default_account_mappings WHERE role = 'AMENITY_INCOME';
+              DELETE FROM property_account_template_rows WHERE role = 'AMENITY_INCOME';
+              DELETE FROM accounts a WHERE a.report_line = 'AMENITY_INCOME' AND NOT a.is_group
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id)
+                AND NOT EXISTS (SELECT 1 FROM penalty_assessments p WHERE p.income_account_id = a.id);
+              UPDATE accounts SET report_line = NULL WHERE report_line = 'AMENITY_INCOME';
