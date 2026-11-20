@@ -327,6 +327,25 @@ class RenterRatingEngineTest {
                 });
     }
 
+    /**
+     * Round 2 I1: a same-state event (ON_HOLD -> ON_HOLD, written by cheque actions, the not-renewing mark,
+     * variations...) is not a state change and must not split one hold into short pieces.
+     */
+    @Test
+    void longHoldIgnoresSameStateEvents() {
+        LocalDate x = TODAY.minusDays(100);
+        H h = history().lease13();
+        h.leaseEvents.add(new LeaseEventRow(h.lease, "ACTIVE", "ON_HOLD", at(x)));
+        h.leaseEvents.add(new LeaseEventRow(h.lease, "ON_HOLD", "ON_HOLD", at(x.plusDays(10))));
+        h.leaseEvents.add(new LeaseEventRow(h.lease, "ON_HOLD", "RENEWED", at(x.plusDays(22))));
+        RenterRatingResult r = h.run();
+        assertThat(of(r, RatingEventType.LONG_HOLD)).singleElement().satisfies(e -> {
+            assertThat(e.appliedPoints()).isEqualTo(-10.0);
+            assertThat(e.date()).isEqualTo(x.plusDays(15));
+        });
+        assertThat(r.score()).isEqualTo(60);
+    }
+
     @Test
     void longHoldOncePerLease() {
         LocalDate x = TODAY.minusDays(200);

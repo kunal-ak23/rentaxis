@@ -150,6 +150,9 @@ public final class RenterRatingEngine {
         Map<UUID, List<LeaseEventRow>> byLease = new HashMap<>();
         for (LeaseEventRow e : h.leaseEvents()) {
             if (e.leaseId() == null || !leaseIds.contains(e.leaseId()) || e.createdAt() == null) continue;
+            // A same-state event (ON_HOLD -> ON_HOLD from a cheque action, the not-renewing mark, a variation...)
+            // records something that happened on the lease, not a state change; it must not split a hold.
+            if (java.util.Objects.equals(e.previousState(), e.newState())) continue;
             byLease.computeIfAbsent(e.leaseId(), k -> new ArrayList<>()).add(e);
         }
         for (Map.Entry<UUID, List<LeaseEventRow>> en : byLease.entrySet()) {

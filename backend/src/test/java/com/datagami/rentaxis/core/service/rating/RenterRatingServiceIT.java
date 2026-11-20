@@ -16,6 +16,7 @@ import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
+import com.datagami.rentaxis.core.service.renewal.RenewalMarkService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrgFineSettings;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
@@ -75,6 +76,7 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
     @Autowired PenaltyAssessmentService penaltyService;
     @Autowired LandlordOrgFineSettingsRepository fineSettingsRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired RenewalMarkService renewalMarks;
 
     private int seq;
 
@@ -202,6 +204,37 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
         assertThat(d.events()).noneMatch(e -> e.type() == RatingEventType.MISCONDUCT_PENALTY);
         assertThat(d.deductionsCount()).isEqualTo(1);
         assertThat(d.score()).isEqualTo(55);
+    }
+
+    /**
+     * Round 2 I1: the not-renewing mark (RenewalMarkService.markNotRenewing, a real production path) writes an
+     * ON_HOLD -> ON_HOLD lease event in the middle of a hold. The hold is still one 20-day hold: one LONG_HOLD.
+     * The mark is stamped "now", so the score is taken 10 days ahead and the hold started 10 days ago.
+     */
+    @Test
+    void notRenewingMarkDoesNotSplitALongHold() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        LocalDate now = LocalDate.now(com.datagami.rentaxis.config.AppTimeZone.DEFAULT);
+        LocalDate holdStart = now.minusDays(10);
+        jdbc.update("update leases set status = 'ON_HOLD' where id = ?", leaseId);
+        jdbc.update("insert into lease_events (id, tenant_id, lease_id, previous_state, new_state, created_at) "
+                        + "values (?,?,?, 'ACTIVE', 'ON_HOLD', ?)", UUID.randomUUID(), f.tenantId(), leaseId,
+                java.sql.Timestamp.from(holdStart.atTime(9, 0)
+                        .atZone(com.datagami.rentaxis.config.AppTimeZone.DEFAULT).toInstant()));
+
+        renewalMarks.markNotRenewing(leaseId, "Moving out", TestIdentities.user(userRepo, UserRole.TENANT_ADMIN,
+                f.tenantId()));
+        assertThat(jdbc.queryForObject("select count(*) from lease_events where lease_id = ? "
+                + "and previous_state = 'ON_HOLD' and new_state = 'ON_HOLD'", Integer.class, leaseId)).isEqualTo(1);
+
+        RenterRatingDetailDTO d = service.live(f.tenantId(), f.renter().getId(), now.plusDays(10));
+
+        assertThat(d.events()).filteredOn(e -> e.type() == RatingEventType.LONG_HOLD).singleElement()
+                .satisfies(e -> {
+                    assertThat(e.appliedPoints()).isEqualTo(-10.0);
+                    assertThat(e.date()).isEqualTo(holdStart.plusDays(15));
+                });
     }
 
     @Test
