@@ -14,9 +14,13 @@ Map<String, dynamic> row(
   String status = 'CLEARED',
   String clearedAt = '2025-03-01T00:00:00Z',
   bool pre = false,
+  String? property,
+  String? unit,
 }) => {
   'id': id,
   'leaseId': lease,
+  'propertyName': property,
+  'unitIdentifier': unit,
   'status': status,
   'clearedAt': status == 'CLEARED' ? clearedAt : null,
   'dueDate': '2025-03-01',
@@ -277,4 +281,61 @@ void main() {
     expect(btn.onPressed, isNull);
     expect(calls, isEmpty);
   });
+
+  testWidgets('year pick replaces earlier ticks', (tester) async {
+    final calls = <List<String>>[];
+    await pump(
+      tester,
+      [
+        row('a', 'L1'),
+        row('b', 'L1', clearedAt: '2024-05-01T00:00:00Z'),
+        row('c', 'L1', clearedAt: '2024-06-01T00:00:00Z'),
+      ],
+      [
+        {'id': 'L1'},
+      ],
+      calls: calls,
+    );
+    await tester.tap(find.byKey(const Key('receipt-pick-a')));
+    await tester.pumpAndSettle();
+    expect(ticked(tester, 'a'), isTrue);
+    await tester.tap(find.byKey(const Key('receipt-year')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2024').last);
+    await tester.pumpAndSettle();
+    expect(ticked(tester, 'a'), isFalse);
+    expect(find.textContaining('Download receipts (2)'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('receipt-download')));
+    await tester.pumpAndSettle();
+    expect(calls.single.toSet(), {'b', 'c'});
+  });
+
+  testWidgets(
+    'rows of two leases but one in my-leases: contract dropdown still shows, picking one shows the receipt bar',
+    (tester) async {
+      await pump(
+        tester,
+        [
+          row('a', 'L1', property: 'Vista', unit: 'A-1'),
+          row('b', 'L2', property: 'Marina', unit: 'B-2'),
+        ],
+        [
+          {'id': 'L1', 'propertyName': 'Vista', 'unitIdentifier': 'A-1'},
+        ],
+      );
+      expect(find.textContaining('Pick a contract'), findsOneWidget);
+      final dd = find.byType(DropdownButtonFormField<String>);
+      expect(dd, findsOneWidget);
+      await tester.tap(dd);
+      await tester.pumpAndSettle();
+      // All contracts + the my-leases one + the one only the rows know about
+      expect(find.text('All contracts'), findsWidgets);
+      expect(find.textContaining('Vista'), findsWidgets);
+      expect(find.text('Marina · B-2 · 2025-03-01'), findsOneWidget);
+      await tester.tap(find.text('Marina · B-2 · 2025-03-01'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('receipt-download')), findsOneWidget);
+      expect(find.textContaining('Pick a contract'), findsNothing);
+    },
+  );
 }

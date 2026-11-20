@@ -61,6 +61,52 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     await ref.read(renterPaymentsProvider.future);
   }
 
+  /// Contracts to choose from: my-leases (as before) plus any lease that only
+  /// shows up in the payment rows (e.g. one assigned away), so the dropdown is
+  /// there whenever the rows span more than one lease.
+  List<({String id, String label})> _contractOptions(
+    List<Map<String, dynamic>> leases,
+    List<Map<String, dynamic>> payments,
+  ) {
+    final out = <({String id, String label})>[
+      for (final row in orderedRenterLeases(leases))
+        (
+          id: row['id'] as String,
+          label:
+              '${row['propertyName'] ?? ''} · ${row['unitIdentifier'] ?? ''} · ${row['displayContractNumber'] ?? row['startDate'] ?? ''}',
+        ),
+    ];
+    final known = {for (final o in out) o.id};
+    final byLease = <String, List<Map<String, dynamic>>>{};
+    for (final r in payments) {
+      final id = r['leaseId'];
+      if (id is String && !known.contains(id)) {
+        (byLease[id] ??= []).add(r);
+      }
+    }
+    for (final e in byLease.entries) {
+      final dates =
+          e.value
+              .map((r) => '${r['dueDate'] ?? ''}')
+              .where((d) => d.isNotEmpty)
+              .toList()
+            ..sort();
+      final span = dates.isEmpty
+          ? ''
+          : dates.first == dates.last
+          ? dates.first
+          : '${dates.first} – ${dates.last}';
+      final first = e.value.first;
+      final label = [
+        '${first['propertyName'] ?? ''}',
+        '${first['unitIdentifier'] ?? ''}',
+        span,
+      ].where((p) => p.isNotEmpty).join(' · ');
+      out.add((id: e.key, label: label.isEmpty ? e.key : label));
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
     final ar = context.isAr;
@@ -99,10 +145,13 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                         : 'Could not load contracts',
                     onRetry: () => ref.invalidate(renterLeasesProvider),
                   ),
-                if (leases.valueOrNull case final rows? when rows.length > 1)
+                if (_contractOptions(
+                  leases.valueOrNull ?? const [],
+                  payments.valueOrNull ?? const [],
+                ) case final options when options.length > 1)
                   DropdownButtonFormField<String>(
                     key: ValueKey('wallet-lease-$_leaseId'),
-                    initialValue: rows.any((r) => r['id'] == _leaseId)
+                    initialValue: options.any((o) => o.id == _leaseId)
                         ? _leaseId
                         : null,
                     isExpanded: true,
@@ -114,13 +163,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                         value: null,
                         child: Text(ar ? 'كل العقود' : 'All contracts'),
                       ),
-                      for (final row in orderedRenterLeases(rows))
+                      for (final o in options)
                         DropdownMenuItem(
-                          value: row['id'] as String,
-                          child: Text(
-                            '${row['propertyName'] ?? ''} · ${row['unitIdentifier'] ?? ''} · ${row['displayContractNumber'] ?? row['startDate'] ?? ''}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          value: o.id,
+                          child: Text(o.label, overflow: TextOverflow.ellipsis),
                         ),
                     ],
                     onChanged: (id) => setState(() {
