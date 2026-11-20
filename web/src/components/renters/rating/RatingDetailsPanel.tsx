@@ -9,7 +9,7 @@ import { renterRatingsApi, type RenterRatingDetail } from "@/lib/api/renterRatin
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
 import AdjustmentForm from "./AdjustmentForm";
-import { GRADE_CLASS, gradeText, signedPoints } from "./ratingFormat";
+import { GRADE_CLASS, gradeText, ratingErrorText, signedPoints } from "./ratingFormat";
 
 function Trend({ points, label }: { points: { score: number }[]; label: string }) {
     if (points.length < 2) return null;
@@ -50,7 +50,7 @@ export default function RatingDetailsPanel({ renterId, open, onClose, onLoaded }
             await renterRatingsApi.removeAdjustment(renterId, adjustmentId);
             await load();
         } catch (e) {
-            setRemoveError(e instanceof Error && e.message ? e.message : t("saveError"));
+            setRemoveError(ratingErrorText(e, { generic: t("saveError"), noContract: t("errNoContract") }));
         }
     }
 

@@ -253,6 +253,17 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
         assertThat(status(admin, UserRole.TENANT_ADMIN, HttpMethod.GET, path, null)).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(status(admin, UserRole.TENANT_ADMIN, HttpMethod.POST, path + "/adjustments",
                 Map.of("points", 5, "reason", "x"))).isEqualTo(HttpStatus.NOT_FOUND);
+        // user-facing copy says "tenant", never "renter"
+        Map<?, ?> body = request(admin, UserRole.TENANT_ADMIN, tenantId, HttpMethod.POST, path + "/adjustments",
+                Map.of("points", 5, "reason", "x")).body(Map.class);
+        assertThat(String.valueOf(body.get("message"))).isEqualTo("Tenant not found");
+    }
+
+    @Test
+    void invalidRenterIdMessageSaysTenant() {
+        Map<?, ?> body = request(admin, UserRole.TENANT_ADMIN, tenantId, HttpMethod.GET,
+                "/api/v1/renter-ratings?renterIds=not-a-uuid", null).body(Map.class);
+        assertThat(String.valueOf(body.get("message"))).isEqualTo("Invalid tenant id: not-a-uuid");
     }
 
     @Test

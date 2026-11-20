@@ -292,7 +292,7 @@ public class RenterRatingService {
 
     private void requireRenter(UUID tenantId, UUID renterId) {
         Renter r = renterId == null ? null : renters.findById(renterId).orElse(null);
-        if (r == null || !tenantId.equals(r.getTenantId())) throw new NotFoundException("Renter not found");
+        if (r == null || !tenantId.equals(r.getTenantId())) throw new NotFoundException("Tenant not found");
     }
 
     private static boolean isRated(RenterHistory h) {

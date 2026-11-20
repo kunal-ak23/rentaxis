@@ -11,6 +11,7 @@ vi.mock("@/lib/api/renterRatings", () => ({
     renterRatingsApi: { get: vi.fn(), addAdjustment: vi.fn(), removeAdjustment: vi.fn(), list: vi.fn(), exportUrl: vi.fn() },
 }));
 import { renterRatingsApi } from "@/lib/api/renterRatings";
+import { ApiError } from "@/lib/api/facilities";
 import RatingDetailsPanel from "../RatingDetailsPanel";
 
 const get = renterRatingsApi.get as unknown as ReturnType<typeof vi.fn>;
@@ -81,6 +82,42 @@ describe("RatingDetailsPanel", () => {
         fireEvent.click(screen.getByRole("button", { name: "Add adjustment" }));
         expect(await screen.findByRole("alert")).toHaveTextContent("from -30 to 30");
         expect(add).not.toHaveBeenCalled();
+    });
+
+    it("adjustErrorsAreLocalizedExceptBusinessRuleText", async () => {
+        open();
+        await screen.findByText("Bounced cheque");
+        const submit = async () => {
+            fireEvent.change(screen.getByLabelText(/^Points/), { target: { value: "5" } });
+            fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Bank error" } });
+            fireEvent.click(screen.getByRole("button", { name: "Add adjustment" }));
+        };
+        add.mockRejectedValueOnce(new ApiError(400, "Tenant has no started contract"));
+        await submit();
+        expect(await screen.findByRole("alert")).toHaveTextContent("This tenant has no started contract, so the rating cannot be adjusted.");
+
+        add.mockRejectedValueOnce(new ApiError(400, "Reason is required (1-500 characters)"));
+        await submit();
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Reason is required (1-500 characters)"));
+
+        add.mockRejectedValueOnce(new ApiError(404, "Renter not found"));
+        await submit();
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Could not save the change."));
+
+        add.mockRejectedValueOnce(new ApiError(500, "NullPointerException at RenterRatingService"));
+        await submit();
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Could not save the change."));
+        expect(screen.queryByText(/NullPointerException/)).toBeNull();
+    });
+
+    it("removeErrorIsLocalizedGeneric", async () => {
+        removeAdj.mockRejectedValue(new ApiError(404, "Adjustment not found"));
+        const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+        open();
+        fireEvent.click(await screen.findByRole("button", { name: /Remove adjustment: Goodwill/ }));
+        expect(await screen.findByRole("alert")).toHaveTextContent("Could not save the change.");
+        expect(screen.queryByText("Adjustment not found")).toBeNull();
+        confirm.mockRestore();
     });
 
     it("hidesAdjustFormWithoutStartedContract", async () => {

@@ -195,7 +195,7 @@ public class RenterRatingController {
             try {
                 out.add(UUID.fromString(t));
             } catch (IllegalArgumentException e) {
-                throw new BusinessRuleViolationException("Invalid renter id: " + t);
+                throw new BusinessRuleViolationException("Invalid tenant id: " + t);
             }
             if (out.size() > MAX_RENTER_IDS) {
                 throw new BusinessRuleViolationException("At most " + MAX_RENTER_IDS + " renterIds");

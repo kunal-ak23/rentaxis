@@ -6194,6 +6194,7 @@
     "errPoints": "Points must be a whole number from -30 to 30, not zero.",
     "errReason": "Enter a reason of 1 to 500 characters.",
     "saveError": "Could not save the change.",
+    "errNoContract": "This tenant has no started contract, so the rating cannot be adjusted.",
     "byUser": "by {name}",
     "pageTitle": "Tenant ratings",
     "pageSubtitle": "Every tenant's stored rating across the portfolio.",

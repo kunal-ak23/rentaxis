@@ -1,3 +1,4 @@
+import { ApiError } from "@/lib/api/facilities";
 import type { RatingGrade } from "@/lib/api/renterRatings";
 
 export const GRADE_CLASS: Record<RatingGrade, string> = {
@@ -21,4 +22,16 @@ export function signedPoints(n: number): string {
     const abs = Math.abs(n).toFixed(1);
     if (n < 0 && Number(abs) !== 0) return `−${abs}`;
     return n > 0 ? `+${abs}` : abs;
+}
+
+/**
+ * Text for a failed adjustment add/remove. A 400 is a business-rule refusal whose message is meant for the
+ * user, so it is kept, except the known "no started contract" case, which is localized. Anything else
+ * (404, 403, 5xx, network) gets the localized generic message instead of the raw server text.
+ */
+export function ratingErrorText(err: unknown, labels: { generic: string; noContract: string }): string {
+    if (err instanceof ApiError && err.status === 400 && err.message) {
+        return /no started contract/i.test(err.message) ? labels.noContract : err.message;
+    }
+    return labels.generic;
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { renterRatingsApi } from "@/lib/api/renterRatings";
+import { ratingErrorText } from "./ratingFormat";
 
 export default function AdjustmentForm({ renterId, onSaved }: { renterId: string; onSaved: () => void }) {
     const t = useTranslations("RenterRating");
@@ -24,7 +25,7 @@ export default function AdjustmentForm({ renterId, onSaved }: { renterId: string
             setPoints(""); setReason("");
             onSaved();
         } catch (err) {
-            setError(err instanceof Error && err.message ? err.message : t("saveError"));
+            setError(ratingErrorText(err, { generic: t("saveError"), noContract: t("errNoContract") }));
         } finally {
             setSaving(false);
         }
