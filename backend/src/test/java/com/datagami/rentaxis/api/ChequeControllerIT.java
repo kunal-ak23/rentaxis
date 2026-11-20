@@ -602,6 +602,23 @@ class ChequeControllerIT extends AbstractPostgresIT {
         assertThat(pages(pdf.getBody())).isEqualTo(2);
     }
 
+    /** A renter keeps their receipts when the lease has ended: the download does not depend on the lease's status. */
+    @Test
+    void aRenterGetsACombinedReceiptOfTheirOwnClearedRowsOnAnEndedLease() throws Exception {
+        List<UUID> ids = clearFirstTwo();
+        // Marked not-renewing, so the sweep expires it instead of putting it on hold.
+        jdbc.update("update leases set not_renewing_at = now() where id = ?", leaseId);
+        tx.executeWithoutResult(s -> leaseService.markExpired(leaseId, END.plusDays(1)));
+        assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.EXPIRED);
+        User tenant = userRepo.findById(fixtures.renter().getUserId()).orElseThrow();
+
+        ResponseEntity<byte[]> pdf = request(tenant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", ids)).toEntity(byte[].class);
+
+        assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(pages(pdf.getBody())).isEqualTo(2);
+    }
+
     /** One of the ids is another renter's row: the whole request is not found, nothing is leaked. */
     @Test
     void aRenterCannotCombineAnotherRentersRow() {
