@@ -77,6 +77,7 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
     @Autowired LandlordOrgFineSettingsRepository fineSettingsRepo;
     @Autowired TransactionTemplate tx;
     @Autowired RenewalMarkService renewalMarks;
+    @Autowired RenterHistoryLoader loader;
 
     private int seq;
 
@@ -235,6 +236,40 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
                     assertThat(e.appliedPoints()).isEqualTo(-10.0);
                     assertThat(e.date()).isEqualTo(holdStart.plusDays(15));
                 });
+    }
+
+    /**
+     * Round 2 I2: an approved fine's collection row (PenaltyAssessmentService.approve -> addCollectionRow, row
+     * linked by penalty_assessment_id) is not a rent cheque. Received 16 days after its date it must not score
+     * LATE_CLEAR, and the loader does not hand it to the engine (so it is not a window cheque for NEW either).
+     */
+    @Test
+    void penaltyCollectionRowIsNotScoredAsACheque() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        UUID renterId = f.renter().getId();
+        int chequesBefore = loader.load(f.tenantId(), List.of(renterId), RenterRatingEngine.windowStart(TODAY))
+                .get(renterId).cheques().size();
+
+        UUID fineId = penaltyService.propose(new com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest(
+                leaseId, null, com.datagami.rentaxis.domain.entity.enums.PenaltyReason.OTHER, new BigDecimal("300"),
+                "Lost access card", LocalDate.of(2026, 10, 15)), null).id();
+        LocalDate approved = LocalDate.of(2026, 10, 20);
+        penaltyService.approve(fineId, approved);
+        UUID rowId = jdbc.queryForObject("select id from cheques where penalty_assessment_id = ?", UUID.class, fineId);
+        chequeService.receive(rowId, ChequeActionRequest.on(approved.plusDays(16)));
+        assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, rowId))
+                .isEqualTo("CLEARED");
+
+        RenterHistory h = loader.load(f.tenantId(), List.of(renterId), RenterRatingEngine.windowStart(TODAY))
+                .get(renterId);
+        assertThat(h.cheques()).extracting(RenterHistory.ChequeRow::id).doesNotContain(rowId);
+        assertThat(h.cheques()).hasSize(chequesBefore);
+        RenterRatingDetailDTO d = service.live(f.tenantId(), renterId, TODAY);
+        assertThat(d.events()).noneMatch(e -> rowId.equals(e.sourceId()));
+        assertThat(d.events()).noneMatch(e -> e.type() == RatingEventType.LATE_CLEAR
+                || e.type() == RatingEventType.ON_TIME_CHEQUE);
+        assertThat(d.score()).isEqualTo(70);
     }
 
     @Test

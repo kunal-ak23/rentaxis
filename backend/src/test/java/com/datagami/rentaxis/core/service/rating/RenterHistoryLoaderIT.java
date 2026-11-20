@@ -169,6 +169,23 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
         assertThat(row.clearedAt()).isEqualTo(LocalDate.of(2026, 10, 3));
     }
 
+    /**
+     * Round 2 I2: charge collection rows are not rent cheques. A restored write-off row carries no link column,
+     * only BadDebtService's narration; a fine's row carries penalty_assessment_id.
+     */
+    @Test
+    void chargeCollectionRowsAreNotLoadedAsCheques() {
+        Seeded s = seedFull(newOrgFixtures());
+        List<UUID> ids = chequeIds(s.tenantId(), s.leaseId());
+        jdbc.update("update cheques set narration = 'Bad debt write-off reversed – Rent' where id = ?", ids.get(1));
+        jdbc.update("update cheques set penalty_assessment_id = ? where id = ?", s.penaltyId(), ids.get(2));
+
+        RenterHistory h = loader.load(s.tenantId(), List.of(s.renterId()), SINCE).get(s.renterId());
+
+        assertThat(h.cheques()).extracting(RenterHistory.ChequeRow::id)
+                .containsExactlyInAnyOrder(ids.get(0), ids.get(3));
+    }
+
     @Test
     void loaderNeverReturnsAnotherOrgsRows() {
         Seeded a = seedFull(newOrgFixtures());

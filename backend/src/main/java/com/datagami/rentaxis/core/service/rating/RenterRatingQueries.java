@@ -42,12 +42,22 @@ class RenterRatingQueries {
      * <p>Bound: a cheque is loaded when its own date is in the window (it counts toward the NEW
      * thin-history rule) or when any event date the engine scores it by (clear or bounce) is in the window.
      * That keeps an in-window on-time clear, and an old-dated cheque that cleared or bounced late.</p>
+     *
+     * <p>Only the renter's own instalments are scored. Collection rows the system adds for a charge through
+     * {@code ChequeService.addCollectionRow} are left out: an approved fine's row
+     * ({@code penalty_assessment_id} set, also on a write-off-restored fine), a settlement's balance-due row
+     * ({@code lease_settlements.collection_cheque_id}) and a write-off reversal's restored row, which has no
+     * link column and is recognised by BadDebtService's narration "Bad debt write-off reversed".</p>
      */
     List<Object[]> cheques(UUID tenantId, Collection<UUID> renterIds, LocalDate since) {
         return rows("select c.id, c.renter_id, c.lease_id, c.status, c.cheque_date, "
                         + "coalesce(c.cleared_at, c.imported_cleared_on), c.bounced_at, c.imported_bounced_on, "
                         + "c.failure_reason from cheques c "
-                        + "where c.tenant_id = :tenantId and c.renter_id in (:renterIds) and ("
+                        + "where c.tenant_id = :tenantId and c.renter_id in (:renterIds) "
+                        + "and c.penalty_assessment_id is null "
+                        + "and not exists (select 1 from lease_settlements s where s.tenant_id = :tenantId "
+                        + "and s.collection_cheque_id = c.id) "
+                        + "and coalesce(c.narration, '') not like 'Bad debt write-off reversed%' and ("
                         + "c.cheque_date >= :since or c.cleared_at >= :since or c.imported_cleared_on >= :since "
                         + "or c.bounced_at >= :since or c.imported_bounced_on >= :since)",
                 tenantId, renterIds, since);

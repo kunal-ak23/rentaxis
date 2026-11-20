@@ -109,6 +109,8 @@ Not counted:
 - Write-offs that are `PROPOSED`, `REJECTED` or `REVERSED`.
 - `RETURNED` cheques. That status means the landlord handed an unused cheque back, for example at termination. It is not a bounce.
 
+"Cheque" in the rows above means the renter's own instalments. Charge collection rows that the system adds to the register are not scored and do not count toward NEW: rows with `penalty_assessment_id` set (an approved fine, including one restored after a write-off reversal), a settlement's balance-due row (`lease_settlements.collection_cheque_id`), and a write-off reversal's restored row (no link column; its narration starts "Bad debt write-off reversed").
+
 `CHEQUE_RETURN` penalties linked to a cheque of this organisation through `chequeId` (`penalty_assessments.cheque_id`) are not counted, because the bounce already counts. That is where the system-proposed cheque-return fine (`PenaltyRuleEngine.onBounce`) and a fine raised by hand against a cheque record the cheque; `sourceType`/`sourceId` are never a cheque.
 
 ### 5.5 Manual adjustments
