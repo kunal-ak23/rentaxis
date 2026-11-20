@@ -155,13 +155,55 @@ For walk-in banquet or court bookings:
 | Event | Fee not paid | Fee paid |
 |---|---|---|
 | Renter cancels before the slot | JV reversed (`reverseOnCancel`) | Refused: ask the office |
-| Staff cancel | JV reversed | JV reversed, payment kept as credit, VAT credit note (`creditOnStaffCancel`) |
-| Release early (parking) | No change: the fee stands | No change |
+| Staff cancel (amenity, or parking before its start) | JV reversed | JV reversed, payment kept as credit, VAT credit note (`creditOnStaffCancel`) |
+| Release early (parking, `PER_DAY` / `PER_MONTH`) | Unused days credited (see 6) | Unused days credited as renter credit (see 6) |
+| Release early (parking, `PER_BOOKING`) | No change: the fee stands | No change |
 | Reject a pending request | Nothing was posted | Nothing was posted |
 
-Partial refunds on early release are out of scope. Staff who want to refund
-part of the fee use staff-cancel on the booking and approve a new booking for
-the shorter dates.
+Decided 2026-11-20 (Kunal): parking refunds are pro-rata on early release, and
+staff may cancel an approved parking booking before its start date.
+
+### 6. Pro-rata credit on early parking release
+
+Today approved parking can only be released, and the fee always stands. This
+changes:
+
+- **Staff cancel before start.** `cancelByStaff` accepts an approved parking
+  booking whose start date is after today. It goes through
+  `creditOnStaffCancel`, exactly as for amenities. On or after the start
+  date, staff release instead.
+- **Fee snapshot.** At quote time the booking stores the fee type and unit
+  amount it was quoted on (new columns `fee_type`, `fee_unit_amount` on
+  `booking_requests`), so a later change to the bay's price does not change
+  the credit. Bookings made before this change have no snapshot, and early
+  release credits nothing for them.
+- **Used part.** On release, the used part is `quote(fee_type,
+  fee_unit_amount, start, releaseDate)`, where `releaseDate` is the day of
+  release (inclusive) in Dubai time. The credit is `fee_amount − used`,
+  never below 0 and never above `fee_amount`. A release on or after the end
+  date credits 0. The month maths is the same `quote` as at approval, so a
+  two-month booking at 300 a month released after the first whole month
+  credits 300.
+- **Posting.** One credit journal, dated today, linked to the charge (source
+  `PENALTY`, charge id):
+  - Dr the same income account the charge credited, for the credit;
+  - Dr `OUTPUT_VAT` for the VAT share, if the charge carried VAT
+    (`LeaseVat.vatOfNet(credit)`), with a VAT credit note for that amount;
+  - Cr the lease receivable for credit + VAT.
+- **Collection row.**
+  - Not paid: the row's amount drops by credit + VAT, so the renter owes
+    only the used part.
+  - Paid (cleared): the row stays as it is, and credit + VAT is left as a
+    credit on the renter's account, as `creditCollected` does today.
+  - Payment in flight (deposited, or paying online): the release is
+    refused with `booking.feeInFlight`, as for staff cancel. The release
+    can be repeated once the payment clears or bounces.
+  - Written off: the release goes ahead with no credit, as the fee stands.
+- **Who.** Both the renter's release and the staff release credit
+  automatically. No cash leaves: the credit sits on the renter's account
+  until the existing refund or settlement flows use it.
+- The charge records `credited_amount` (net). A second release of the same
+  booking is impossible, because a booking is released once.
 
 ## Ledger rules (the books always match)
 
@@ -179,6 +221,9 @@ the shorter dates.
 6. Approved, not-cancelled bookings with a fee = approved `BOOKING_FEE`
    charges = their journals. A reconciliation query in the golden test checks
    all three counts and totals.
+7. For a released booking, income net of its credit journal = the used part
+   (`fee_amount − credited_amount`), and receivable plus renter credit nets to
+   the used part plus its VAT.
 
 ## Tests
 
@@ -194,6 +239,15 @@ Golden (accounting acceptance gate):
 - A booking approved after a period lock: no journal dated inside the locked
   period.
 - Reconciliation (rule 6) over the whole seeded tenant.
+- Two-month parking at `PER_MONTH` 300, unpaid, released the day after the
+  first whole month ends: credit 300 − 1 day (300 − 300/days in that month),
+  VAT share reversed, collection row reduced by the same total.
+- The same, paid: row unchanged, renter credit = credit + VAT, VAT credit note.
+- Released on its last day: credit 0, no journal.
+- Staff cancel of approved parking before its start: full reversal.
+- Staff cancel of approved parking on its start date: refused.
+- Release with payment in flight: refused with `booking.feeInFlight`.
+- Rule 7 over the reconciliation tenant.
 
 Unit: `PER_MONTH` and `PER_DAY` quotes, including the examples above, leap
 years and a range shorter than a month.

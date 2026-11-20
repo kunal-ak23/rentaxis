@@ -244,3 +244,36 @@ A null `end` means `end = start`. `validate` refuses `PER_MONTH` when `!parking`
   - `cd web && npx vitest run` → PASS
   - `cd mobile/apps/renter && flutter test` → PASS
 - [ ] **Step 3: Commit** `test(golden): booking fees reconcile with charges and journals`
+
+---
+
+### Task 7: Parking refunds — staff cancel before start, pro-rata credit on early release
+
+Added 2026-11-20 after Kunal chose pro-rata refunds (spec §5 table and §6, ledger rule 7).
+
+**Files:**
+- Create: `backend/src/main/resources/db/changelog/changesets/193-booking-fee-snapshot.yaml` (`booking_requests.fee_type varchar(16)`, `booking_requests.fee_unit_amount numeric(14,2)`, `penalty_assessments.credited_amount numeric(14,2)`; all nullable; rollback drops them)
+- Modify: `domain/entity/BookingRequest.java`, `domain/entity/PenaltyAssessment.java`
+- Modify: `core/service/BookingService.java` (`create`/re-quote store the snapshot; `cancelByStaff` allows parking before start; `release` calls the credit)
+- Modify: `core/service/BookingFeeService.java` (`creditOnRelease`)
+- Modify: `core/service/penalty/PenaltyAssessmentService.java` (`creditPart`)
+- Modify: `core/service/cheque/ChequeService.java` only if no method exists to lower an unpaid collection row's amount
+- Test: `backend/src/test/java/com/datagami/rentaxis/golden/GoldenBookingJournalVoucherIT.java` (new tests), `BookingFeeQuoteTest` (used-part helper)
+
+**Interfaces:**
+- Consumes: `BookingFeeService.quote(type, amount, start, end, from, to)` (Task 1); charge `incomeAccountId` (Task 3); `creditOnStaffCancel`, `feePaid`, `PAID` (existing).
+- Produces: `static BigDecimal BookingFeeService.creditForRelease(String feeType, BigDecimal unitAmount, BigDecimal feeAmount, LocalDate start, LocalDate end, LocalDate releaseDay)` → net credit in [0, feeAmount]; `void BookingFeeService.creditOnRelease(BookingRequest b, LocalDate on)` (MANDATORY tx); `PenaltyAssessmentDTO PenaltyAssessmentService.creditPart(UUID chargeId, BigDecimal net, LocalDate on, String reason)`.
+
+- [ ] **Step 1: Unit tests** for `creditForRelease` (300/month, 1 Dec 2026–31 Jan 2027, fee 600): release 31 Dec → 300.00; release 1 Jan → 290.32 (used 300 + 300/31 = 309.68); release 31 Jan → 0.00; release after end → 0.00; `PER_BOOKING` → 0.00; null snapshot → 0.00; `PER_DAY` 40, 1–10 Dec, fee 400, release 3 Dec → 280.00.
+- [ ] **Step 2: Golden tests** (fixture as the other tests; parking `PER_MONTH` 300, VAT lease), each asserting exact lines:
+  - `earlyReleaseUnpaidCreditsUnusedDays`: approve, release mid-booking (set the clock or dates so the used part is known); one credit journal dated today, Dr Additional Parking = credit, Dr OUTPUT_VAT = `vatOfNet(credit)`, Cr receivable = sum; collection row amount = 630.00 − sum; charge `credited_amount` = credit; one VAT credit note.
+  - `earlyReleasePaidLeavesRenterCredit`: receive the row first; row stays CLEARED at 630.00; receivable delta = −(credit + VAT).
+  - `releaseOnLastDayCreditsNothing`: no new journal; `credited_amount` null or 0.
+  - `releaseWithPaymentInFlightIsRefused`: row DEPOSITED → `booking.feeInFlight`; booking stays APPROVED; no journal.
+  - `staffCancelParkingBeforeStartReversesInFull` and `staffCancelParkingOnStartDateIsRefused`.
+  - `releasedBookingReconciles` (rule 7) and extend `bookingsChargesAndJournalsReconcile` so released bookings count income net of their credit.
+  - Existing `earlyReleaseKeepsTheFee` becomes the `PER_BOOKING` case (fee stands).
+- [ ] **Step 3: Run, expect FAIL.**
+- [ ] **Step 4: Implement** per spec §6. The credit journal reuses the posting shape of `approve` mirrored (by income account id, `OUTPUT_VAT`, receivable via `LeaseChequeRegistrar`), source `PENALTY` / charge id, date checked by `manualDates.require(PostingDatePath.PENALTY_CHARGE, on)`. VAT credit note through the same tax-invoice path `reverse` uses. Snapshot is written wherever `fee_amount` is set (create, and the approval re-quote).
+- [ ] **Step 5: Run** golden gate and `--tests "*Booking*" --tests "*Penalty*"`. PASS.
+- [ ] **Step 6: Commit** `feat(bookings): pro-rata credit on early parking release; staff cancel before start`
