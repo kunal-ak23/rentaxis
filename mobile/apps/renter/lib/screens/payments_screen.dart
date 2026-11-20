@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import '../providers/renter_data.dart';
 import '../utils/renter_rules.dart';
+import '../widgets/receipt_picker_bar.dart';
 import '../widgets/renter_document_button.dart';
 import 'next_payment.dart';
 
@@ -19,6 +20,39 @@ class PaymentsScreen extends ConsumerStatefulWidget {
 class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   _Filter _filter = _Filter.all;
   String? _leaseId;
+  final Set<String> _ticked = {};
+  bool _downloading = false;
+
+  Future<void> _download(Rect origin) async {
+    final ar = context.isAr;
+    final ids = _ticked.toList();
+    final fetch = ref.read(combinedReceiptProvider);
+    final share = ref.read(shareRenterDocumentProvider);
+    setState(() => _downloading = true);
+    try {
+      final pdf = await fetch(ids);
+      if (!mounted) return;
+      await share(pdf.bytes, pdf.fileName, origin);
+      if (mounted) setState(_ticked.clear);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              errorMessage(
+                e,
+                ar
+                    ? 'تعذر تحميل الإيصالات. حاول مجدداً.'
+                    : 'Could not download the receipts. Please retry.',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
 
   Future<void> _refresh() async {
     ref.invalidate(renterPaymentsProvider);
@@ -90,7 +124,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                           ),
                         ),
                     ],
-                    onChanged: (id) => setState(() => _leaseId = id),
+                    onChanged: (id) => setState(() {
+                      _leaseId = id;
+                      _ticked.clear();
+                    }),
                   ),
                 const SizedBox(height: 12),
                 payments.when(
@@ -149,6 +186,17 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                           },
                         )
                         .toList();
+                    final leaseCount = leases.valueOrNull?.length ?? 0;
+                    final needsPick = _leaseId == null && leaseCount > 1;
+                    final selectable =
+                        !needsPick &&
+                        rows
+                                .where(isReceiptable)
+                                .map((r) => r['leaseId'])
+                                .toSet()
+                                .length <=
+                            1;
+                    final years = receiptYears(rows);
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -206,6 +254,27 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        if (needsPick && rows.any(isReceiptable)) ...[
+                          Text(
+                            ar
+                                ? 'اختر عقداً لتحديد عدة إيصالات وتحميلها معاً.'
+                                : 'Pick a contract to select several receipts and download them together.',
+                          ),
+                          const SizedBox(height: 12),
+                        ] else if (selectable && rows.any(isReceiptable)) ...[
+                          ReceiptPickerBar(
+                            years: years,
+                            selected: _ticked.length,
+                            busy: _downloading,
+                            onYear: (y) => setState(() {
+                              _ticked
+                                ..clear()
+                                ..addAll(idsInYear(rows, y));
+                            }),
+                            onDownload: _download,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         if (filtered.isEmpty)
                           EmptyState(
                             icon: Icons.receipt_long_outlined,
@@ -216,7 +285,16 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                         for (final row in filtered)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: _PaymentCard(row: row),
+                            child: _PaymentCard(
+                              row: row,
+                              selectable: selectable,
+                              ticked: _ticked.contains('${row['id']}'),
+                              onTick: (v) => setState(() {
+                                v
+                                    ? _ticked.add('${row['id']}')
+                                    : _ticked.remove('${row['id']}');
+                              }),
+                            ),
                           ),
                       ],
                     );
@@ -233,8 +311,16 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
 }
 
 class _PaymentCard extends ConsumerWidget {
-  const _PaymentCard({required this.row});
+  const _PaymentCard({
+    required this.row,
+    required this.selectable,
+    required this.ticked,
+    required this.onTick,
+  });
   final Map<String, dynamic> row;
+  final bool selectable;
+  final bool ticked;
+  final ValueChanged<bool> onTick;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ar = context.isAr;
@@ -276,7 +362,10 @@ class _PaymentCard extends ConsumerWidget {
           const SizedBox(height: 10),
           Text(
             Formatters.currency((row['amount'] as num?) ?? 0),
-            style: MiftahType.amount(size: 25, color: context.miftah.textPrimary),
+            style: MiftahType.amount(
+              size: 25,
+              color: context.miftah.textPrimary,
+            ),
           ),
           Text('$mode · ${Formatters.date(row['dueDate'] as String?, ar: ar)}'),
           if (isOwedNow(row))
@@ -308,8 +397,15 @@ class _PaymentCard extends ConsumerWidget {
             ),
           Wrap(
             spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (raw == 'CLEARED')
+              if (selectable && isReceiptable(row))
+                Checkbox(
+                  key: ValueKey('receipt-pick-${row['id']}'),
+                  value: ticked,
+                  onChanged: (v) => onTick(v == true),
+                ),
+              if (isReceiptable(row))
                 RenterDocumentButton(
                   path: '/v1/cheques/${row['id']}/receipt',
                   filename: 'receipt-${row['id']}.pdf',
@@ -405,7 +501,9 @@ class _TaxInvoices extends ConsumerWidget {
                   ar
                       ? 'الفواتير الضريبية والإشعارات الدائنة'
                       : 'Tax invoices & credit notes',
-                  style: MiftahType.cardTitle(color: context.miftah.textPrimary),
+                  style: MiftahType.cardTitle(
+                    color: context.miftah.textPrimary,
+                  ),
                 ),
                 for (final row in rows)
                   ListTile(
