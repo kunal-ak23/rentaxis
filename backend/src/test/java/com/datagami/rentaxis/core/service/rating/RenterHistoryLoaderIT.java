@@ -155,8 +155,11 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
         LeaseTestFixtures f = newOrgFixtures();
         UUID leaseId = postedLeaseId(f);
         UUID chequeId = chequeIds(f.tenantId(), leaseId).get(0);
-        jdbc.update("update cheques set status = 'CLEARED', cleared_at = null, imported_cleared_on = ? where id = ?",
-                LocalDate.of(2026, 10, 3), chequeId);
+        // ck_cheques_imported_dates: CLEARED import needs a cleared date, plus a deposit date for PDC cheques.
+        jdbc.update("update cheques set status = 'CLEARED', cleared_at = null, imported_status = 'CLEARED', "
+                        + "imported_cleared_on = ?, "
+                        + "imported_deposited_on = case when mode = 'PDC' then ?::date else null end where id = ?",
+                LocalDate.of(2026, 10, 3), LocalDate.of(2026, 10, 2), chequeId);
 
         RenterHistory h = loader.load(f.tenantId(), List.of(f.renter().getId()), SINCE).get(f.renter().getId());
 

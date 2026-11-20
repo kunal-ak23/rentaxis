@@ -47,6 +47,8 @@ import java.util.stream.IntStream;
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /** Renter rating endpoints over HTTP: feature gate, roles, org isolation, CSV, recompute. */
@@ -283,11 +285,12 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
     @Test
     void recomputeIsSuperAdminOnlyAndAsync() {
         String path = "/api/v1/admin/renter-ratings/recompute?tenantId=";
+        clearInvocations(renterRatingExecutor);
         assertThat(status(admin, UserRole.TENANT_ADMIN, HttpMethod.POST, path + tenantId, null))
                 .isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(request(superAdmin, UserRole.SUPER_ADMIN, null, HttpMethod.POST, path + tenantId, null)
                 .toBodilessEntity().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
-        verify(renterRatingExecutor).execute(any(Runnable.class));
+        verify(renterRatingExecutor, times(1)).execute(any(Runnable.class));
         assertThat(request(superAdmin, UserRole.SUPER_ADMIN, null, HttpMethod.POST, path + UUID.randomUUID(), null)
                 .toBodilessEntity().getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         features.setEnabled(tenantId, TenantFeature.RENTER_RATING, false);
