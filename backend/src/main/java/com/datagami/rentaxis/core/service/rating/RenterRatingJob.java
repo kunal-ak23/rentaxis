@@ -22,7 +22,11 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 
-/** Nightly recompute of every rated renter, per org with the feature on; monthly snapshots on the 1st. */
+/**
+ * Nightly recompute of every rated renter, per org with the feature on. Each run also writes the current
+ * month's snapshot for renters that have none yet, so a month whose 1st was missed (job down, feature
+ * enabled mid-month) still gets one.
+ */
 @Component
 @Slf4j
 public class RenterRatingJob {
@@ -86,7 +90,6 @@ public class RenterRatingJob {
         UUID previous = TenantContextHolder.getTenantId();
         TenantContextHolder.setTenantId(tenantId);
         try {
-            boolean monthStart = today.getDayOfMonth() == 1;
             LocalDate month = today.withDayOfMonth(1);
             UUID after = null;
             int written = 0;
@@ -96,7 +99,7 @@ public class RenterRatingJob {
                 try {
                     Integer n = tx.execute(status -> {
                         int w = service.recomputeAndStore(tenantId, ids, today);
-                        if (monthStart) service.snapshotMonth(tenantId, ids, month);
+                        service.snapshotMonth(tenantId, ids, month);
                         return w;
                     });
                     written += n == null ? 0 : n;

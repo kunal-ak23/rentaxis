@@ -154,7 +154,7 @@ All three extend the tenant filter (`BaseTenantEntity`).
 - For each org with `RENTER_RATING` on: page through renter ids 500 at a time, bulk-load histories, score in memory.
 - Write a `renter_ratings` row only when its `fingerprint` (hash of score, grade and events) changed.
 - One short transaction per batch.
-- On the 1st of each month, also upsert a snapshot for every renter.
+- Each run also writes the current month's snapshot for every renter that has none yet (normally on the 1st; a month whose 1st was missed gets it on the next run). An existing snapshot is kept.
 - A full recompute is required each night because ratings change with time alone: events cross the 12- and 24-month lines, and renters leave NEW. Change tracking would need `updated_at` on tables that lack it (`cheques`, `penalty_assessments`, `bad_debt_write_offs`, `lease_events`). That is not worth it.
 - Expected load for 8,000 renters: about 16 batches and roughly 110 queries in total, well under a minute.
 - Ops entry point: `runNowForTenant(orgId)`, exposed to `SUPER_ADMIN`.

@@ -95,6 +95,10 @@ public class RenterRatingService {
     /**
      * Scores the renters and stores the rows whose fingerprint changed. A requested renter that is no longer
      * rated (no started lease) has its stored row deleted. Returns the number of rows written.
+     *
+     * <p>The write is an upsert on (tenant_id, renter_id): an adjustment, the nightly job and a run-on-enable
+     * or admin recompute can score the same renter at once, and a plain insert after reading "no row" would
+     * then fail on the unique key.</p>
      */
     @Transactional
     public int recomputeAndStore(UUID tenantId, Collection<UUID> renterIds, LocalDate today) {
@@ -115,44 +119,47 @@ public class RenterRatingService {
             RenterRatingResult r = RenterRatingEngine.score(h, today);
             String fp = r.fingerprint();
             if (existing != null && fp.equals(existing.getFingerprint())) continue;
-            RenterRating row = existing != null ? existing : new RenterRating();
-            row.setTenantId(tenantId);
-            row.setRenterId(id);
-            row.setScore(r.score());
-            row.setGrade(r.grade());
-            row.setDeductionsCount(r.deductionsCount());
-            row.setEventsJson(toJson(r.events()));
-            row.setFingerprint(fp);
-            row.setComputedAt(now);
-            ratings.save(row);
+            if (existing != null) em.detach(existing); // the row is rewritten below in SQL
+            em.createNativeQuery("insert into renter_ratings (id, tenant_id, renter_id, score, grade, "
+                            + "deductions_count, events_json, fingerprint, computed_at) "
+                            + "values (:id, :tenantId, :renterId, :score, :grade, :deductions, :events, :fp, :now) "
+                            + "on conflict (tenant_id, renter_id) do update set score = excluded.score, "
+                            + "grade = excluded.grade, deductions_count = excluded.deductions_count, "
+                            + "events_json = excluded.events_json, fingerprint = excluded.fingerprint, "
+                            + "computed_at = excluded.computed_at")
+                    .setParameter("id", UUID.randomUUID())
+                    .setParameter("tenantId", tenantId)
+                    .setParameter("renterId", id)
+                    .setParameter("score", r.score())
+                    .setParameter("grade", r.grade().name())
+                    .setParameter("deductions", r.deductionsCount())
+                    .setParameter("events", toJson(r.events()))
+                    .setParameter("fp", fp)
+                    .setParameter("now", now)
+                    .executeUpdate();
             written++;
         }
         return written;
     }
 
-    /** Upserts a snapshot (score and grade of the stored rating) for each given renter that has a stored rating. */
+    /**
+     * Writes the month's snapshot (score and grade of the stored rating) for each given renter that has a
+     * stored rating and no snapshot for that month yet; an existing snapshot is kept. One insert-select with
+     * {@code on conflict do nothing}, so concurrent runs cannot collide on the (tenant, renter, month) key.
+     * Returns the number of snapshots written.
+     */
     @Transactional
     public int snapshotMonth(UUID tenantId, Collection<UUID> renterIds, LocalDate month) {
         if (renterIds == null || renterIds.isEmpty()) return 0;
-        Collection<UUID> ids = new LinkedHashSet<>(renterIds);
-        Map<UUID, RenterRatingSnapshot> existing = new HashMap<>();
-        snapshots.findByTenantIdAndMonthAndRenterIdIn(tenantId, month, ids)
-                .forEach(s -> existing.put(s.getRenterId(), s));
-        int n = 0;
-        for (RenterRating r : ratings.findByTenantIdAndRenterIdIn(tenantId, ids)) {
-            RenterRatingSnapshot s = existing.get(r.getRenterId());
-            if (s == null) {
-                s = new RenterRatingSnapshot();
-                s.setTenantId(tenantId);
-                s.setRenterId(r.getRenterId());
-                s.setMonth(month);
-            }
-            s.setScore(r.getScore());
-            s.setGrade(r.getGrade());
-            snapshots.save(s);
-            n++;
-        }
-        return n;
+        return em.createNativeQuery("insert into renter_rating_snapshots "
+                        + "(id, tenant_id, renter_id, month, score, grade) "
+                        + "select gen_random_uuid(), r.tenant_id, r.renter_id, :month, r.score, r.grade "
+                        + "from renter_ratings r where r.tenant_id = :tenantId and r.renter_id in (:renterIds) "
+                        + "on conflict (tenant_id, renter_id, month) do nothing")
+                .setParameter("month", month)
+                .setParameter("tenantId", tenantId)
+                .setParameter("renterIds", new LinkedHashSet<>(renterIds))
+                .executeUpdate();
     }
 
     /**

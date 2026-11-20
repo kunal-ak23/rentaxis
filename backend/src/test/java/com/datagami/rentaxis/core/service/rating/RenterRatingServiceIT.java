@@ -277,6 +277,85 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
         assertThat(service.live(f.tenantId(), renterId, LocalDate.of(2026, 12, 2)).trend()).hasSize(2);
     }
 
+    /** M3: a month whose 1st was missed still gets a snapshot, written on the first run that month. */
+    @Test
+    void snapshotWrittenMidMonthWhenMonthHasNoneAndKeptAfterwards() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        UUID renterId = f.renter().getId();
+        LocalDate month = LocalDate.of(2026, 12, 1);
+
+        job.runNowForTenant(f.tenantId(), LocalDate.of(2026, 12, 15));
+
+        assertThat(jdbc.queryForObject(
+                "select score from renter_rating_snapshots where tenant_id = ? and renter_id = ? and month = ?",
+                Integer.class, f.tenantId(), renterId, month)).isEqualTo(70);
+
+        // a later run in the same month keeps the month's snapshot (one row, first value)
+        bounce(f.tenantId(), leaseId, 0, LocalDate.of(2026, 12, 16));
+        job.runNowForTenant(f.tenantId(), LocalDate.of(2026, 12, 17));
+        assertThat(storedScore(f.tenantId(), renterId)).isEqualTo(55);
+        assertThat(jdbc.queryForList("select score from renter_rating_snapshots where tenant_id = ? and renter_id = ?",
+                Integer.class, f.tenantId(), renterId)).containsExactly(70);
+    }
+
+    /**
+     * M1: another writer inserts the renter's row after this store read "no row" and before it writes. The
+     * store's insert waits on the other transaction's uncommitted row, then must update it, not fail on the
+     * unique key. The other transaction commits only once this one is seen blocked on that lock.
+     */
+    @Test
+    void storeUpsertsWhenAnotherWriterInsertsTheRowFirst() throws Exception {
+        LeaseTestFixtures f = newOrgFixtures();
+        postedLease(f);
+        UUID tenantId = f.tenantId();
+        UUID renterId = f.renter().getId();
+        java.util.concurrent.CountDownLatch inserted = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Future<?> other = pool.submit(() -> tx.executeWithoutResult(s -> {
+                jdbc.update("insert into renter_ratings (id, tenant_id, renter_id, score, grade, deductions_count, "
+                                + "events_json, fingerprint, computed_at) "
+                                + "values (?,?,?, 1, 'D', 0, '[]', 'other', now())",
+                        UUID.randomUUID(), tenantId, renterId);
+                inserted.countDown();
+                try {
+                    release.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            assertThat(inserted.await(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+            java.util.concurrent.Future<Integer> mine = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    return service.recomputeAndStore(tenantId, List.of(renterId), TODAY);
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            });
+            long deadline = System.currentTimeMillis() + 30_000;
+            while (System.currentTimeMillis() < deadline && jdbc.queryForObject(
+                    "select count(*) from pg_stat_activity where datname = current_database() "
+                            + "and wait_event_type = 'Lock' and query like 'insert into renter_ratings%'",
+                    Integer.class) == 0) {
+                Thread.sleep(20);
+            }
+            release.countDown();
+            other.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(mine.get(30, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(1);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(storedRows(tenantId, renterId)).isEqualTo(1);
+        assertThat(storedScore(tenantId, renterId)).isEqualTo(70);
+        assertThat(jdbc.queryForObject("select fingerprint from renter_ratings where tenant_id = ? and renter_id = ?",
+                String.class, tenantId, renterId)).isNotEqualTo("other");
+    }
+
     @Test
     void jobSkipsOrgsWithFeatureOff() {
         LeaseTestFixtures f = newOrgFixtures();
