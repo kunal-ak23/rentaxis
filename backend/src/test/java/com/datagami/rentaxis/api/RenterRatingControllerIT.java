@@ -208,6 +208,13 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
                 ratingPath() + "/adjustments", body).toEntity(Map.class);
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         String adjustmentId = String.valueOf(created.getBody().get("adjustmentId"));
+        assertThat(created.getBody().get("createdByName")).isEqualTo("TENANT_ADMIN");
+        List<?> events = (List<?>) json(manager, UserRole.PROPERTY_MANAGER, ratingPath()).get("events");
+        assertThat(events).anySatisfy(e -> {
+            Map<?, ?> m = (Map<?, ?>) e;
+            assertThat(m.get("adjustmentId")).isEqualTo(adjustmentId);
+            assertThat(m.get("createdByName")).isEqualTo("TENANT_ADMIN");
+        });
 
         assertThat(status(manager, UserRole.PROPERTY_MANAGER, HttpMethod.DELETE,
                 ratingPath() + "/adjustments/" + adjustmentId, null)).isEqualTo(HttpStatus.FORBIDDEN);

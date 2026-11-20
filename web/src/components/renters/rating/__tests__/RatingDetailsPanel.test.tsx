@@ -19,7 +19,7 @@ const removeAdj = renterRatingsApi.removeAdjustment as unknown as ReturnType<typ
 
 const ev = (over: Record<string, unknown>) => ({
     type: "BOUNCE", date: "2026-03-01", basePoints: -15, weight: 1, appliedPoints: -15, sourceType: "CHEQUE",
-    sourceId: "s1", leaseId: null, adjustmentId: null, note: null, ...over,
+    sourceId: "s1", leaseId: null, adjustmentId: null, note: null, createdByName: null, ...over,
 });
 const detail = () => ({
     renterId: "r1", score: 52, grade: "C", deductionsCount: 1, base: 70, hasStartedContract: true,
@@ -27,7 +27,7 @@ const detail = () => ({
     events: [
         ev({ type: "BOUNCE", appliedPoints: -7.5, weight: 0.5, basePoints: -15, leaseId: "L9" }),
         ev({ type: "ON_TIME_CHEQUE", basePoints: 1, appliedPoints: 1, date: "2026-02-01" }),
-        ev({ type: "ADJUSTMENT", basePoints: 5, appliedPoints: 5, adjustmentId: "adj1", note: "Goodwill", date: "2026-02-10" }),
+        ev({ type: "ADJUSTMENT", basePoints: 5, appliedPoints: 5, adjustmentId: "adj1", note: "Goodwill", date: "2026-02-10", createdByName: "Sara Admin" }),
     ],
 });
 
@@ -44,6 +44,9 @@ describe("RatingDetailsPanel", () => {
         expect(screen.getByText("+1.0")).toBeInTheDocument();
         expect(screen.getAllByText("half weight")).toHaveLength(1);
         expect(screen.getByText("Goodwill")).toBeInTheDocument();
+        // spec 3: an adjustment shows who added it (and when: the event date)
+        expect(screen.getAllByTestId("rating-adjustment-by")).toHaveLength(1);
+        expect(screen.getByText("by Sara Admin")).toBeInTheDocument();
         expect(screen.getByText("Every tenant starts at 70")).toBeInTheDocument();
         expect(screen.getByRole("link", { name: "Contract" })).toHaveAttribute("href", "/dashboard/leases/L9");
         expect(screen.getByRole("img", { name: /Score trend/ })).toBeInTheDocument();

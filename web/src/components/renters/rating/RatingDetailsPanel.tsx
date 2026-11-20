@@ -84,6 +84,9 @@ export default function RatingDetailsPanel({ renterId, open, onClose, onLoaded }
                                             )}
                                         </div>
                                         {e.note && <div className="mt-0.5 text-muted">{e.note}</div>}
+                                        {e.adjustmentId && e.createdByName && (
+                                            <div className="mt-0.5 text-muted" data-testid="rating-adjustment-by">{t("byUser", { name: e.createdByName })}</div>
+                                        )}
                                         {e.leaseId && (
                                             <Link href={`/dashboard/leases/${e.leaseId}`} className="mt-0.5 inline-block text-primary hover:underline">{t("contract")}</Link>
                                         )}

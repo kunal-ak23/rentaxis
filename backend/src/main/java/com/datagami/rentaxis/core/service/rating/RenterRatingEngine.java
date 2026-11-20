@@ -53,23 +53,25 @@ public final class RenterRatingEngine {
                     && c.status() != ChequeStatus.DRAFT && c.status() != ChequeStatus.CANCELLED) windowCheques++;
             LocalDate bounceDate = c.bouncedAt() != null ? c.bouncedAt() : c.importedBouncedOn();
             if (bounceDate != null && c.failureReason() != ChequeFailureReason.TECHNICAL_RETURN) {
-                add(raw, RatingEventType.BOUNCE, bounceDate, BOUNCE_POINTS, "CHEQUE", c.id(), c.leaseId(), null, today);
+                add(raw, RatingEventType.BOUNCE, bounceDate, BOUNCE_POINTS, "CHEQUE", c.id(), c.leaseId(), null, null,
+                        today);
                 continue;
             }
             if (c.status() != ChequeStatus.CLEARED || c.clearedAt() == null || c.chequeDate() == null) continue;
             if (!c.clearedAt().isAfter(c.chequeDate().plusDays(ON_TIME_GRACE_DAYS))) {
                 add(raw, RatingEventType.ON_TIME_CHEQUE, c.clearedAt(), ON_TIME_CHEQUE_POINTS, "CHEQUE", c.id(),
-                        c.leaseId(), null, today);
+                        c.leaseId(), null, null, today);
             } else {
                 add(raw, RatingEventType.LATE_CLEAR, c.clearedAt(), LATE_CLEAR_POINTS, "CHEQUE", c.id(),
-                        c.leaseId(), null, today);
+                        c.leaseId(), null, null, today);
             }
         }
 
         for (LeaseRow l : started) {
             if (l.renewedFromLeaseId() != null && l.startDate() != null
                     && h.leases().stream().anyMatch(o -> l.renewedFromLeaseId().equals(o.id()))) {
-                add(raw, RatingEventType.RENEWAL, l.startDate(), RENEWAL_POINTS, "LEASE", l.id(), l.id(), null, today);
+                add(raw, RatingEventType.RENEWAL, l.startDate(), RENEWAL_POINTS, "LEASE", l.id(), l.id(), null, null,
+                        today);
             }
         }
 
@@ -78,11 +80,11 @@ public final class RenterRatingEngine {
             if (p.status() != PenaltyAssessmentStatus.APPROVED && p.status() != PenaltyAssessmentStatus.WRITTEN_OFF) continue;
             if (p.reason() == PenaltyReason.LATE_PAYMENT) {
                 add(raw, RatingEventType.LATE_PAYMENT_PENALTY, p.incidentDate(), LATE_PAYMENT_POINTS, "PENALTY",
-                        p.id(), p.leaseId(), null, today);
+                        p.id(), p.leaseId(), null, null, today);
             } else if (p.reason() == PenaltyReason.DAMAGE
                     || (p.reason() == PenaltyReason.CHEQUE_RETURN && p.sourceChequeId() == null)) {
                 add(raw, RatingEventType.MISCONDUCT_PENALTY, p.incidentDate(), MISCONDUCT_POINTS, "PENALTY",
-                        p.id(), p.leaseId(), null, today);
+                        p.id(), p.leaseId(), null, null, today);
             }
         }
 
@@ -90,7 +92,7 @@ public final class RenterRatingEngine {
             if (w.leaseId() == null || !leaseIds.contains(w.leaseId()) || w.writeOffDate() == null) continue;
             if (!"WRITTEN_OFF".equals(w.status())) continue;
             add(raw, RatingEventType.WRITE_OFF, w.writeOffDate(), WRITE_OFF_POINTS, "WRITE_OFF", w.id(),
-                    w.leaseId(), null, today);
+                    w.leaseId(), null, null, today);
         }
 
         addLongHolds(h, leaseIds, today, raw);
@@ -102,12 +104,12 @@ public final class RenterRatingEngine {
                 LocalDate end = leaseById.get(o.leaseId()).endDate();
                 if (end != null && ChronoUnit.DAYS.between(captured, end) >= EARLY_INTENT_MIN_DAYS) {
                     add(raw, RatingEventType.EARLY_INTENT, captured, EARLY_INTENT_POINTS, "OPPORTUNITY", o.id(),
-                            o.leaseId(), null, today);
+                            o.leaseId(), null, null, today);
                 }
             }
             if (o.outcome() == RenewalOutcome.EXPIRED_NO_RESPONSE && o.closedAt() != null) {
                 add(raw, RatingEventType.NO_RESPONSE, toDate(o.closedAt()), NO_RESPONSE_POINTS, "OPPORTUNITY",
-                        o.id(), o.leaseId(), null, today);
+                        o.id(), o.leaseId(), null, null, today);
             }
         }
 
@@ -115,14 +117,14 @@ public final class RenterRatingEngine {
             if (m.leaseId() == null || !leaseIds.contains(m.leaseId()) || m.slotStart() == null) continue;
             if (m.status() == MeetingStatus.NO_SHOW) {
                 add(raw, RatingEventType.MEETING_NO_SHOW, toDate(m.slotStart()), NO_SHOW_POINTS, "MEETING", m.id(),
-                        m.leaseId(), null, today);
+                        m.leaseId(), null, null, today);
             }
         }
 
         for (AdjustmentRow a : h.adjustments()) {
             if (a.createdAt() == null) continue;
             add(raw, RatingEventType.ADJUSTMENT, toDate(a.createdAt()), a.points(), "ADJUSTMENT", a.id(), null,
-                    a.reason(), today);
+                    a.reason(), a.createdBy(), today);
         }
 
         List<RatingEvent> events = applyCaps(raw);
@@ -166,7 +168,7 @@ public final class RenterRatingEngine {
                 }
                 if (ChronoUnit.DAYS.between(start, end) > LONG_HOLD_MAX_DAYS) {
                     add(raw, RatingEventType.LONG_HOLD, start.plusDays(LONG_HOLD_MAX_DAYS + 1), LONG_HOLD_POINTS,
-                            "LEASE", en.getKey(), en.getKey(), null, today);
+                            "LEASE", en.getKey(), en.getKey(), null, null, today);
                     break; // at most one per lease
                 }
             }
@@ -196,10 +198,10 @@ public final class RenterRatingEngine {
     }
 
     private static void add(List<RatingEvent> out, RatingEventType type, LocalDate date, int base, String sourceType,
-                            UUID sourceId, UUID leaseId, String note, LocalDate today) {
+                            UUID sourceId, UUID leaseId, String note, UUID createdBy, LocalDate today) {
         double w = weight(date, today);
         if (w == 0) return;
-        out.add(new RatingEvent(type, date, base, w, base * w, sourceType, sourceId, leaseId, note));
+        out.add(new RatingEvent(type, date, base, w, base * w, sourceType, sourceId, leaseId, note, createdBy));
     }
 
     static double weight(LocalDate date, LocalDate today) {

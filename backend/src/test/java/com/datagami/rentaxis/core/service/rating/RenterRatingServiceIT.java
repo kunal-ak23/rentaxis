@@ -348,6 +348,12 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
         assertThat(ev.type()).isEqualTo(RatingEventType.ADJUSTMENT);
         assertThat(ev.adjustmentId()).isNotNull();
         assertThat(ev.note()).isEqualTo("Good reference");
+        assertThat(ev.createdByName()).isEqualTo("TENANT_ADMIN");
+        RenterRatingDetailDTO live = service.live(f.tenantId(), renterId, TODAY);
+        assertThat(live.events()).filteredOn(e -> e.type() == RatingEventType.ADJUSTMENT).singleElement()
+                .satisfies(e -> assertThat(e.createdByName()).isEqualTo("TENANT_ADMIN"));
+        assertThat(live.events()).filteredOn(e -> e.type() != RatingEventType.ADJUSTMENT)
+                .allMatch(e -> e.createdByName() == null);
         assertThat(service.live(f.tenantId(), renterId, TODAY).score()).isEqualTo(80);
         assertThat(storedScore(f.tenantId(), renterId)).isEqualTo(80);
 

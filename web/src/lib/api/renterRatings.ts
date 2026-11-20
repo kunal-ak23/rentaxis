@@ -11,6 +11,8 @@ export type RatingEvent = {
   type: RatingEventType; date: string; basePoints: number; weight: number; appliedPoints: number;
   sourceType: string | null; sourceId: string | null; leaseId: string | null;
   adjustmentId: string | null; note: string | null;
+  /** Display name of whoever added an ADJUSTMENT; null for other events. */
+  createdByName: string | null;
 };
 export type RatingTrendPoint = { date: string; score: number; grade: RatingGrade };
 export type RenterRatingDetail = {

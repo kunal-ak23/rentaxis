@@ -18,6 +18,7 @@ import com.datagami.rentaxis.domain.repository.RenterRatingAdjustmentRepository;
 import com.datagami.rentaxis.domain.repository.RenterRatingRepository;
 import com.datagami.rentaxis.domain.repository.RenterRatingSnapshotRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
+import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
@@ -39,7 +40,9 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /** Live scoring, stored ratings (current + monthly snapshots), the filtered list and audited adjustments. */
 @Service
@@ -54,6 +57,7 @@ public class RenterRatingService {
     private final RenterRatingSnapshotRepository snapshots;
     private final RenterRatingAdjustmentRepository adjustments;
     private final RenterRepository renters;
+    private final UserRepository users;
     private final ObjectMapper mapper;
 
     @PersistenceContext
@@ -62,12 +66,13 @@ public class RenterRatingService {
     public RenterRatingService(RenterHistoryLoader loader, RenterRatingRepository ratings,
                                RenterRatingSnapshotRepository snapshots,
                                RenterRatingAdjustmentRepository adjustments, RenterRepository renters,
-                               ObjectMapper mapper) {
+                               UserRepository users, ObjectMapper mapper) {
         this.loader = loader;
         this.ratings = ratings;
         this.snapshots = snapshots;
         this.adjustments = adjustments;
         this.renters = renters;
+        this.users = users;
         this.mapper = mapper;
     }
 
@@ -84,7 +89,7 @@ public class RenterRatingService {
         for (RenterRatingSnapshot s : last) trend.add(new RatingTrendPointDTO(s.getMonth(), s.getScore(), s.getGrade()));
         trend.add(new RatingTrendPointDTO(today, r.score(), r.grade()));
         return new RenterRatingDetailDTO(renterId, r.score(), r.grade(), r.deductionsCount(),
-                RenterRatingPolicy.BASE_SCORE, r.events().stream().map(RatingEventDTO::of).toList(), trend, started);
+                RenterRatingPolicy.BASE_SCORE, toDtos(r.events()), trend, started);
     }
 
     /**
@@ -245,11 +250,12 @@ public class RenterRatingService {
         a = adjustments.saveAndFlush(a);
         recomputeAndStore(tenantId, List.of(renterId), today);
         UUID adjustmentId = a.getId();
+        String byName = userId == null ? null : users.findDisplayNameById(userId).orElse(null);
         return scoreOne(tenantId, renterId, today).events().stream()
                 .filter(e -> e.type() == RatingEventType.ADJUSTMENT && adjustmentId.equals(e.sourceId()))
-                .findFirst().map(RatingEventDTO::of)
+                .findFirst().map(e -> RatingEventDTO.of(e, byName))
                 .orElseGet(() -> new RatingEventDTO(RatingEventType.ADJUSTMENT, today, points, 1.0, points,
-                        "ADJUSTMENT", adjustmentId, null, adjustmentId, trimmed));
+                        "ADJUSTMENT", adjustmentId, null, adjustmentId, trimmed, byName));
     }
 
     @Transactional
@@ -262,6 +268,21 @@ public class RenterRatingService {
             adjustments.saveAndFlush(a);
         }
         recomputeAndStore(tenantId, List.of(renterId), today);
+    }
+
+    /**
+     * Events as DTOs, with the display name of whoever added each adjustment (spec 3: an adjustment shows
+     * who and when). One name lookup for all of them; names only, so the native cross-tenant read used for
+     * audit attribution elsewhere (a SUPER_ADMIN has no tenant) exposes nothing more.
+     */
+    private List<RatingEventDTO> toDtos(List<RatingEvent> events) {
+        Set<UUID> ids = events.stream().map(RatingEvent::createdBy).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, String> names = new HashMap<>();
+        if (!ids.isEmpty()) {
+            for (Object[] row : users.findDisplayNamesByIds(ids)) names.put(uuid(row[0]), (String) row[1]);
+        }
+        return events.stream().map(e -> RatingEventDTO.of(e, names.get(e.createdBy()))).toList();
     }
 
     private RenterRatingResult scoreOne(UUID tenantId, UUID renterId, LocalDate today) {

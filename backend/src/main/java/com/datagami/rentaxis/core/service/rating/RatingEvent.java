@@ -5,12 +5,14 @@ import java.util.UUID;
 
 /**
  * One scored fact. sourceType is CHEQUE|PENALTY|WRITE_OFF|LEASE|OPPORTUNITY|MEETING|ADJUSTMENT;
- * note carries the adjustment reason, else null.
+ * note carries the adjustment reason, else null; createdBy is the user who added an adjustment, else null.
  */
 public record RatingEvent(RatingEventType type, LocalDate date, int basePoints, double weight,
-                          double appliedPoints, String sourceType, UUID sourceId, UUID leaseId, String note) {
+                          double appliedPoints, String sourceType, UUID sourceId, UUID leaseId, String note,
+                          UUID createdBy) {
 
     RatingEvent withAppliedPoints(double applied) {
-        return new RatingEvent(type, date, basePoints, weight, applied, sourceType, sourceId, leaseId, note);
+        return new RatingEvent(type, date, basePoints, weight, applied, sourceType, sourceId, leaseId, note,
+                createdBy);
     }
 }

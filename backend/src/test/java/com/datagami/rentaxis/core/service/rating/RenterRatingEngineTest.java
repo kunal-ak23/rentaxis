@@ -365,6 +365,16 @@ class RenterRatingEngineTest {
     }
 
     @Test
+    void adjustmentCarriesItsCreatorAndOtherEventsDoNot() {
+        H h = history().lease13().onTime(3).adj(5, "Vouched", TODAY.minusDays(2));
+        UUID creator = h.adjustments.get(0).createdBy();
+        RenterRatingResult r = h.run();
+        assertThat(of(r, RatingEventType.ADJUSTMENT)).singleElement().extracting(RatingEvent::createdBy)
+                .isEqualTo(creator);
+        assertThat(of(r, RatingEventType.ON_TIME_CHEQUE)).isNotEmpty().allMatch(e -> e.createdBy() == null);
+    }
+
+    @Test
     void clampAt0And100() {
         H low = history().lease13();
         for (int i = 0; i < 5; i++) low.writeOff("WRITTEN_OFF", TODAY.minusDays(10 + i));
@@ -394,7 +404,7 @@ class RenterRatingEngineTest {
         List<RatingEvent> swapped = new ArrayList<>(base.events());
         RatingEvent e0 = swapped.get(0);
         swapped.set(0, new RatingEvent(e0.type(), e0.date(), e0.basePoints(), e0.weight(), e0.appliedPoints(),
-                e0.sourceType(), UUID.randomUUID(), e0.leaseId(), e0.note()));
+                e0.sourceType(), UUID.randomUUID(), e0.leaseId(), e0.note(), e0.createdBy()));
         RenterRatingResult sameScore = new RenterRatingResult(base.renterId(), base.score(), base.grade(),
                 base.deductionsCount(), swapped);
         assertThat(sameScore.fingerprint()).isNotEqualTo(base.fingerprint());
