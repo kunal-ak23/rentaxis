@@ -669,6 +669,24 @@ class BookingServiceTest {
         assertThat(captor.getValue().tenantId()).isEqualTo(tenantId);
     }
 
+    /** Spec 2026-11-19 §5: before its start (Dubai, clock pinned to 1 Aug) a parking booking is cancelled, not released. */
+    @Test
+    void release_beforeTheStartDate_isRefusedAndOnTheStartDateAllowed() {
+        BookingRequest b = booking(BookingResourceType.PARKING_SPOT, BookingRequestStatus.APPROVED);
+        b.setPreferredDate(LocalDate.of(2026, 8, 2));
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+
+        assertThatThrownBy(() -> service.release(tenantId, b.getId(), UUID.randomUUID(), true))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                .isEqualTo("booking.releaseBeforeStart");
+        assertThat(b.getStatus()).isEqualTo(BookingRequestStatus.APPROVED);
+
+        b.setPreferredDate(LocalDate.of(2026, 8, 1));
+        assertThat(service.release(tenantId, b.getId(), UUID.randomUUID(), true).getStatus())
+                .isEqualTo(BookingRequestStatus.RELEASED);
+    }
+
     // ---- locked-load failure (review hardening) ----
 
     @Test

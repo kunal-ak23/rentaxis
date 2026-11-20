@@ -720,9 +720,17 @@ public class BookingService {
         if (booking.getStatus() != BookingRequestStatus.APPROVED) {
             throw new BusinessRuleViolationException("Only approved bookings can be released");
         }
+        LocalDate today = LocalDate.now(clock.withZone(DUBAI));
+        // Spec 2026-11-19 §5: before its start date a parking booking is cancelled, not
+        // released — by the office (staff cancel), so a paid fee is never credited back by
+        // the renter alone.
+        if (booking.getPreferredDate() != null && today.isBefore(booking.getPreferredDate())) {
+            throw new BusinessRuleViolationException("This parking booking has not started yet, so it cannot be"
+                    + " released. Ask the management office to cancel it.", "booking.releaseBeforeStart", Map.of());
+        }
         // Spec 2026-11-19 §6: the unused days of a PER_DAY / PER_MONTH fee are credited, the
         // release day counted as used. A payment in flight refuses the release (booking.feeInFlight).
-        if (bookingFees != null) bookingFees.creditOnRelease(booking, LocalDate.now(clock.withZone(DUBAI)));
+        if (bookingFees != null) bookingFees.creditOnRelease(booking, today);
         booking.setStatus(BookingRequestStatus.RELEASED);
         booking.setDecidedByUserId(actorUserId);
         booking.setDecidedAt(Instant.now());

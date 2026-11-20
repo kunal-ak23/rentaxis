@@ -83,4 +83,28 @@ class BookingFeeQuoteTest {
         assertThat(credit("PER_DAY", "40", "100", "2026-12-01", "2026-12-10", "2026-12-03")).isEqualByComparingTo("0.00");
         assertThat(credit("PER_DAY", "40", "500", "2026-12-01", "2026-12-10", "2026-11-30")).isEqualByComparingTo("500.00");
     }
+
+    /** A month-end start clamps (31 Mar - 1 month = 28 Feb): one whole month to 27 Mar, then 4 days at 300/31. */
+    @Test void releaseFromAClampedMonthEndStart() {
+        assertThat(credit("PER_MONTH", "300", "600", "2027-02-28", "2027-04-27", "2027-03-31")).isEqualByComparingTo("261.29");
+    }
+
+    /**
+     * The golden release scenario on every calendar day of 2026-2028 (month ends and leap
+     * February included): a two-month booking from day d quotes 600, and moved back one month
+     * and released on d it credits 600 less quote(d - 1 month, d), strictly between 0 and 300.
+     */
+    @Test void theGoldenReleaseScenarioHoldsOnEveryDay() {
+        BigDecimal unit = new BigDecimal("300");
+        for (LocalDate d = LocalDate.of(2026, 1, 1); d.isBefore(LocalDate.of(2029, 1, 1)); d = d.plusDays(1)) {
+            assertThat(BookingFeeService.quote("PER_MONTH", unit, d, d.plusMonths(2).minusDays(1), null, null))
+                    .as("fee from " + d).isEqualByComparingTo("600.00");
+            LocalDate start = d.minusMonths(1);
+            BigDecimal credit = BookingFeeService.creditForRelease("PER_MONTH", unit, new BigDecimal("600.00"), start,
+                    start.plusMonths(2).minusDays(1), d);
+            assertThat(credit).as("credit on " + d)
+                    .isEqualByComparingTo(new BigDecimal("600.00").subtract(BookingFeeService.quote("PER_MONTH", unit, start, d, null, null)))
+                    .isPositive().isLessThan(unit);
+        }
+    }
 }

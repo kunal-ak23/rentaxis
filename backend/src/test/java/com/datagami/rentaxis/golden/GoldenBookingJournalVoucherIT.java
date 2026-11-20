@@ -44,11 +44,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -430,19 +428,34 @@ class GoldenBookingJournalVoucherIT extends AbstractPostgresIT {
         ParkingSpot spot = bay(bayNumber, "PER_MONTH", "300", null);
         BookingRequest b = approve(bookParking(spot, today, today.plusMonths(2).minusDays(1)));
         assertThat(b.getFeeAmount()).isEqualByComparingTo("600.00");
-        LocalDate start = today.minusMonths(1);
         assertThat(jdbc.update("update booking_requests set preferred_date = ?, preferred_end_date = ? where id = ?",
-                start, start.plusMonths(2).minusDays(1), b.getId())).isOne();
+                movedStart(), movedEnd(), b.getId())).isOne();
         return b;
     }
 
-    /** For {@link #approvedAMonthAgo}: 600 less one whole month and the days of the next used up to today. */
+    /** {@link #approvedAMonthAgo}'s dates after the move (month-end days clamp, as {@code plusMonths} does). */
+    private LocalDate movedStart() {
+        return today.minusMonths(1);
+    }
+
+    private LocalDate movedEnd() {
+        return movedStart().plusMonths(2).minusDays(1);
+    }
+
+    /**
+     * For {@link #approvedAMonthAgo} released today: 600 less the used part, the used part
+     * being the production {@code quote} from the moved start to today (the same maths as at
+     * approval, so no calendar day — the 29th to the 31st included — can make the two disagree).
+     * Cross-checked against {@code creditForRelease}, and inside (0, 300): one whole month and
+     * at least the release day are used, never the whole second month.
+     */
     private BigDecimal expectedCredit() {
-        LocalDate rest = today.minusMonths(1).plusMonths(1);
-        long days = ChronoUnit.DAYS.between(rest, today) + 1;
-        BigDecimal used = new BigDecimal("300").add(new BigDecimal(300 * days)
-                .divide(BigDecimal.valueOf(rest.lengthOfMonth()), 2, RoundingMode.HALF_UP));
-        return new BigDecimal("600.00").subtract(used);
+        BigDecimal used = BookingFeeService.quote("PER_MONTH", new BigDecimal("300"), movedStart(), today, null, null);
+        BigDecimal credit = new BigDecimal("600.00").subtract(used);
+        assertThat(credit).isEqualByComparingTo(BookingFeeService.creditForRelease("PER_MONTH", new BigDecimal("300"),
+                new BigDecimal("600.00"), movedStart(), movedEnd(), today));
+        assertThat(credit).isPositive().isLessThan(new BigDecimal("300"));
+        return credit;
     }
 
     private BookingRequest release(BookingRequest b) {
@@ -553,6 +566,34 @@ class GoldenBookingJournalVoucherIT extends AbstractPostgresIT {
         assertThat(credited == null || credited.signum() == 0).as("credited_amount null or 0").isTrue();
         assertThat(jdbc.queryForObject("select amount from cheques where penalty_assessment_id = ?", BigDecimal.class,
                 chargeId)).isEqualByComparingTo(rowBefore);
+        assertThat(creditNotes()).isZero();
+    }
+
+    /**
+     * Spec §5 (controller ruling): before its start date a parking booking is cancelled by
+     * the office, never released — a renter cannot credit back a paid fee alone. Paid here,
+     * released by the renter and by staff: both refused, nothing posted.
+     */
+    @Test
+    void releaseBeforeStartIsRefused() {
+        ParkingSpot spot = bay("P-89", "PER_MONTH", "300", null);
+        BookingRequest b = bookParking(spot, twoMonthsFrom(), twoMonthsTo());
+        UUID chargeId = approve(b).getChargeId();
+        UUID row = collectionRowOf(chargeId);
+        chequeService.receive(row, com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest.on(today));
+
+        for (boolean admin : List.of(false, true)) {
+            UUID actor = admin ? UUID.randomUUID() : renterUser;
+            assertThatThrownBy(() -> tx.execute(s -> bookings.release(fixtures.tenantId(), b.getId(), actor, admin)))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                    .isEqualTo("booking.releaseBeforeStart");
+        }
+        assertThat(jdbc.queryForObject("select status from booking_requests where id = ?", String.class, b.getId()))
+                .isEqualTo("APPROVED");
+        assertThat(traceOf(chargeId)).as("no journal").hasSize(1);
+        assertThat(jdbc.queryForObject("select credited_amount from penalty_assessments where id = ?", BigDecimal.class,
+                chargeId)).isNull();
         assertThat(creditNotes()).isZero();
     }
 
