@@ -124,7 +124,7 @@ describe("renter combined receipt", () => {
         const select = screen.getByTestId("combined-receipt-contract") as HTMLSelectElement;
         // Default: the lease of the most recent cleared row.
         expect(select.value).toBe("l2");
-        expect(screen.getByRole("option", { name: "Marina · B-2" })).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /^Marina · B-2 · / })).toBeInTheDocument();
         expect(screen.queryByTestId("receipt-select-a1")).not.toBeInTheDocument();
         tick("b1");
         fireEvent.change(select, { target: { value: "l1" } });
@@ -133,6 +133,22 @@ describe("renter combined receipt", () => {
         tick("a2");
         fireEvent.click(screen.getByTestId("combined-receipt-download"));
         await waitFor(() => expect(api.combinedReceipt).toHaveBeenCalledWith(["a2"]));
+    });
+
+    it("two leases of one unit (a renewal) get distinct contract labels", async () => {
+        api.myPayments.mockResolvedValue([
+            row({ id: "o1", leaseId: "old", dueDate: "2025-01-01", propertyName: "Vista", unitIdentifier: "A-1" }),
+            row({ id: "o2", leaseId: "old", dueDate: "2025-06-01", propertyName: "Vista", unitIdentifier: "A-1" }),
+            row({ id: "n1", leaseId: "new", dueDate: "2026-01-01", propertyName: "Vista", unitIdentifier: "A-1" }),
+            row({ id: "n2", leaseId: "new", dueDate: "2026-06-01", propertyName: "Vista", unitIdentifier: "A-1" }),
+        ]);
+        renderPage();
+        const select = await screen.findByTestId("combined-receipt-contract");
+        const labels = Array.from(select.querySelectorAll("option")).map(o => o.textContent);
+        expect(labels).toHaveLength(2);
+        expect(new Set(labels).size).toBe(2);
+        expect(labels[0]).toContain("2025");
+        expect(labels[1]).toContain("2026");
     });
 
     it("server refusal shows the message and keeps ticks", async () => {
@@ -148,6 +164,18 @@ describe("renter combined receipt", () => {
         expect(await screen.findByText("Receipt can only be generated for cleared payments")).toBeInTheDocument();
         expect(screen.getByTestId("receipt-select-a")).toBeChecked();
         expect(api.saveResponse).not.toHaveBeenCalled();
+    });
+
+    it("ticking a row clears a previous error", async () => {
+        api.combinedReceipt.mockResolvedValue({ ok: false, json: async () => ({ message: "Nope" }) });
+        api.myPayments.mockResolvedValue([row({ id: "a" }), row({ id: "b", dueDate: "2026-07-01" })]);
+        renderPage();
+        await screen.findByTestId("receipt-select-a");
+        tick("a");
+        fireEvent.click(screen.getByTestId("combined-receipt-download"));
+        await screen.findByText("Nope");
+        tick("b");
+        expect(screen.queryByText("Nope")).not.toBeInTheDocument();
     });
 
     it("disables the download above 100 and says why", async () => {

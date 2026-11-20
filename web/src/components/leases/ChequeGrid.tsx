@@ -596,7 +596,7 @@ export default function ChequeGrid({
                         {yearOptions.map(y => <option key={y} value={String(y)}>{y}</option>)}
                     </select>
                     {overLimit && (
-                        <span className="text-danger" data-testid="combined-receipt-limit">
+                        <span className="text-error" data-testid="combined-receipt-limit">
                             {tc("combinedReceiptLimit", { max: MAX_COMBINED_RECEIPTS })}
                         </span>
                     )}

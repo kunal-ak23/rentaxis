@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { Download, Loader2 } from "lucide-react";
 import { chequeApi, type RenterCheque } from "@/lib/api/leasing";
 import { saveResponse } from "@/lib/download";
@@ -48,12 +49,19 @@ export function useReceiptPicker(rows: RenterCheque[], failedMessage: string): R
     const [year, setYear] = useState("");
     const [combining, setCombining] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const locale = useLocale();
 
     const receiptable = rows.filter(isReceiptable);
     const contracts: { leaseId: string; label: string }[] = [];
     for (const r of receiptable) {
         if (!contracts.some(c => c.leaseId === r.leaseId)) {
-            contracts.push({ leaseId: r.leaseId, label: [r.propertyName, r.unitIdentifier].filter(Boolean).join(" · ") });
+            // The date span tells two leases of one unit (a renewal) apart.
+            const dates = receiptable.filter(x => x.leaseId === r.leaseId).map(x => x.dueDate).sort();
+            const span = `${fmtIsoDate(dates[0], locale)} – ${fmtIsoDate(dates[dates.length - 1], locale)}`;
+            contracts.push({
+                leaseId: r.leaseId,
+                label: [r.propertyName, r.unitIdentifier, span].filter(Boolean).join(" · "),
+            });
         }
     }
     // Default: the contract of the most recent cleared row.
@@ -93,10 +101,13 @@ export function useReceiptPicker(rows: RenterCheque[], failedMessage: string): R
             setError(null);
         },
         toggle: id => {
-            const next = new Set(picked);
-            if (next.has(id)) next.delete(id); else next.add(id);
-            setPicked(next);
+            setPicked(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                return next;
+            });
             setYear("");
+            setError(null);
         },
         download: async () => {
             if (pickedIds.length === 0 || pickedIds.length > MAX_COMBINED_RECEIPTS) return;
