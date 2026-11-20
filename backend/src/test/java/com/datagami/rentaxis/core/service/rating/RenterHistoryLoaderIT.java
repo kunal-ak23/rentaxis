@@ -84,7 +84,7 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
     }
 
     private record Seeded(UUID tenantId, UUID renterId, UUID leaseId, UUID chequeId, UUID penaltyId,
-                          UUID writeOffId, UUID meetingId) {}
+                          UUID writeOffId, UUID meetingId, UUID opportunityId) {}
 
     private Seeded seedFull(LeaseTestFixtures f) {
         UUID tenantId = f.tenantId();
@@ -119,7 +119,14 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
                 meetingId, tenantId,
                 java.sql.Timestamp.from(Instant.parse("2026-11-05T08:00:00Z")),
                 java.sql.Timestamp.from(Instant.parse("2026-11-05T09:00:00Z")), host, host, leaseId);
-        return new Seeded(tenantId, renterId, leaseId, chequeId, penaltyId, writeOffId, meetingId);
+        UUID opportunityId = UUID.randomUUID();
+        jdbc.update("insert into renewal_opportunities (id, tenant_id, lease_id, stage, intent, intent_captured_at, "
+                        + "opened_at, closed_at, outcome) values (?,?,?, 'CLOSED_WON', 'RENEW', ?, ?, ?, 'RENEWED')",
+                opportunityId, tenantId, leaseId,
+                java.sql.Timestamp.from(Instant.parse("2026-10-12T08:00:00Z")),
+                java.sql.Timestamp.from(Instant.parse("2026-10-01T08:00:00Z")),
+                java.sql.Timestamp.from(Instant.parse("2026-10-15T08:00:00Z")));
+        return new Seeded(tenantId, renterId, leaseId, chequeId, penaltyId, writeOffId, meetingId, opportunityId);
     }
 
     @Test
@@ -138,8 +145,23 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
         assertThat(h.writeOffs()).extracting(RenterHistory.WriteOffRow::id).containsExactly(s.writeOffId());
         assertThat(h.leaseEvents()).extracting(RenterHistory.LeaseEventRow::newState).contains("ON_HOLD");
         assertThat(h.leaseEvents()).allMatch(e -> e.leaseId().equals(s.leaseId()));
+        assertThat(h.opportunities()).extracting(RenterHistory.OpportunityRow::id).containsExactly(s.opportunityId());
         assertThat(h.meetings()).extracting(RenterHistory.MeetingRow::id).containsExactly(s.meetingId());
         assertThat(h.adjustments()).isEmpty();
+    }
+
+    @Test
+    void importedClearedOnUsedWhenClearedAtIsNull() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLeaseId(f);
+        UUID chequeId = chequeIds(f.tenantId(), leaseId).get(0);
+        jdbc.update("update cheques set status = 'CLEARED', cleared_at = null, imported_cleared_on = ? where id = ?",
+                LocalDate.of(2026, 10, 3), chequeId);
+
+        RenterHistory h = loader.load(f.tenantId(), List.of(f.renter().getId()), SINCE).get(f.renter().getId());
+
+        RenterHistory.ChequeRow row = h.cheques().stream().filter(c -> c.id().equals(chequeId)).findFirst().orElseThrow();
+        assertThat(row.clearedAt()).isEqualTo(LocalDate.of(2026, 10, 3));
     }
 
     @Test
@@ -148,7 +170,12 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
         Seeded b = seedFull(newOrgFixtures());
 
         Map<UUID, RenterHistory> underA = loader.load(a.tenantId(), List.of(a.renterId(), b.renterId()), SINCE);
-        assertThat(underA.get(a.renterId()).leases()).hasSize(1);
+        RenterHistory home = underA.get(a.renterId());
+        assertThat(home.leases()).extracting(RenterHistory.LeaseRow::id).containsExactly(a.leaseId());
+        assertThat(home.leaseEvents()).isNotEmpty().allMatch(e -> e.leaseId().equals(a.leaseId()));
+        assertThat(home.opportunities()).extracting(RenterHistory.OpportunityRow::id)
+                .containsExactly(a.opportunityId());
+        assertThat(home.meetings()).extracting(RenterHistory.MeetingRow::id).containsExactly(a.meetingId());
         RenterHistory leak = underA.get(b.renterId());
         assertThat(leak).isNotNull();
         assertThat(leak.leases()).isEmpty();
