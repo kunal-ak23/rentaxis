@@ -86,7 +86,7 @@ public class TenantFeatureService {
             case GATEPASS -> "Gate Passes & Security";
             case MOBILE_FINANCE -> "Mobile finance screens";
             case WORKSPACE_TABS -> "Workspace tabs (web)";
-            case RENTER_RATING -> "Renter Rating (premium)";
+            case RENTER_RATING -> "Tenant Rating (premium)";
         };
     }
 }

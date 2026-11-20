@@ -1,6 +1,6 @@
 # Renter Rating (premium, feature RENTER_RATING): stored rating per renter, month-end
 # snapshots for the trend, and audited manual adjustments (spec 2026-11-20-renter-rating-design.md 6.2).
-# Every table is tenant-scoped; renter_id cascades with the renter.
+# Every table is tenant-scoped; renter_id cascades with the renter for ratings and snapshots; adjustments are an audit trail and block renter deletion.
 databaseChangeLog:
   - changeSet:
       id: 190-renter-rating
@@ -36,7 +36,7 @@ databaseChangeLog:
             columns:
               - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_renter_rating_adjustments, nullable: false } }
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_rating_adjustments_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
-              - column: { name: renter_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_rating_adjustments_renter, referencedTableName: renters, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: renter_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_rating_adjustments_renter, referencedTableName: renters, referencedColumnNames: id } }
               - column: { name: points, type: int, constraints: { nullable: false } }
               - column: { name: reason, type: varchar(500), constraints: { nullable: false } }
               - column: { name: created_by, type: uuid, constraints: { nullable: false } }

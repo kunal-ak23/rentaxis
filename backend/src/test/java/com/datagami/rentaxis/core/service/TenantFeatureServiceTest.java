@@ -127,10 +127,16 @@ class TenantFeatureServiceTest {
         List<FeatureToggleDTO> result = service.getAll(tenantId);
         assertThat(result.stream().filter(f -> f.feature() == TenantFeature.LEASE_RENEWALS).findFirst().orElseThrow()
                 .label()).isEqualTo("Contract Renewals & Reminders");
-        // RENTER_RATING is a product name fixed by the spec ("Renter Rating (premium)"), so it is exempt.
-        assertThat(result).filteredOn(f -> f.feature() != TenantFeature.RENTER_RATING)
-                .allSatisfy(f -> assertThat(f.label()).doesNotContainIgnoringCase("lease")
-                        .doesNotContainIgnoringCase("renter"));
+        assertThat(result).allSatisfy(f -> assertThat(f.label()).doesNotContainIgnoringCase("lease")
+                .doesNotContainIgnoringCase("renter"));
+    }
+
+    @Test
+    void setEnabled_publishesToggledEvent() {
+        service.setEnabled(tenantId, TenantFeature.RENTER_RATING, true);
+
+        verify(repository).upsert(tenantId, "RENTER_RATING", true);
+        verify(events).publishEvent(new TenantFeatureToggledEvent(tenantId, TenantFeature.RENTER_RATING, true));
     }
 
     @Test
