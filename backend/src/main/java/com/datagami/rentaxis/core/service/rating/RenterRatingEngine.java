@@ -118,7 +118,8 @@ public final class RenterRatingEngine {
                             o.leaseId(), null, null, today);
                 }
             }
-            if (o.outcome() == RenewalOutcome.EXPIRED_NO_RESPONSE && o.closedAt() != null) {
+            if (o.outcome() == RenewalOutcome.EXPIRED_NO_RESPONSE && o.closedAt() != null
+                    && !respondedOrRenewed(leaseById.get(o.leaseId()), h.leases(), today)) {
                 add(raw, RatingEventType.NO_RESPONSE, toDate(o.closedAt()), NO_RESPONSE_POINTS, "OPPORTUNITY",
                         o.id(), o.leaseId(), null, null, today);
             }
@@ -155,6 +156,19 @@ public final class RenterRatingEngine {
         RatingGrade grade = (thin && deductions == 0 && !hasAdjustment) ? RatingGrade.NEW : gradeFor(score);
 
         return new RenterRatingResult(h.renterId(), score, grade, deductions, List.copyOf(events));
+    }
+
+    /**
+     * Round 3 I1: the renewal sweep closes an opportunity EXPIRED_NO_RESPONSE whenever its lease is no longer
+     * ACTIVE and no intent was captured. That also catches a renter who gave notice, and one whose lease sat
+     * ON_HOLD for a few days and then renewed. Neither failed to respond, so NO_RESPONSE is skipped when the
+     * lease has a notice date, is RENEWED, or is renewed by a started lease (renewed_from_lease_id).
+     */
+    private static boolean respondedOrRenewed(LeaseRow lease, List<LeaseRow> all, LocalDate today) {
+        if (lease.noticeDate() != null || lease.status() == LeaseStatus.RENEWED) return true;
+        return all.stream().anyMatch(n -> lease.id().equals(n.renewedFromLeaseId())
+                && n.status() != LeaseStatus.DRAFT && n.status() != LeaseStatus.PENDING_SIGNATURE
+                && n.startDate() != null && !n.startDate().isAfter(today));
     }
 
     /** A penalty on one of the started leases, with an incident date, APPROVED or WRITTEN_OFF. */

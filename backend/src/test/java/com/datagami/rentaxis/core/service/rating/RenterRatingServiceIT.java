@@ -78,6 +78,7 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
     @Autowired TransactionTemplate tx;
     @Autowired RenewalMarkService renewalMarks;
     @Autowired RenterHistoryLoader loader;
+    @Autowired com.datagami.rentaxis.core.service.renewal.RenewalOpportunityService renewals;
 
     private int seq;
 
@@ -270,6 +271,30 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
         assertThat(d.events()).noneMatch(e -> e.type() == RatingEventType.LATE_CLEAR
                 || e.type() == RatingEventType.ON_TIME_CHEQUE);
         assertThat(d.score()).isEqualTo(70);
+    }
+
+    /**
+     * Round 3 I1, through the real path: LeaseService.giveNotice moves the lease to NOTICE_GIVEN, then the renewal
+     * sweep (RenewalOpportunityService.closeStaleOpportunitiesForCurrentTenant) closes its open opportunity
+     * EXPIRED_NO_RESPONSE because no intent was captured. Giving notice is a response: no NO_RESPONSE -5.
+     */
+    @Test
+    void noticeGivenThenSweptIsNotANoResponse() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        LocalDate now = LocalDate.now(com.datagami.rentaxis.config.AppTimeZone.DEFAULT);
+        // the contract ends 2027-10-01; open its renewal opportunity as the sweep would inside the 90-day window
+        assertThat(renewals.openOpportunitiesForCurrentTenant(LocalDate.of(2027, 7, 15))).isEqualTo(1);
+
+        leaseService.giveNotice(leaseId, "Moving out at the end of the contract",
+                TestIdentities.user(userRepo, UserRole.TENANT_ADMIN, f.tenantId()));
+        assertThat(renewals.closeStaleOpportunitiesForCurrentTenant()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select outcome from renewal_opportunities where lease_id = ?",
+                String.class, leaseId)).isEqualTo("EXPIRED_NO_RESPONSE");
+
+        RenterRatingDetailDTO d = service.live(f.tenantId(), f.renter().getId(), now);
+
+        assertThat(d.events()).noneMatch(e -> e.type() == RatingEventType.NO_RESPONSE);
     }
 
     @Test

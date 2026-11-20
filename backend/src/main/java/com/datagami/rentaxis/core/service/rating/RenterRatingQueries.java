@@ -28,9 +28,9 @@ class RenterRatingQueries {
     @PersistenceContext
     private EntityManager em;
 
-    /** id, renter_id, status, start_date, end_date, renewed_from_lease_id. Whole history, not date-bounded. */
+    /** id, renter_id, status, start_date, end_date, renewed_from_lease_id, notice_date. Whole history, not date-bounded. */
     List<Object[]> leases(UUID tenantId, Collection<UUID> renterIds) {
-        return rows("select l.id, l.renter_id, l.status, l.start_date, l.end_date, l.renewed_from_lease_id "
+        return rows("select l.id, l.renter_id, l.status, l.start_date, l.end_date, l.renewed_from_lease_id, l.notice_date "
                         + "from leases l where l.tenant_id = :tenantId and l.renter_id in (:renterIds)",
                 tenantId, renterIds, null);
     }

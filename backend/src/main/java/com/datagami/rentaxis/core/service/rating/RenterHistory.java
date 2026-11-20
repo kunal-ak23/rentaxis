@@ -22,7 +22,7 @@ public record RenterHistory(UUID renterId,
                             List<AdjustmentRow> adjustments) {
 
     public record LeaseRow(UUID id, LeaseStatus status, LocalDate startDate, LocalDate endDate,
-                           UUID renewedFromLeaseId) {}
+                           UUID renewedFromLeaseId, LocalDate noticeDate) {}
 
     public record ChequeRow(UUID id, UUID leaseId, ChequeStatus status, LocalDate chequeDate, LocalDate clearedAt,
                             LocalDate bouncedAt, LocalDate importedBouncedOn, ChequeFailureReason failureReason) {}

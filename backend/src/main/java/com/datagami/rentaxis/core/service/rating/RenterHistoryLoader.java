@@ -63,7 +63,8 @@ public class RenterHistoryLoader {
             Instant eventsSince = since.minusDays(HOLD_MARGIN_DAYS).atStartOfDay(AppTimeZone.DEFAULT).toInstant();
 
             Map<UUID, List<LeaseRow>> leases = group(queries.leases(tenantId, ids), r -> new LeaseRow(
-                    uuid(r[0]), LeaseStatus.valueOf((String) r[2]), date(r[3]), date(r[4]), uuid(r[5])));
+                    uuid(r[0]), LeaseStatus.valueOf((String) r[2]), date(r[3]), date(r[4]), uuid(r[5]),
+                    date(r[6])));
             Map<UUID, List<ChequeRow>> cheques = group(queries.cheques(tenantId, ids, since), r -> new ChequeRow(
                     uuid(r[0]), uuid(r[2]), ChequeStatus.valueOf((String) r[3]), date(r[4]), date(r[5]),
                     date(r[6]), date(r[7]), r[8] == null ? null : ChequeFailureReason.valueOf((String) r[8])));

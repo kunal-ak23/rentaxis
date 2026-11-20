@@ -34,7 +34,7 @@ class RenterRatingEngineTest {
         UUID lease = UUID.randomUUID();
 
         H lease(LocalDate start, LocalDate end) {
-            leases.add(new LeaseRow(lease, LeaseStatus.ACTIVE, start, end, null));
+            leases.add(new LeaseRow(lease, LeaseStatus.ACTIVE, start, end, null, null));
             return this;
         }
         H lease13() { return lease(TODAY.minusMonths(13), TODAY.plusMonths(2)); }
@@ -234,7 +234,7 @@ class RenterRatingEngineTest {
         // a posted renewal that starts next month: no credit yet
         H h = history().lease13();
         h.leases.add(new LeaseRow(UUID.randomUUID(), LeaseStatus.ACTIVE, TODAY.plusMonths(1), TODAY.plusMonths(13),
-                h.lease));
+                h.lease, null));
         RenterRatingResult r = h.run();
         assertThat(of(r, RatingEventType.RENEWAL)).isEmpty();
         assertThat(r.score()).isEqualTo(70);
@@ -242,7 +242,7 @@ class RenterRatingEngineTest {
         // the same renewal once it has started is credited
         H started = history().lease13();
         started.leases.add(new LeaseRow(UUID.randomUUID(), LeaseStatus.ACTIVE, TODAY, TODAY.plusMonths(12),
-                started.lease));
+                started.lease, null));
         assertThat(of(started.run(), RatingEventType.RENEWAL)).singleElement()
                 .extracting(RatingEvent::appliedPoints).isEqualTo(5.0);
     }
@@ -361,6 +361,53 @@ class RenterRatingEngineTest {
                 .isEqualTo(-5.0);
     }
 
+    /**
+     * Round 3 I1: the renewal sweep closes an opportunity EXPIRED_NO_RESPONSE whenever its lease is no longer
+     * ACTIVE and no intent was captured, so a renter who gave notice gets that outcome too. Notice is an answer.
+     */
+    @Test
+    void noticeGivenGivesNoNoResponse() {
+        H h = history();
+        h.leases.add(new LeaseRow(h.lease, LeaseStatus.NOTICE_GIVEN, TODAY.minusMonths(13), TODAY.plusMonths(2),
+                null, TODAY.minusDays(12)));
+        RenterRatingResult r = h.opp(null, null, RenewalOutcome.EXPIRED_NO_RESPONSE, TODAY.minusDays(10)).run();
+        assertThat(of(r, RatingEventType.NO_RESPONSE)).isEmpty();
+    }
+
+    /**
+     * Round 3 I1: the sweep ran while the lease sat ON_HOLD for a few days (not ACTIVE, no intent), then the renter
+     * renewed. Either sign of the renewal clears the -5: a started successor naming the lease, or the lease RENEWED.
+     */
+    @Test
+    void renewedAfterAShortHoldGivesNoNoResponse() {
+        LocalDate x = TODAY.minusMonths(3);
+        H successor = history().lease(TODAY.minusMonths(13), TODAY.minusMonths(1)).hold(x, x.plusDays(5))
+                .opp(null, null, RenewalOutcome.EXPIRED_NO_RESPONSE, x.plusDays(2));
+        successor.leases.add(new LeaseRow(UUID.randomUUID(), LeaseStatus.ACTIVE, TODAY.minusMonths(1),
+                TODAY.plusMonths(11), successor.lease, null));
+        assertThat(of(successor.run(), RatingEventType.NO_RESPONSE)).isEmpty();
+
+        H renewed = history();
+        renewed.leases.add(new LeaseRow(renewed.lease, LeaseStatus.RENEWED, TODAY.minusMonths(13),
+                TODAY.minusMonths(1), null, null));
+        renewed.hold(x, x.plusDays(5)).opp(null, null, RenewalOutcome.EXPIRED_NO_RESPONSE, x.plusDays(2));
+        assertThat(of(renewed.run(), RatingEventType.NO_RESPONSE)).isEmpty();
+    }
+
+    /** Round 3 I1: the case the -5 is for still scores - expired, no intent, no notice, no renewal. */
+    @Test
+    void genuineExpiryWithNoAnswerStillMinus5() {
+        H h = history();
+        h.leases.add(new LeaseRow(h.lease, LeaseStatus.EXPIRED, TODAY.minusMonths(13), TODAY.minusDays(10),
+                null, null));
+        // a successor that has not started yet is not a renewal
+        h.leases.add(new LeaseRow(UUID.randomUUID(), LeaseStatus.ACTIVE, TODAY.plusDays(5), TODAY.plusMonths(12),
+                h.lease, null));
+        RenterRatingResult r = h.opp(null, null, RenewalOutcome.EXPIRED_NO_RESPONSE, TODAY.minusDays(9)).run();
+        assertThat(of(r, RatingEventType.NO_RESPONSE)).singleElement().extracting(RatingEvent::appliedPoints)
+                .isEqualTo(-5.0);
+    }
+
     @Test
     void leaseLinkedNoShowMinus5AndUnlinkedIgnored() {
         H h = history().lease13();
@@ -380,7 +427,7 @@ class RenterRatingEngineTest {
         for (int i = 0; i < 3; i++) {
             UUID next = UUID.randomUUID();
             h.leases.add(new LeaseRow(next, LeaseStatus.ACTIVE, TODAY.minusMonths(10 - i * 2), TODAY.plusMonths(1),
-                    prev));
+                    prev, null));
             prev = next;
         }
         RenterRatingResult r = h.run();
@@ -424,7 +471,7 @@ class RenterRatingEngineTest {
     @Test
     void draftLeaseIgnored() {
         H h = history();
-        h.leases.add(new LeaseRow(h.lease, LeaseStatus.DRAFT, TODAY.minusMonths(13), TODAY.plusMonths(2), null));
+        h.leases.add(new LeaseRow(h.lease, LeaseStatus.DRAFT, TODAY.minusMonths(13), TODAY.plusMonths(2), null, null));
         h.onTime(5);
         RenterRatingResult r = h.run();
         assertThat(r.grade()).isEqualTo(RatingGrade.NEW);
@@ -460,7 +507,7 @@ class RenterRatingEngineTest {
         UUID prev = high.lease;
         for (int i = 0; i < 3; i++) {
             UUID next = UUID.randomUUID();
-            high.leases.add(new LeaseRow(next, LeaseStatus.ACTIVE, TODAY.minusMonths(10 - i), TODAY.plusMonths(1), prev));
+            high.leases.add(new LeaseRow(next, LeaseStatus.ACTIVE, TODAY.minusMonths(10 - i), TODAY.plusMonths(1), prev, null));
             prev = next;
         }
         for (int i = 0; i < 3; i++) {
@@ -500,7 +547,7 @@ class RenterRatingEngineTest {
     void renewalFromForeignLeaseNotCredited() {
         H h = history().lease13();
         h.leases.add(new LeaseRow(UUID.randomUUID(), LeaseStatus.ACTIVE, TODAY.minusMonths(3), TODAY.plusMonths(9),
-                UUID.randomUUID()));
+                UUID.randomUUID(), null));
         assertThat(of(h.run(), RatingEventType.RENEWAL)).isEmpty();
     }
 
