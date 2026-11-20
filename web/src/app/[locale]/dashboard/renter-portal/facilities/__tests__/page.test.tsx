@@ -35,6 +35,7 @@ const api = vi.hoisted(() => ({
     createBooking: vi.fn(),
     cancelBooking: vi.fn(),
     releaseBooking: vi.fn(),
+    fetchBookingQuote: vi.fn(),
 }));
 
 // Keep the real ApiError/throwIfNotOk — the page branches on `instanceof ApiError`.
@@ -224,6 +225,26 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         render(<RenterFacilitiesPage />);
         await waitFor(() => expect(screen.getByTestId("amenity-fee-pool")).toHaveTextContent("feePerHour"));
         expect(screen.getByTestId("spot-fee-spot-1")).toHaveTextContent("feeFree");
+    });
+
+    /** Spec 2026-11-19 §1: the fee shown in the request dialog is the server's quote, not an on-device guess. */
+    it("shows the server's quote for the chosen dates, not the bay's fee amount", async () => {
+        api.fetchMyFacilities.mockResolvedValue({
+            ...facilitiesWithSpot(false),
+            parkingSpots: [{ ...facilitiesWithSpot(false).parkingSpots[0], feeType: "PER_MONTH", feeAmount: 300 }],
+        } as unknown as MyFacilitiesDTO);
+        api.fetchMyBookings.mockResolvedValue([]);
+        api.fetchBookingQuote.mockResolvedValue({ feeType: "PER_MONTH", unitAmount: 300, net: 600, vat: 30, total: 630 });
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByText("available")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        fireEvent.change(await screen.findByTestId("request-start-date"), { target: { value: "2099-12-01" } });
+        fireEvent.change(screen.getByTestId("request-end-date"), { target: { value: "2100-01-31" } });
+        await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("630.00"));
+        expect(api.fetchBookingQuote).toHaveBeenLastCalledWith(expect.objectContaining({
+            resourceType: "PARKING_SPOT", resourceId: "spot-1", start: "2099-12-01", end: "2100-01-31",
+        }));
+        expect(screen.getByTestId("request-quote-total")).not.toHaveTextContent("300");
     });
 });
 

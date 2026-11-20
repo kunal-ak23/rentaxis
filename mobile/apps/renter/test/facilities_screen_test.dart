@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -135,6 +136,100 @@ void main() {
       'resourceId': 'am-1',
       'unitId': 'unit-1',
       'note': 'Birthday',
+    });
+  });
+
+  group('server booking quote (spec 2026-11-19 §1)', () {
+    final bay = <String, dynamic>{
+      'id': 'spot-1',
+      'propertyId': 'prop-1',
+      'propertyName': 'Marina Heights',
+      'spotNumber': 'P-12',
+      'covered': false,
+      'held': false,
+      'pendingCount': 0,
+      'feeType': 'PER_MONTH',
+      'feeAmount': 300,
+    };
+
+    Future<void> pumpBay(WidgetTester tester, FakeFacilityService fake,
+        {Locale? locale}) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            facilityServiceProvider.overrideWithValue(fake),
+            activeLeasesProvider.overrideWith(
+              (ref) async => [
+                {
+                  'id': 'lease-1',
+                  'unitId': 'unit-1',
+                  'unitIdentifier': '1204',
+                  'propertyId': 'prop-1',
+                  'status': 'ACTIVE',
+                },
+              ],
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            locale: locale,
+            supportedLocales: const [Locale('en'), Locale('ar')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: const FacilitiesScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the request sheet shows the fee the server quoted', (
+      tester,
+    ) async {
+      final fake = FakeFacilityService(parkingSpots: [bay])
+        ..quoteResult = {
+          'feeType': 'PER_MONTH',
+          'unitAmount': 300,
+          'net': 600,
+          'vat': 30,
+          'total': 630,
+        };
+      await pumpBay(tester, fake);
+      await tester.tap(find.text('REQUEST'));
+      // Debounced: the quote is asked 300 ms after the sheet opens or a date changes.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(fake.quoteCalls, isNotEmpty);
+      expect(fake.quoteCalls.last['resourceType'], 'PARKING_SPOT');
+      expect(fake.quoteCalls.last['resourceId'], 'spot-1');
+      // 630.00 is the server's total; the bay's own 300 would be the on-device guess.
+      expect(find.textContaining('630.00'), findsOneWidget);
+    });
+
+    testWidgets('a per-month bay says "per month"', (tester) async {
+      await pumpBay(tester, FakeFacilityService(parkingSpots: [bay]));
+      expect(find.textContaining('per month'), findsOneWidget);
+    });
+
+    testWidgets('a per-month bay says "لكل شهر" in Arabic, per-day "لكل يوم"', (
+      tester,
+    ) async {
+      await pumpBay(
+        tester,
+        FakeFacilityService(
+          parkingSpots: [
+            bay,
+            {...bay, 'id': 'spot-2', 'spotNumber': 'P-13', 'feeType': 'PER_DAY'},
+          ],
+        ),
+        locale: const Locale('ar'),
+      );
+      expect(find.textContaining('لكل شهر'), findsOneWidget);
+      expect(find.textContaining('لكل يوم'), findsOneWidget);
     });
   });
 

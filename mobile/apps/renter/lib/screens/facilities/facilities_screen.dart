@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,7 +32,12 @@ class _L {
   String feeLabel(String? type, num amount) =>
       type == null || type == 'FREE' || amount == 0
       ? (ar ? 'مجاني' : 'Free')
-      : '${Formatters.currency(amount)} ${type == 'PER_HOUR' ? (ar ? 'لكل ساعة' : 'per hour') : (ar ? 'لكل حجز' : 'per booking')}';
+      : '${Formatters.currency(amount)} ${switch (type) {
+          'PER_HOUR' => ar ? 'لكل ساعة' : 'per hour',
+          'PER_DAY' => ar ? 'لكل يوم' : 'per day',
+          'PER_MONTH' => ar ? 'لكل شهر' : 'per month',
+          _ => ar ? 'لكل حجز' : 'per booking',
+        }}';
   String get feeDateRequired => ar
       ? 'اختر تاريخاً لهذا الحجز المدفوع'
       : 'Choose a date for this paid booking';
@@ -842,24 +849,72 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
   TimeOfDay? _preferredEndTime;
   String? _selectedUnitId;
   bool _submitting = false;
+  Map<String, dynamic>? _quote;
+  bool _quoteFailed = false;
+  int _quoteTicket = 0;
+  Timer? _quoteTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_paid) {
+      _quoteTimer = Timer(const Duration(milliseconds: 300), _fetchQuote);
+    }
+  }
 
   @override
   void dispose() {
+    _quoteTimer?.cancel();
     _noteCtrl.dispose();
     super.dispose();
   }
 
-  num _quotedFee() {
-    if (widget.feeType == 'FREE') return 0;
-    if (widget.feeType != 'PER_HOUR') return widget.feeAmount;
+  bool get _paid => widget.feeType != 'FREE' && widget.feeAmount > 0;
+
+  /// The server's quote for the dates chosen (the day and month maths and the
+  /// VAT live there only). Asked 300 ms after the sheet opens or an input
+  /// changes, so a run of taps asks once.
+  void _scheduleQuote() {
+    if (!_paid) return;
+    _quoteTimer?.cancel();
+    setState(() => _quoteFailed = false);
+    _quoteTimer = Timer(const Duration(milliseconds: 300), _fetchQuote);
+  }
+
+  Future<void> _fetchQuote() async {
+    final isParking = widget.resourceType == 'PARKING_SPOT';
     final start = _preferredStartTime;
     final end = _preferredEndTime;
-    final minutes = start != null && end != null
-        ? (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
-        : 60;
-    // Match the server's four-decimal hour rounding before currency rounding.
-    final hours = ((minutes > 0 ? minutes / 60 : 1) * 10000).round() / 10000;
-    return (widget.feeAmount * hours * 100).round() / 100;
+    final ticket = ++_quoteTicket;
+    try {
+      final q = await ref
+          .read(facilityServiceProvider)
+          .quote(
+            resourceType: widget.resourceType,
+            resourceId: widget.resourceId,
+            start: _preferredDate == null ? null : _localDate(_preferredDate!),
+            end: isParking && _preferredEndDate != null
+                ? _localDate(_preferredEndDate!)
+                : null,
+            from: !isParking && start != null && end != null
+                ? _localTime(start)
+                : null,
+            to: !isParking && start != null && end != null
+                ? _localTime(end)
+                : null,
+          );
+      if (!mounted || ticket != _quoteTicket) return;
+      setState(() {
+        _quote = q;
+        _quoteFailed = false;
+      });
+    } catch (_) {
+      if (!mounted || ticket != _quoteTicket) return;
+      setState(() {
+        _quote = null;
+        _quoteFailed = true;
+      });
+    }
   }
 
   Future<void> _submit() async {
@@ -969,6 +1024,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
           }
         }
       });
+      _scheduleQuote();
     }
   }
 
@@ -1079,9 +1135,25 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                               ? 'تضاف الضريبة عند تطبيقها. تُحصّل الرسوم بعد موافقة الإدارة.'
                               : 'VAT applies where applicable. The fee is charged after management approval.',
                         ),
-                        Text(
-                          '${l.ar ? 'الرسوم المقدرة قبل الضريبة' : 'Estimated fee before VAT'}: ${Formatters.currency(_quotedFee())}',
-                        ),
+                        if (_quote != null) ...[
+                          Text(
+                            '${l.ar ? 'الرسوم لهذه التواريخ' : 'Fee for these dates'}: ${Formatters.currency(num.parse(_quote!['total'].toString()))}',
+                            key: const Key('booking-quote-total'),
+                          ),
+                          if (num.parse(_quote!['vat'].toString()) > 0)
+                            Text(
+                              '${Formatters.currency(num.parse(_quote!['net'].toString()))} + ${Formatters.currency(num.parse(_quote!['vat'].toString()))} ${l.ar ? 'ضريبة' : 'VAT'}',
+                            ),
+                        ] else
+                          Text(
+                            _quoteFailed
+                                ? (l.ar
+                                      ? 'تعذّر احتساب الرسوم. ستُحتسب عند الموافقة على الحجز.'
+                                      : 'The fee could not be worked out. It is charged when the booking is approved.')
+                                : (l.ar
+                                      ? 'جارٍ احتساب الرسوم...'
+                                      : 'Working out the fee...'),
+                          ),
                       ],
                       const SizedBox(height: 16),
                       Text(
@@ -1184,6 +1256,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                                     setState(
                                       () => _preferredStartTime = picked,
                                     );
+                                    _scheduleQuote();
                                   }
                                 },
                               ),
@@ -1204,6 +1277,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                                   );
                                   if (picked != null) {
                                     setState(() => _preferredEndTime = picked);
+                                    _scheduleQuote();
                                   }
                                 },
                               ),

@@ -3,12 +3,16 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.api.dto.BookingCreateRequest;
 import com.datagami.rentaxis.api.dto.BookingDetailDTO;
+import com.datagami.rentaxis.api.dto.BookingQuoteDTO;
 import com.datagami.rentaxis.api.dto.BookingRequestDTO;
 import com.datagami.rentaxis.api.dto.DecisionRequest;
 import com.datagami.rentaxis.api.dto.MyFacilitiesDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.service.BookingFeeService;
 import com.datagami.rentaxis.core.service.BookingService;
+import com.datagami.rentaxis.core.service.lease.LeaseVat;
+import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
 import com.datagami.rentaxis.core.service.FacilityService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.BookingRequest;
@@ -34,6 +38,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -48,6 +53,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -113,6 +121,14 @@ public class BookingController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setCharges(com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository charges) {
         this.charges = charges;
+    }
+
+    private PenaltyAssessmentService penalties;
+
+    /** VAT on a quote follows the charge rules; absent in unit tests, where a renter's quote carries no VAT. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setPenalties(PenaltyAssessmentService penalties) {
+        this.penalties = penalties;
     }
 
     // ----------------------------------------------------------------- admin
@@ -292,6 +308,72 @@ public class BookingController {
                 .toList();
 
         return ResponseEntity.ok(new MyFacilitiesDTO(amenityDTOs, spotDTOs, allocated));
+    }
+
+    /**
+     * The server's fee quote for a bay or amenity and dates (spec 2026-11-19 §1), so the month and day
+     * maths and the VAT live in one place. A renter may quote only what {@code /facilities/my} shows
+     * them (404 otherwise, so ids cannot be probed) and gets VAT as approval would charge it on their
+     * live lease; staff quote any resource of the tenant (a manager only on assigned properties),
+     * with VAT at the standard rate as no renter is in play.
+     */
+    @GetMapping("/bookings/quote")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // lazy unit/property reads (OSIV is off)
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER','RENTER')")
+    public ResponseEntity<BookingQuoteDTO> quote(
+            @RequestParam BookingResourceType resourceType,
+            @RequestParam UUID resourceId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime to) {
+        UUID tenantId = tenantId();
+        boolean parking = resourceType == BookingResourceType.PARKING_SPOT;
+        ParkingSpot spot = null;
+        PropertyAmenity amenity = null;
+        if (parking) {
+            spot = facilityService.findParkingSpot(tenantId, resourceId)
+                    .orElseThrow(() -> new NotFoundException("Parking spot not found"));
+        } else {
+            amenity = facilityService.findAmenity(tenantId, resourceId)
+                    .orElseThrow(() -> new NotFoundException("Amenity not found"));
+        }
+        String feeType = parking ? spot.getFeeType() : amenity.getFeeType();
+        BigDecimal unitAmount = parking ? spot.getFeeAmount() : amenity.getFeeAmount();
+        UUID propertyId = parking ? spot.getPropertyId() : amenity.getPropertyId();
+        BigDecimal net = BookingFeeService.quote(feeType, unitAmount, start, end, from, to);
+
+        BigDecimal vat;
+        if (isRenter()) {
+            Lease lease = requireLeaseSeeing(tenantId, currentUserId(), resourceId, parking);
+            vat = penalties == null ? BigDecimal.ZERO.setScale(2) : penalties.bookingFeeVat(lease, net);
+        } else {
+            checkPropertyManagerAccess(propertyId);
+            vat = LeaseVat.vatOfNet(net);
+        }
+        return ResponseEntity.ok(new BookingQuoteDTO(feeType == null ? "FREE" : feeType,
+                unitAmount == null ? BigDecimal.ZERO.setScale(2) : unitAmount, net, vat, net.add(vat)));
+    }
+
+    /**
+     * The renter's current lease on a unit that sees the resource, by the same rule as
+     * {@code /facilities/my}: 404 when none does (an attached bay, another property's resource,
+     * an amenity scoped to other towers).
+     */
+    private Lease requireLeaseSeeing(UUID tenantId, UUID userId, UUID resourceId, boolean parking) {
+        Renter renter = renterRepository.findByUserId(userId)
+                .orElseThrow(() -> new NotFoundException("No renter profile linked to this user"));
+        if (!tenantId.equals(renter.getTenantId())) {
+            throw new NotFoundException("No renter profile linked to this user");
+        }
+        for (Lease lease : leaseRepository.findCurrentForRenterUser(tenantId, userId, LocalDate.now())) {
+            FacilityService.VisibleFacilities visible = facilityService.visibleFacilities(tenantId, lease.getUnit());
+            boolean sees = parking
+                    ? visible.parkingSpots().stream().anyMatch(s -> resourceId.equals(s.getId()))
+                    : visible.amenities().stream().anyMatch(a -> resourceId.equals(a.getId()));
+            if (sees) return lease;
+        }
+        throw new NotFoundException(parking ? "Parking spot not found" : "Amenity not found");
     }
 
     @PostMapping("/bookings")

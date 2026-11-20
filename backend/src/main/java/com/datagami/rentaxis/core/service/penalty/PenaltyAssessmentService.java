@@ -800,6 +800,15 @@ public class PenaltyAssessmentService {
         return requested != null ? requested : reason.vatableByDefault();
     }
 
+    /**
+     * The VAT a booking fee of {@code net} carries on this lease, exactly as approval will charge it
+     * (see {@link #vatableFor}): 5% on a VAT-registered lease, none otherwise. For the booking quote.
+     */
+    public java.math.BigDecimal bookingFeeVat(Lease lease, java.math.BigDecimal net) {
+        return vatableFor(lease, PenaltyReason.BOOKING_FEE, null)
+                ? LeaseVat.vatOfNet(net) : java.math.BigDecimal.ZERO.setScale(2);
+    }
+
     private com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
 
     private com.datagami.rentaxis.domain.repository.AccountRepository accounts;

@@ -103,7 +103,7 @@ public class BookingFeeService {
      * times the days covered, both ends counted. PER_MONTH: whole months from the start date, then the
      * leftover days at the day rate of the month they fall in. A null end means a single day.
      */
-    static BigDecimal quote(String type, BigDecimal amount, LocalDate start, LocalDate end, LocalTime from, LocalTime to) {
+    public static BigDecimal quote(String type, BigDecimal amount, LocalDate start, LocalDate end, LocalTime from, LocalTime to) {
         if (type == null || "FREE".equals(type) || amount == null) return BigDecimal.ZERO.setScale(2);
         if ("PER_BOOKING".equals(type)) return amount.setScale(2, RoundingMode.HALF_UP);
         LocalDate last = end != null ? end : start;

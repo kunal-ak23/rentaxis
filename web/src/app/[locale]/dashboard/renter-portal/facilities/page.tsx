@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
     fetchMyFacilities,
     fetchMyBookings,
+    fetchBookingQuote,
     createBooking,
     cancelBooking,
     releaseBooking,
@@ -25,6 +26,8 @@ import type {
     BookingRequestStatus,
     BookingResourceType,
     BookedRange,
+    BookingFeeType,
+    BookingQuoteDTO,
 } from "@/types/facility";
 
 const STATUS_CLASSES: Record<BookingRequestStatus, string> = {
@@ -51,7 +54,12 @@ type RequestTarget = {
     propertyId: string;
     /** Review r3C m1: a paid amenity needs a date (the server refuses an undated one). */
     dateRequired?: boolean;
+    /** The fee setting, to know whether a quote is worth asking for; the amount comes from the server. */
+    feeType?: BookingFeeType;
+    feeAmount?: number | null;
 };
+
+const FEE_KEY: Record<string, string> = { PER_HOUR: "feePerHour", PER_DAY: "feePerDay", PER_MONTH: "feePerMonth", PER_BOOKING: "feePerBooking" };
 
 type PendingAction = { kind: "cancel" | "release"; booking: BookingRequestDTO };
 
@@ -153,6 +161,39 @@ export default function RenterFacilitiesPage() {
         const matching = activeLeases.filter(l => l.propertyId === rt.propertyId);
         setUnitId(matching[0]?.unitId ?? "");
     };
+
+    // The fee for the dates chosen, asked of the server (the month and day maths and the VAT live
+    // there only). Debounced so typing a date does not ask once per keystroke.
+    const [quote, setQuote] = useState<BookingQuoteDTO | null>(null);
+    const [quoteState, setQuoteState] = useState<"idle" | "loading" | "error">("idle");
+    const paidTarget = !!target && !!target.feeType && target.feeType !== "FREE";
+    useEffect(() => {
+        if (!target || !paidTarget) {
+            setQuote(null);
+            setQuoteState("idle");
+            return;
+        }
+        let cancelled = false;
+        setQuoteState("loading");
+        const timer = setTimeout(async () => {
+            try {
+                const q = await fetchBookingQuote({
+                    resourceType: target.resourceType,
+                    resourceId: target.resourceId,
+                    start: preferredDate || undefined,
+                    end: target.resourceType === "PARKING_SPOT" && preferredEndDate ? preferredEndDate : undefined,
+                });
+                if (cancelled) return;
+                setQuote(q);
+                setQuoteState("idle");
+            } catch {
+                if (cancelled) return;
+                setQuote(null);
+                setQuoteState("error");
+            }
+        }, 300);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [target, paidTarget, preferredDate, preferredEndDate]);
 
     // Escape closes the request dialog while it's open — document-level
     // listener (same pattern as BookingDetailDrawer.tsx) rather than a
@@ -276,7 +317,7 @@ export default function RenterFacilitiesPage() {
 
     const feeLabel = (type?: string, amount?: number | null) =>
         !type || type === "FREE" || !amount ? t("feeFree")
-            : t(type === "PER_HOUR" ? "feePerHour" : "feePerBooking", { amount: amount.toFixed(2) });
+            : t(FEE_KEY[type] ?? "feePerBooking", { amount: amount.toFixed(2) });
     const formatDate = (iso: string) => parseDateOnly(iso).toLocaleDateString(dateLocale(locale));
     /**
      * "Booked: 01/03/2027 – 31/03/2027", "Booked: from 01/03/2027", "Booked: until 31/03/2027".
@@ -418,7 +459,7 @@ export default function RenterFacilitiesPage() {
                                 )}
                                 {a.bookable && !blocking && (
                                     <button
-                                        onClick={() => openRequest({ resourceType: "AMENITY", resourceId: a.id, name: amenityName(a.nameEn, a.nameAr), propertyId: a.propertyId, dateRequired: !!a.feeType && a.feeType !== "FREE" && Number(a.feeAmount ?? 0) > 0 })}
+                                        onClick={() => openRequest({ resourceType: "AMENITY", resourceId: a.id, name: amenityName(a.nameEn, a.nameAr), propertyId: a.propertyId, feeType: a.feeType, feeAmount: a.feeAmount, dateRequired: !!a.feeType && a.feeType !== "FREE" && Number(a.feeAmount ?? 0) > 0 })}
                                         disabled={noActiveLease}
                                         className="mt-auto self-start px-4 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
@@ -517,7 +558,7 @@ export default function RenterFacilitiesPage() {
                                     <p key={i} className="text-[10px] text-muted tabular-nums" data-testid={`spot-booked-${s.id}-${i}`}>{bookedLabel(r)}</p>
                                 ))}
                                 <button
-                                    onClick={() => openRequest({ resourceType: "PARKING_SPOT", resourceId: s.id, name: s.spotNumber, propertyId: s.propertyId })}
+                                    onClick={() => openRequest({ resourceType: "PARKING_SPOT", resourceId: s.id, name: s.spotNumber, propertyId: s.propertyId, feeType: s.feeType, feeAmount: s.feeAmount })}
                                     // A pending request of the caller's own for this spot: a second
                                     // one is a duplicate (tutorial 24). A bay held today stays
                                     // requestable: bookings are by date range, the booked ranges are
@@ -718,6 +759,27 @@ export default function RenterFacilitiesPage() {
                                     className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 resize-none"
                                 />
                             </div>
+                            {paidTarget && (
+                                <div className="rounded-lg bg-input border border-border p-3 text-xs" data-testid="request-quote">
+                                    <span className="block font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("quoteLabel")}</span>
+                                    {quote ? (
+                                        <>
+                                            <p className="text-sm font-bold text-foreground tabular-nums">
+                                                AED <span data-testid="request-quote-total">{Number(quote.total).toFixed(2)}</span>
+                                            </p>
+                                            {Number(quote.vat) > 0 && (
+                                                <p className="text-[10px] text-muted mt-0.5 tabular-nums">
+                                                    {t("quoteVat", { net: Number(quote.net).toFixed(2), vat: Number(quote.vat).toFixed(2) })}
+                                                </p>
+                                            )}
+                                        </>
+                                    ) : quoteState === "error" ? (
+                                        <p className="text-muted">{t("quoteError")}</p>
+                                    ) : (
+                                        <p className="text-muted">{t("quoteLoading")}</p>
+                                    )}
+                                </div>
+                            )}
                             {dialogError && (
                                 <p className="text-xs font-semibold text-error">{dialogError}</p>
                             )}

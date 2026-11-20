@@ -155,6 +155,36 @@ class FakeFacilityService implements FacilityApiService {
   @override
   Future<List<dynamic>> myBookings() async => bookings;
 
+  /// What [quote] answers; a test sets it to the server's figures.
+  Map<String, dynamic> quoteResult = const {
+    'feeType': 'FREE',
+    'unitAmount': 0,
+    'net': 0,
+    'vat': 0,
+    'total': 0,
+  };
+  final List<Map<String, String?>> quoteCalls = [];
+
+  @override
+  Future<Map<String, dynamic>> quote({
+    required String resourceType,
+    required String resourceId,
+    String? start,
+    String? end,
+    String? from,
+    String? to,
+  }) async {
+    quoteCalls.add({
+      'resourceType': resourceType,
+      'resourceId': resourceId,
+      'start': start,
+      'end': end,
+      'from': from,
+      'to': to,
+    });
+    return quoteResult;
+  }
+
   @override
   Future<Map<String, dynamic>> cancelBooking(String id) async {
     cancelCalls.add(id);
