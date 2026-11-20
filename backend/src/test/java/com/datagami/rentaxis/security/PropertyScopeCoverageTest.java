@@ -111,6 +111,10 @@ class PropertyScopeCoverageTest {
             // (scopedPropertyIds) and an id outside it is simply not returned
             // (ScaleListEndpointsIT pins both for a manager).
             Map.entry("RenterController#renterNames", "SQL-scoped: RenterRepository.findNamed(..., scopedPropertyIds)"),
+            // A renter outside the manager's scope is a 404: requireReadableRenter re-reads the
+            // renter through the same scoped query (RenterRatingControllerIT.propertyManagerIsScoped).
+            Map.entry("RenterRatingController#rating",
+                    "SQL-scoped: RenterService.requireReadableRenter -> RenterRepository.findNamed(..., scopedPropertyIds)"),
             Map.entry("UnitController#unitNames", "SQL-scoped: UnitRepository.findNamed(..., scopedPropertyIds)"),
             Map.entry("ChequeController#search", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
             Map.entry("ChequeController#summary", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
