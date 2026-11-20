@@ -65,6 +65,9 @@ import java.util.UUID;
  *        as the pre-v2 screen did; null for a row never deposited.
  * @param hasImage a scan is attached; the portal streams it from
  *        {@code GET /cheques/{id}/image}, which serves the renter only their own rows.
+ * @param settledBeforeAcquisition the previous owner of an acquired building banked this
+ *        row before the acquisition; {@code ChequeService.requireOurs} refuses a receipt
+ *        for it, so the portal must not offer one.
  */
 public record RenterChequeDTO(UUID id,
                               UUID leaseId,
@@ -94,5 +97,6 @@ public record RenterChequeDTO(UUID id,
                               String statusChangedAt,
                               String onlineRefusal,
                               LocalDate depositedAt,
-                              boolean hasImage) {
+                              boolean hasImage,
+                              boolean settledBeforeAcquisition) {
 }

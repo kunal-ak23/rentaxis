@@ -1003,6 +1003,25 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
         assertThat(future.payable()).isEqualByComparingTo("0");
     }
 
+    /** Rows the previous owner banked are marked, so the portal withholds the receipt it cannot get. */
+    @Test
+    void myPaymentsSaysWhichRowsThePreviousOwnerBanked() {
+        List<ChequeDTO> register = registerRows();
+        UUID sellerId = register.get(1).id();
+        UUID ourId = register.get(0).id();
+        tx.executeWithoutResult(s -> chequeService.markSettledBeforeAcquisition(
+                chequeRepo.findById(sellerId).orElseThrow(), TODAY.minusDays(20), TODAY.minusDays(15)));
+        chequeService.deposit(ourId, ChequeActionRequest.on(TODAY));
+        chequeService.clear(ourId, ChequeActionRequest.on(TODAY));
+
+        List<RenterChequeDTO> rows = myPayments();
+
+        assertThat(row(rows, sellerId).status()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(row(rows, sellerId).settledBeforeAcquisition()).isTrue();
+        assertThat(row(rows, ourId).status()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(row(rows, ourId).settledBeforeAcquisition()).isFalse();
+    }
+
     /**
      * Tutorial bug 2026-09-28-03: the portal showed "Next payment AED 0 · 84 days
      * overdue" for a cheque already at the bank. A deposited cheque is neither due

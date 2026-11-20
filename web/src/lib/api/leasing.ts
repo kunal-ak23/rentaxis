@@ -1502,6 +1502,8 @@ export type RenterCheque = {
   depositedAt?: string | null;
   /** A scan is attached; open it with `chequeApi.scanUrl` (the renter's own rows only). Optional, as above. */
   hasImage?: boolean;
+  /** Banked by a previous owner of the unit: the server refuses its receipt. Optional, as above. */
+  settledBeforeAcquisition?: boolean;
 };
 
 /** CreateOrderResponseDTO. */

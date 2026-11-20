@@ -34,6 +34,7 @@ export 'api/services/facility_service.dart';
 export 'api/services/promotion_service.dart';
 export 'api/services/app_version_service.dart';
 export 'api/services/tenant_feature_service.dart';
+export 'api/services/receipt_service.dart';
 
 // Models
 export 'models/auth_response.dart';
@@ -58,6 +59,7 @@ export 'utils/formatters.dart';
 export 'utils/media_url.dart';
 export 'utils/l10n.dart';
 export 'utils/error_message.dart';
+export 'utils/receipt_selection.dart';
 
 // UI — Miftah 2026 design system.
 //
