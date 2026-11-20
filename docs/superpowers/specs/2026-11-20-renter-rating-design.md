@@ -164,7 +164,7 @@ Adding or removing an adjustment recomputes and stores that renter at once.
 
 ### 6.4 API
 
-All endpoints return 403 when `RENTER_RATING` is off for the caller's org. Viewing roles: `SUPER_ADMIN`, `TENANT_ADMIN`, `PROPERTY_MANAGER`, `ACCOUNTANT`. All other roles (`RENTER`, `SECURITY_GUARD`, `TENANT_USER`, `PROMOTER`) are denied.
+All endpoints return 404 when `RENTER_RATING` is off for the caller's org. Viewing roles: `SUPER_ADMIN`, `TENANT_ADMIN`, `PROPERTY_MANAGER`, `ACCOUNTANT`. All other roles (`RENTER`, `SECURITY_GUARD`, `TENANT_USER`, `PROMOTER`) are denied.
 
 - `GET /api/v1/renters/{id}/rating` → computed live: score, grade, events, and trend (the last 12 snapshots plus today).
 - `GET /api/v1/renter-ratings?grade=&propertyId=&q=&sort=&page=&size=` → from stored rows: renter name, grade, score, deductions count, current lease/unit, computed_at.
@@ -205,7 +205,7 @@ All hidden unless `useTenantFeatures().RENTER_RATING` is true and the user is st
 - Integration tests (Testcontainers):
   - the loader returns the right rows and never another org's;
   - the job writes only changed rows and the monthly snapshot;
-  - endpoint auth: 403 when the feature is off, 403 for `RENTER`, adjustment is admin-only.
+  - endpoint auth: 404 when the feature is off, 403 for `RENTER`, adjustment is admin-only.
 - Web (vitest):
   - the badge renders each grade;
   - the details panel lists events and shows the adjust form only for admins;
