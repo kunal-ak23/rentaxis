@@ -76,6 +76,15 @@ The quote is still taken when the renter asks and stored on the request.
 Approval charges the stored quote, as today. If approval fills in dates the
 request did not have (an undated parking request), the quote is taken again.
 
+A parking booking on a `PER_DAY` or `PER_MONTH` bay requires an end date
+(final review, 2026-11-20). `create` and `createOnBehalf` refuse one without
+with `booking.endDateRequired`, so no undated periodic request exists for
+approval to fill in and re-quote. The renter portal, the mobile app and the staff
+"New booking" dialog make the end date required for those bays and show no quote
+until both dates are set. `FREE` and `PER_BOOKING` bays may still be requested
+without an end date. An amenity is booked for one day, so a `PER_DAY` amenity
+needs no end date.
+
 Web and mobile estimate the fee on the device today (renter portal facilities
 page, `facilities_screen.dart`). They switch to a server quote,
 `GET /api/v1/bookings/quote`, so the month maths lives in one place.
@@ -105,7 +114,9 @@ New account role `AMENITY_INCOME`:
 
 - Per-property leaf "Amenity Income - {property}" under `C-01-02`, added to
   the template in `PropertyAccountService`, with an Arabic name.
-- A tenant default leaf, like the other roles.
+- No tenant-level default leaf is seeded (as for `PARKING_INCOME` and
+  `OTHER_INCOME`). Until a property has its own leaf, amenity fees fall back
+  to `OTHER_INCOME` (below).
 - Existing tenants: `seedDefaultTemplateAndDefaults` adds template rows only
   when a tenant has none, so a changeset adds the `AMENITY_INCOME` template row
   for tenants that already have a template (the pattern of
@@ -143,8 +154,9 @@ shows only the start date.
 For walk-in banquet or court bookings:
 
 - `POST /api/v1/bookings/on-behalf`. Roles: SUPER_ADMIN, TENANT_ADMIN,
-  PROPERTY_MANAGER. Body: as `BookingCreateRequest`, plus `unitId` and
-  `renterUserId`.
+  PROPERTY_MANAGER. Body (`BookingOnBehalfRequest`):
+  `{ "booking": BookingCreateRequest, "renterUserId": UUID }`. The unit is
+  `booking.unitId` (required); there is no top-level `unitId`.
 - Runs the same checks as a renter booking (dates inside the lease, overlap,
   bay not attached), then approves at once through the same approve path, so
   the same JV posts.
@@ -157,11 +169,15 @@ For walk-in banquet or court bookings:
 | Renter cancels before the slot | JV reversed (`reverseOnCancel`) | Refused: ask the office |
 | Staff cancel (amenity, or parking before its start) | JV reversed | JV reversed, payment kept as credit, VAT credit note (`creditOnStaffCancel`) |
 | Release early (parking, `PER_DAY` / `PER_MONTH`) | Unused days credited (see 6) | Unused days credited as renter credit (see 6) |
+| Fee payment bounced, replaced, returned or transferred | Release refused (`booking.feeRowNotSettled`) | Release refused |
 | Release early (parking, `PER_BOOKING`) | No change: the fee stands | No change |
 | Reject a pending request | Nothing was posted | Nothing was posted |
 
 Decided 2026-11-20 (Kunal): parking refunds are pro-rata on early release, and
 staff may cancel an approved parking booking before its start date.
+
+`PER_DAY` and `PER_MONTH` parking bookings always have an end date (§1), so the
+fee charged is the fee quoted and an early release has a range to credit.
 
 ### 6. Pro-rata credit on early parking release
 
@@ -197,7 +213,13 @@ changes:
     credit on the renter's account, as `creditCollected` does today.
   - Payment in flight (deposited, or paying online): the release is
     refused with `booking.feeInFlight`, as for staff cancel. The release
-    can be repeated once the payment clears or bounces.
+    can be repeated once the payment clears.
+  - Allowed row statuses: no collection row, `REGISTERED` (not paid) or
+    `CLEARED` (paid). Any other status (bounced, replaced, returned,
+    transferred, draft) refuses the release with `booking.feeRowNotSettled`:
+    the row or its replacement would still ask for the full fee after the
+    receivable was credited (ledger rule 3). Settle or replace the payment
+    first. A row cancelled elsewhere stands like a write-off: no credit.
   - Written off: the release goes ahead with no credit, as the fee stands.
 - **Who.** Both the renter's release and the staff release credit
   automatically. No cash leaves: the credit sits on the renter's account
