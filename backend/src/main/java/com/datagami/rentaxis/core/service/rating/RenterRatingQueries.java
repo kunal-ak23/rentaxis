@@ -57,6 +57,11 @@ class RenterRatingQueries {
      * ({@code penalty_assessment_id} set, also on a write-off-restored fine), a settlement's balance-due row
      * ({@code lease_settlements.collection_cheque_id}) and a write-off reversal's restored row, which has no
      * link column and is recognised by BadDebtService's narration "Bad debt write-off reversed".</p>
+     *
+     * <p>A transferred copy of such a row is left out too (round 3 M-c): LeaseTransferService copies each open
+     * row onto the successor lease and names the original in {@code transferred_from_id}, but the copy does not
+     * carry {@code penalty_assessment_id}. The copy is excluded when its original is a charge row by the same
+     * three tests.</p>
      */
     List<Object[]> cheques(UUID tenantId, Collection<UUID> renterIds, LocalDate since) {
         return rows("select c.id, c.renter_id, c.lease_id, c.status, c.cheque_date, "
@@ -66,7 +71,12 @@ class RenterRatingQueries {
                         + "and c.penalty_assessment_id is null "
                         + "and not exists (select 1 from lease_settlements s where s.tenant_id = :tenantId "
                         + "and s.collection_cheque_id = c.id) "
-                        + "and coalesce(c.narration, '') not like 'Bad debt write-off reversed%' and ("
+                        + "and coalesce(c.narration, '') not like 'Bad debt write-off reversed%' "
+                        + "and not exists (select 1 from cheques o where o.tenant_id = :tenantId "
+                        + "and o.id = c.transferred_from_id and (o.penalty_assessment_id is not null "
+                        + "or coalesce(o.narration, '') like 'Bad debt write-off reversed%' "
+                        + "or exists (select 1 from lease_settlements os where os.tenant_id = :tenantId "
+                        + "and os.collection_cheque_id = o.id))) and ("
                         + "c.cheque_date >= :since or c.cleared_at >= :since or c.imported_cleared_on >= :since "
                         + "or c.bounced_at >= :since or c.imported_bounced_on >= :since)",
                 tenantId, renterIds, since);

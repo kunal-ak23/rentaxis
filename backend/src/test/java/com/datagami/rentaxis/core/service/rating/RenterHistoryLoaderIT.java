@@ -224,6 +224,35 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
                         org.assertj.core.groups.Tuple.tuple(proposed, LocalDate.of(2026, 10, 28)));
     }
 
+    /**
+     * Round 3 M-c: LeaseTransferService copies each open row onto the successor lease and names the original in
+     * transferred_from_id, but the copy drops penalty_assessment_id. A copy of a charge row (a fine's row, a
+     * restored write-off row) is still a charge row; a copy of a rent cheque is still rent.
+     */
+    @Test
+    void transferredCopiesOfChargeRowsAreNotLoadedAsCheques() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseA = postedLeaseId(f);
+        seq++;
+        UUID leaseB = f.postedLease(f.createUnit(f.property(), "T" + seq), f.renter(), LocalDate.of(2026, 9, 16),
+                LocalDate.of(2026, 10, 2), LocalDate.of(2027, 10, 1), List.of(line("RENT", "51000")), 4,
+                "40" + (1000 + seq * 10)).lease().getId();
+        List<UUID> a = chequeIds(f.tenantId(), leaseA);
+        List<UUID> b = chequeIds(f.tenantId(), leaseB);
+        UUID fine = insertPenalty(f, leaseA, "APPROVED", LocalDate.of(2026, 10, 10),
+                Instant.parse("2026-10-10T08:00:00Z"), Instant.parse("2026-10-11T08:00:00Z"));
+        jdbc.update("update cheques set narration = 'Bad debt write-off reversed – Rent' where id = ?", a.get(1));
+        jdbc.update("update cheques set penalty_assessment_id = ? where id = ?", fine, a.get(2));
+        jdbc.update("update cheques set transferred_from_id = ? where id = ?", a.get(2), b.get(0));
+        jdbc.update("update cheques set transferred_from_id = ? where id = ?", a.get(1), b.get(1));
+        jdbc.update("update cheques set transferred_from_id = ? where id = ?", a.get(0), b.get(2));
+
+        RenterHistory h = loader.load(f.tenantId(), List.of(f.renter().getId()), SINCE).get(f.renter().getId());
+
+        assertThat(h.cheques()).extracting(RenterHistory.ChequeRow::id)
+                .containsExactlyInAnyOrder(a.get(0), a.get(3), b.get(2), b.get(3));
+    }
+
     @Test
     void loaderNeverReturnsAnotherOrgsRows() {
         Seeded a = seedFull(newOrgFixtures());
