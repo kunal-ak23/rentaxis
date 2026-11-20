@@ -89,6 +89,22 @@ describe("renter combined receipt", () => {
         await waitFor(() => expect(api.combinedReceipt).toHaveBeenCalledWith(["y26a", "y26b"]));
     });
 
+    it("choosing a year replaces earlier ticks", async () => {
+        api.myPayments.mockResolvedValue([
+            row({ id: "y25", dueDate: "2025-11-01" }),
+            row({ id: "y26a", dueDate: "2026-01-01" }),
+            row({ id: "y26b", dueDate: "2026-02-01" }),
+        ]);
+        renderPage();
+        await screen.findByTestId("receipt-select-y25");
+        tick("y25");
+        expect(screen.getByTestId("receipt-select-y25")).toBeChecked();
+        fireEvent.change(screen.getByTestId("combined-receipt-year"), { target: { value: "2026" } });
+        expect(screen.getByTestId("receipt-select-y25")).not.toBeChecked();
+        fireEvent.click(screen.getByTestId("combined-receipt-download"));
+        await waitFor(() => expect(api.combinedReceipt).toHaveBeenCalledWith(["y26a", "y26b"]));
+    });
+
     it("manual tick resets the year select", async () => {
         api.myPayments.mockResolvedValue([row({ id: "a", dueDate: "2026-01-01" }), row({ id: "b", dueDate: "2026-02-01" })]);
         renderPage();

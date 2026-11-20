@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -77,8 +78,10 @@ Map<String, dynamic> _row(
   String status, {
   String? clearedAt,
   bool? before,
+  String? rowKind,
 }) => {
   'id': id,
+  'rowKind': rowKind,
   'seqNo': seq,
   'status': status,
   'amount': 1000,
@@ -219,6 +222,95 @@ void main() {
           .widget<Checkbox>(find.byKey(const ValueKey('receipt-pick-c2')))
           .value,
       isTrue,
+    );
+  });
+
+  testWidgets('schedule orders by seqNo, deposits last', (tester) async {
+    await pump(
+      tester,
+      calls: [],
+      cheques: [
+        _row('c3', 3, 'REGISTERED'),
+        _row('d2', 2, 'REGISTERED', rowKind: 'SECURITY_DEPOSIT'),
+        _row('c1', 1, 'REGISTERED'),
+      ],
+    );
+    // Labels carry position + date: position 1 = seq 1, 2 = seq 3, 3 = deposit.
+    double top(int pos, String date) => tester
+        .getTopLeft(
+          find.text('CHQ $pos · ${Formatters.date(date, ar: false)}'),
+        )
+        .dy;
+    expect(top(1, '2026-01-01'), lessThan(top(2, '2026-03-01')));
+    // The deposit row carries seq 2 yet sorts after seq 3.
+    expect(top(2, '2026-03-01'), lessThan(top(3, '2026-02-01')));
+  });
+
+  testWidgets('ticks are pruned after reload', (tester) async {
+    final cheques = [
+      _row('c1', 1, 'CLEARED', clearedAt: '2026-02-05T10:00:00Z'),
+      _row('c2', 2, 'CLEARED', clearedAt: '2026-03-05T10:00:00Z'),
+    ];
+    final api = await pump(tester, calls: [], cheques: cheques);
+    Future<void> reload() async {
+      unawaited(
+        tester
+            .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
+            .show(),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await tester.tap(find.byKey(const ValueKey('receipt-pick-c1')));
+    await tester.pump();
+    expect(find.text('Download receipts (1)'), findsOneWidget);
+    cheques[0] = _row('c1', 1, 'BOUNCED');
+    await reload();
+    expect(api.requested.where((p) => p.endsWith('/cheques')), hasLength(2));
+    expect(find.byKey(const ValueKey('receipt-pick-c1')), findsNothing);
+    expect(find.text('Download receipts (0)'), findsOneWidget);
+    expect(
+      tester
+          .widget<ButtonStyleButton>(find.byKey(const Key('receipt-download')))
+          .onPressed,
+      isNull,
+    );
+    // Clearing again must not resurrect the stale tick.
+    cheques[0] = _row('c1', 1, 'CLEARED', clearedAt: '2026-02-05T10:00:00Z');
+    await reload();
+    expect(find.text('Download receipts (0)'), findsOneWidget);
+  });
+
+  testWidgets('over 100 disables download and shows the limit hint', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      calls: [],
+      cheques: [
+        for (var i = 1; i <= 101; i++)
+          _row(
+            'r$i',
+            i,
+            'CLEARED',
+            clearedAt: '2026-02-05T10:00:00Z',
+          ),
+      ],
+    );
+    await tester.tap(find.byKey(const Key('receipt-year')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2026').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Download receipts (101)'), findsOneWidget);
+    expect(
+      tester
+          .widget<ButtonStyleButton>(find.byKey(const Key('receipt-download')))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      find.text('At most 100 receipts per file. Untick some to continue.'),
+      findsOneWidget,
     );
   });
 }

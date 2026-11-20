@@ -98,6 +98,17 @@ describe("ChequeGrid combined receipt", () => {
             expect(screen.getByTestId("combined-receipt-download")).toHaveTextContent("Combined receipt (1)");
         });
 
+        it("manual tick resets the year select", () => {
+            renderGrid({ cheques: yearRows, onRowAction: vi.fn(), onCombinedReceipt: vi.fn() });
+            const select = screen.getByTestId("combined-receipt-year") as HTMLSelectElement;
+            fireEvent.change(select, { target: { value: "2026" } });
+            expect(select.value).toBe("2026");
+            fireEvent.click(screen.getByTestId("cheque-receipt-select-1"));
+            expect(select.value).toBe("");
+            expect(screen.getByTestId("cheque-receipt-select-1")).not.toBeChecked();
+            expect(screen.getByTestId("cheque-receipt-select-2")).toBeChecked();
+        });
+
         it("no year control when no row offers a receipt", () => {
             renderGrid({
                 cheques: [cheque({ id: "n1", seqNo: 1, status: "REGISTERED" })],
