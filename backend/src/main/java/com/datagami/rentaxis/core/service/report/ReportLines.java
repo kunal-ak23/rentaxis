@@ -59,6 +59,7 @@ public final class ReportLines {
         role(AccountRole.SECURITY_DEPOSIT, "Security deposit", "تأمين الإيجار");
         role(AccountRole.ADMIN_FEE, "Admin fee", "الرسوم الإدارية");
         role(AccountRole.PARKING_INCOME, "Additional parking", "مواقف إضافية");
+        role(AccountRole.AMENITY_INCOME, "Amenity income", "إيرادات المرافق");
         role(AccountRole.PARKING_DEPOSIT, "Parking deposit", "تأمين المواقف");
         role(AccountRole.COOLING_CHARGES, "Cooling charges", "رسوم التبريد");
         role(AccountRole.MAINTENANCE_CHARGES, "Maintenance charges", "رسوم الصيانة");
@@ -104,7 +105,7 @@ public final class ReportLines {
         if (key == null) return null;
         if (key.startsWith("EXP_")) return AccountType.EXPENSE;
         return switch (AccountRole.valueOf(key)) {
-            case RENTAL_INCOME, ADMIN_FEE, PARKING_INCOME, COOLING_CHARGES, MAINTENANCE_CHARGES, RENT_PENALTY,
+            case RENTAL_INCOME, ADMIN_FEE, PARKING_INCOME, AMENITY_INCOME, COOLING_CHARGES, MAINTENANCE_CHARGES, RENT_PENALTY,
                  CHEQUE_RETURN_PENALTY, OTHER_INCOME, FORFEITED_INCOME, BANK_INTEREST_INCOME,
                  BAD_DEBT_RECOVERED -> AccountType.INCOME;
             case DISCOUNT_ALLOWED, ROUNDING_OFF, BANK_CHARGES, BAD_DEBT -> AccountType.EXPENSE;

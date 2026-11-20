@@ -387,3 +387,5 @@ databaseChangeLog:
       file: db/changelog/changesets/190-renter-rating.yaml
   - include:
       file: db/changelog/changesets/190-booking-fee-periods.yaml
+  - include:
+      file: db/changelog/changesets/191-booking-income-account.yaml

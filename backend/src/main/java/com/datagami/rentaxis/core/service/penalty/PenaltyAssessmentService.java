@@ -26,7 +26,6 @@ import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
-import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -224,7 +223,9 @@ public class PenaltyAssessmentService {
         if (narration.isEmpty()) throw new BusinessRuleViolationException("Say what the journal voucher is for");
         Account account = accounts.findById(r.accountId())
                 .orElseThrow(() -> new NotFoundException("Account not found"));
-        requireIncomeLeafFor(account, lease);
+        com.datagami.rentaxis.core.service.ledger.IncomeLeafRule.require(account,
+                lease.getUnit() != null && lease.getUnit().getProperty() != null
+                        ? lease.getUnit().getProperty().getId() : null);
 
         LocalDate on = r.entryDate() != null ? r.entryDate() : manualDates.today();
         PenaltyAssessment a = save(lease, null, PenaltyReason.JOURNAL_VOUCHER, r.amount(), narration, on, byUser);
@@ -237,26 +238,6 @@ public class PenaltyAssessmentService {
 
     /** {@code PenaltyAssessment.sourceType} of a contract-level journal voucher. */
     public static final String JOURNAL_SOURCE = "JOURNAL";
-
-    /**
-     * The account a journal voucher may credit: an active income leaf of this
-     * tenant, either shared or belonging to this lease's property.
-     */
-    private static void requireIncomeLeafFor(Account account, Lease lease) {
-        String label = account.getCode() + " " + account.getName();
-        if (account.isGroup() || !account.isActive()) {
-            throw new BusinessRuleViolationException(label + " is not an active ledger account");
-        }
-        if (account.getAccountType() != AccountType.INCOME) {
-            throw new BusinessRuleViolationException(label + " is not an income account");
-        }
-        UUID own = account.getPropertyId();
-        UUID leaseProperty = lease.getUnit() != null && lease.getUnit().getProperty() != null
-                ? lease.getUnit().getProperty().getId() : null;
-        if (own != null && !own.equals(leaseProperty)) {
-            throw new BusinessRuleViolationException(label + " belongs to another property");
-        }
-    }
 
     /**
      * F14-49 / F14-50: a charge raised by another document (a maintenance ticket, an

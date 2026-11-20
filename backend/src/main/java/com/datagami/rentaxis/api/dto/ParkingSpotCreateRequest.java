@@ -9,7 +9,7 @@ import java.util.UUID;
 /**
  * covered null = true; buildingIds null/empty = visible to all towers;
  * attachedUnitId (changeset 175) null = a bookable bay, otherwise the unit it is
- * allocated to from the start.
+ * allocated to from the start; incomeAccountId (changeset 191) null = the role default.
  */
 public record ParkingSpotCreateRequest(
         UUID propertyId,
@@ -17,10 +17,16 @@ public record ParkingSpotCreateRequest(
         @Size(max = 32) String level,
         Boolean covered,
         List<UUID> buildingIds,
-        UUID attachedUnitId) {
+        UUID attachedUnitId,
+        UUID incomeAccountId) {
+
+    public ParkingSpotCreateRequest(UUID propertyId, String spotNumber, String level, Boolean covered,
+                                    List<UUID> buildingIds, UUID attachedUnitId) {
+        this(propertyId, spotNumber, level, covered, buildingIds, attachedUnitId, null);
+    }
 
     public ParkingSpotCreateRequest(UUID propertyId, String spotNumber, String level, Boolean covered,
                                     List<UUID> buildingIds) {
-        this(propertyId, spotNumber, level, covered, buildingIds, null);
+        this(propertyId, spotNumber, level, covered, buildingIds, null, null);
     }
 }
