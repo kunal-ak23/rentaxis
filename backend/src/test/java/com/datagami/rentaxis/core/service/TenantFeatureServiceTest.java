@@ -22,6 +22,9 @@ class TenantFeatureServiceTest {
     @Mock
     TenantFeatureRepository repository;
 
+    @Mock
+    org.springframework.context.ApplicationEventPublisher events;
+
     TenantFeatureService service;
 
     private final UUID tenantId = UUID.randomUUID();
@@ -29,7 +32,7 @@ class TenantFeatureServiceTest {
     @BeforeEach
     void setUp() {
         // Create a fresh service each test to reset the Caffeine cache
-        service = new TenantFeatureService(repository);
+        service = new TenantFeatureService(repository, events);
     }
 
     @Test
@@ -124,8 +127,10 @@ class TenantFeatureServiceTest {
         List<FeatureToggleDTO> result = service.getAll(tenantId);
         assertThat(result.stream().filter(f -> f.feature() == TenantFeature.LEASE_RENEWALS).findFirst().orElseThrow()
                 .label()).isEqualTo("Contract Renewals & Reminders");
-        assertThat(result).allSatisfy(f -> assertThat(f.label()).doesNotContainIgnoringCase("lease")
-                .doesNotContainIgnoringCase("renter"));
+        // RENTER_RATING is a product name fixed by the spec ("Renter Rating (premium)"), so it is exempt.
+        assertThat(result).filteredOn(f -> f.feature() != TenantFeature.RENTER_RATING)
+                .allSatisfy(f -> assertThat(f.label()).doesNotContainIgnoringCase("lease")
+                        .doesNotContainIgnoringCase("renter"));
     }
 
     @Test

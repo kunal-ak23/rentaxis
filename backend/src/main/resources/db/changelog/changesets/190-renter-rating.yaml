@@ -1,0 +1,50 @@
+# Renter Rating (premium, feature RENTER_RATING): stored rating per renter, month-end
+# snapshots for the trend, and audited manual adjustments (spec 2026-11-20-renter-rating-design.md 6.2).
+# Every table is tenant-scoped; renter_id cascades with the renter.
+databaseChangeLog:
+  - changeSet:
+      id: 190-renter-rating
+      author: claude
+      changes:
+        - createTable:
+            tableName: renter_ratings
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_renter_ratings, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_ratings_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: renter_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_ratings_renter, referencedTableName: renters, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: score, type: int, constraints: { nullable: false } }
+              - column: { name: grade, type: varchar(8), constraints: { nullable: false } }
+              - column: { name: deductions_count, type: int, constraints: { nullable: false } }
+              - column: { name: events_json, type: text, constraints: { nullable: false } }
+              - column: { name: fingerprint, type: varchar(64), constraints: { nullable: false } }
+              - column: { name: computed_at, type: timestamptz, constraints: { nullable: false } }
+        - addUniqueConstraint: { tableName: renter_ratings, columnNames: "tenant_id, renter_id", constraintName: uq_renter_ratings_tenant_renter }
+        - createIndex: { tableName: renter_ratings, indexName: ix_renter_ratings_tenant, columns: [ { column: { name: tenant_id } } ] }
+        - createTable:
+            tableName: renter_rating_snapshots
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_renter_rating_snapshots, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_rating_snapshots_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: renter_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_rating_snapshots_renter, referencedTableName: renters, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: month, type: date, constraints: { nullable: false } }
+              - column: { name: score, type: int, constraints: { nullable: false } }
+              - column: { name: grade, type: varchar(8), constraints: { nullable: false } }
+        - addUniqueConstraint: { tableName: renter_rating_snapshots, columnNames: "tenant_id, renter_id, month", constraintName: uq_renter_rating_snapshots_month }
+        - createIndex: { tableName: renter_rating_snapshots, indexName: ix_renter_rating_snapshots_tenant, columns: [ { column: { name: tenant_id } } ] }
+        - createTable:
+            tableName: renter_rating_adjustments
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_renter_rating_adjustments, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_rating_adjustments_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: renter_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renter_rating_adjustments_renter, referencedTableName: renters, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: points, type: int, constraints: { nullable: false } }
+              - column: { name: reason, type: varchar(500), constraints: { nullable: false } }
+              - column: { name: created_by, type: uuid, constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: removed_by, type: uuid }
+              - column: { name: removed_at, type: timestamptz }
+        - createIndex: { tableName: renter_rating_adjustments, indexName: ix_renter_rating_adjustments_tenant, columns: [ { column: { name: tenant_id } }, { column: { name: renter_id } } ] }
+      rollback:
+        - dropTable: { tableName: renter_rating_adjustments }
+        - dropTable: { tableName: renter_rating_snapshots }
+        - dropTable: { tableName: renter_ratings }
