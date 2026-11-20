@@ -6,6 +6,7 @@ import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.repository.TenantFeatureRepository;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -20,6 +21,7 @@ import java.util.UUID;
 public class TenantFeatureService {
 
     private final TenantFeatureRepository repository;
+    private final ApplicationEventPublisher events;
 
     // tenantId → Map<TenantFeature, Boolean>
     private final Cache<UUID, Map<TenantFeature, Boolean>> cache = Caffeine.newBuilder()
@@ -27,8 +29,9 @@ public class TenantFeatureService {
             .maximumSize(500)
             .build();
 
-    public TenantFeatureService(TenantFeatureRepository repository) {
+    public TenantFeatureService(TenantFeatureRepository repository, ApplicationEventPublisher events) {
         this.repository = repository;
+        this.events = events;
     }
 
     /**
@@ -48,6 +51,7 @@ public class TenantFeatureService {
     public void setEnabled(UUID tenantId, TenantFeature feature, boolean enabled) {
         repository.upsert(tenantId, feature.name(), enabled);
         cache.invalidate(tenantId);
+        events.publishEvent(new TenantFeatureToggledEvent(tenantId, feature, enabled));
     }
 
     public List<FeatureToggleDTO> getAll(UUID tenantId) {
@@ -82,6 +86,7 @@ public class TenantFeatureService {
             case GATEPASS -> "Gate Passes & Security";
             case MOBILE_FINANCE -> "Mobile finance screens";
             case WORKSPACE_TABS -> "Workspace tabs (web)";
+            case RENTER_RATING -> "Tenant Rating (premium)";
         };
     }
 }

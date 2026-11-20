@@ -83,6 +83,7 @@ class ImportBatchDiscardIT extends AbstractPostgresIT {
     @Autowired MaintenanceTicketRepository tickets;
     @Autowired RecognitionEntryRepository recognitionEntries;
     @Autowired TransactionTemplate tx;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     UUID tenantId;
 
@@ -377,6 +378,37 @@ class ImportBatchDiscardIT extends AbstractPostgresIT {
             // contract's are gone.
             assertThat(unitRepo.findAll()).hasSize(1);
             assertThat(renterRepo.findAll()).hasSize(1);
+        });
+    }
+
+    /**
+     * A renter somebody has since given a manual rating adjustment (round 3 M-d).
+     *
+     * <p>{@code fk_renter_rating_adjustments_renter} does not cascade: an adjustment
+     * is an audit record, and a removed one is kept too. Such a renter is kept, with
+     * a sentence that says why, and the rest of the batch goes.</p>
+     */
+    @Test
+    void aRenterWithRatingAdjustmentsIsKeptAndReported() throws Exception {
+        UUID batchId = importTheTemplate();
+        UUID keptRenterId = tx.execute(s -> renterRepo.findAll().get(0).getId());
+        jdbc.update("insert into renter_rating_adjustments (id, tenant_id, renter_id, points, reason, created_by, "
+                        + "created_at, removed_by, removed_at) values (?,?,?, 5, 'Paid early', ?, now(), ?, now())",
+                UUID.randomUUID(), tenantId, keptRenterId, UUID.randomUUID(), UUID.randomUUID());
+
+        DiscardResult result = discardService.discard(batchId);
+
+        assertThat(result.status()).isEqualTo(ImportBatchStatus.DISCARDED);
+        assertThat(result.kept())
+                .filteredOn(k -> "RENTER".equals(k.type()))
+                .singleElement()
+                .satisfies(k -> {
+                    assertThat(k.id()).isEqualTo(keptRenterId);
+                    assertThat(k.reason()).contains("rating adjustment(s)");
+                });
+        tx.executeWithoutResult(s -> {
+            assertThat(renterRepo.findById(keptRenterId)).isPresent();
+            assertThat(leaseRepo.findAll()).isEmpty();
         });
     }
 

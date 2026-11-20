@@ -40,4 +40,9 @@ describe("DASHBOARD_ROUTES", () => {
     it("lists no moved route as a live one", () => {
         expect(DASHBOARD_ROUTES.map(r => r.path).filter(p => ROUTE_MOVES.some(m => m.from === p))).toEqual([]);
     });
+
+    it("gates the tenant ratings page on the RENTER_RATING flag and the viewing permission", () => {
+        const e = DASHBOARD_ROUTES.find(r => r.path === "/dashboard/renter-ratings");
+        expect(e).toMatchObject({ allow: "canViewRenterRatings", flag: "RENTER_RATING" });
+    });
 });

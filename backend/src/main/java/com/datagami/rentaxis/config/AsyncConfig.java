@@ -44,6 +44,22 @@ public class AsyncConfig {
         };
     }
 
+    /** One thread: run-on-enable recomputes of orgs queue up rather than compete. */
+    @Bean(name = "renterRatingExecutor")
+    public Executor renterRatingExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("renter-rating-");
+        executor.setTaskDecorator(tenantContextResetDecorator());
+        executor.setRejectedExecutionHandler((r, e) ->
+                LoggerFactory.getLogger(AsyncConfig.class)
+                        .warn("renter_rating.task_rejected reason=executor_saturated queue={}", e.getQueue().size()));
+        executor.initialize();
+        return executor;
+    }
+
     @Bean(name = "importExecutor")
     public Executor importExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

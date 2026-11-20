@@ -90,6 +90,8 @@ export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
   // One contract (and its Terminate / Settlement pages): its statuses and actions, for every role.
   '/dashboard/leases/[id]': { article: 'leases--lease-lifecycle', videos: ['12', '13', '42'] },
   '/dashboard/renters': { article: 'leases--tenants-and-portal-access', videos: ['09'] },
+  // Premium tenant ratings: no article of its own yet, so it shares the tenants article.
+  '/dashboard/renter-ratings': { article: 'leases--tenants-and-portal-access', videos: [] },
   '/dashboard/properties': { article: 'properties--managing-properties', tour: 'property-workflow', videos: ['06', '07', '08'] },
   '/dashboard/listings': { article: 'operations--bookings-meetings-promotions' },
   // Cheque / Cash Collection

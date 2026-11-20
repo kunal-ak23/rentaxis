@@ -34,6 +34,8 @@ export const PERMISSIONS = {
     // the role that owns posting could not reach the screen it posts from.
     // Mirrors LeaseController's read methods (GET /leases, /paged, /{id}).
     canViewLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    canViewRenterRatings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT'] as UserRole[],
+    canAdjustRenterRatings: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canManageRenters: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     // The accounting-v2 ledger pages: chart of accounts, journals, general ledger,
     // tenant ledger, trial balance. ACCOUNTANT is admitted because every controller

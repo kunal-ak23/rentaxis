@@ -189,6 +189,9 @@ app:
     failed-auth-per-minute: ${APP_PARTNER_API_FAILED_AUTH_PER_MINUTE:30}
     per-key-per-minute: ${APP_PARTNER_API_PER_KEY_PER_MINUTE:60}
     per-key-burst: ${APP_PARTNER_API_PER_KEY_BURST:20}
+  renter-rating:
+    job:
+      enabled: ${APP_RENTER_RATING_JOB_ENABLED:true}
   renewal:
     scheduler:
       enabled: ${APP_RENEWAL_SCHEDULER_ENABLED:false}
