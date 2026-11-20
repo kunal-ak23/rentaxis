@@ -22,6 +22,7 @@ import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
 import com.datagami.rentaxis.domain.repository.RentSegmentRepository;
+import com.datagami.rentaxis.domain.repository.RenterRatingAdjustmentRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.slf4j.Logger;
@@ -111,6 +112,7 @@ public class ImportBatchDiscardService {
     private final LeaseService leaseService;
     private final ParkingSpotRepository spots;
     private final BookingRequestRepository bookings;
+    private final RenterRatingAdjustmentRepository ratingAdjustments;
 
     /** The run's own transaction: it holds the batch row lock and nothing else. */
     private final TransactionTemplate tx;
@@ -132,6 +134,7 @@ public class ImportBatchDiscardService {
                                      PropertyAccountMappingRepository propertyMappings, AccountRepository accounts,
                                      LeaseService leaseService, ParkingSpotRepository spots,
                                      BookingRequestRepository bookings,
+                                     RenterRatingAdjustmentRepository ratingAdjustments,
                                      PlatformTransactionManager transactionManager) {
         this.batches = batches;
         this.leases = leases;
@@ -147,6 +150,7 @@ public class ImportBatchDiscardService {
         this.leaseService = leaseService;
         this.spots = spots;
         this.bookings = bookings;
+        this.ratingAdjustments = ratingAdjustments;
         this.tx = new TransactionTemplate(transactionManager);
         this.ownTx = new TransactionTemplate(transactionManager);
         this.ownTx.setPropagationBehavior(
@@ -441,6 +445,12 @@ public class ImportBatchDiscardService {
         if (!held.isEmpty()) {
             return new Outcome(new Kept(ImportedEntityType.RENTER.name(), id, renter.getNameEn(),
                     held.size() + " lease(s) still belong to this renter"));
+        }
+        // fk_renter_rating_adjustments_renter does not cascade: an adjustment is an audit record (round 3 M-d).
+        long adjusted = ratingAdjustments.countByTenantIdAndRenterId(renter.getTenantId(), id);
+        if (adjusted > 0) {
+            return new Outcome(new Kept(ImportedEntityType.RENTER.name(), id, renter.getNameEn(),
+                    adjusted + " rating adjustment(s) are recorded against this renter"));
         }
         renters.delete(renter);
         renters.flush();

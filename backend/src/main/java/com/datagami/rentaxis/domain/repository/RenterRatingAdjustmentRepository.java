@@ -13,4 +13,7 @@ public interface RenterRatingAdjustmentRepository extends JpaRepository<RenterRa
     List<RenterRatingAdjustment> findByTenantIdAndRenterIdInAndRemovedAtIsNull(UUID tenantId, Collection<UUID> renterIds);
 
     Optional<RenterRatingAdjustment> findByIdAndTenantIdAndRenterId(UUID id, UUID tenantId, UUID renterId);
+
+    /** Every adjustment row naming the renter, removed ones included: each holds the renter's foreign key. */
+    long countByTenantIdAndRenterId(UUID tenantId, UUID renterId);
 }
