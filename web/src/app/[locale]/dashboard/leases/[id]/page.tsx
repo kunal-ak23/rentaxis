@@ -670,10 +670,10 @@ export default function LeaseDetailPage() {
                             )}
                         </div>
                         <p className="text-[12.5px] text-[var(--ink-500)]">{lease.propertyName}</p>
-                        <p className="text-sm text-muted flex items-center gap-2 flex-wrap">
+                        <div className="text-sm text-muted flex items-center gap-2 flex-wrap">
                             {lease.renterName}
                             {lease.renterId && <RatingBadge renterId={lease.renterId} compact />}
-                        </p>
+                        </div>
                         {lease.noticeDate && (
                             <p className="text-[11px] text-warning font-medium mt-0.5" data-testid="lease-notice-summary">
                                 {t("noticeSummary", {

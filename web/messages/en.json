@@ -6190,6 +6190,7 @@
     "saving": "Saving...",
     "remove": "Remove",
     "removeLabel": "Remove adjustment: {reason}",
+    "removeConfirm": "Remove this adjustment? The score will be recalculated.",
     "errPoints": "Points must be a whole number from -30 to 30, not zero.",
     "errReason": "Enter a reason of 1 to 500 characters.",
     "saveError": "Could not save the change.",
@@ -6231,7 +6232,7 @@
       "LATE_PAYMENT_PENALTY": "Late payment penalty",
       "MISCONDUCT_PENALTY": "Misconduct penalty",
       "WRITE_OFF": "Bad-debt write-off",
-      "LONG_HOLD": "Long hold on cheque",
+      "LONG_HOLD": "Contract on hold over 14 days",
       "NO_RESPONSE": "No response to renewal",
       "MEETING_NO_SHOW": "Missed meeting",
       "ADJUSTMENT": "Manual adjustment"

@@ -73,6 +73,13 @@ const GATEPASS_UNFLAGGED = GATEPASS_SCREENS;
 const NEW_ROLE_SCREENS: Partial<Record<UserRole, string[]>> = {
     PROMOTER: ["/dashboard/promoter"],
 };
+/**
+ * Tenant ratings entry follows canViewRenterRatings (the endpoints' own role set), not the operations
+ * gate, so the accountant, who has no Tenants/Properties entry, reaches it too (flag RENTER_RATING).
+ */
+const RATING_SCREENS: Partial<Record<UserRole, string[]>> = {
+    ACCOUNTANT: ["/dashboard/renter-ratings"],
+};
 const kept = (role: UserRole) => (h: string) => !(REMOVED[role] ?? []).includes(h);
 
 const pathOnly = (h: string) => h.split("?")[0];
@@ -99,6 +106,7 @@ describe("RBAC parity — every role reaches exactly what it reached before", ()
             if (before.has(h)) return false;
             if ((GATEPASS_SCREENS[role] ?? []).includes(h)) return false;
             if ((NEW_ROLE_SCREENS[role] ?? []).includes(h)) return false;
+            if ((RATING_SCREENS[role] ?? []).includes(h)) return false;
             const why = NEW_DESTINATIONS[h];
             if (why && before.has(canonical(why, role))) return false;
             // A saved view is a filter on a page the role already had (not a hub, where the query IS the page).

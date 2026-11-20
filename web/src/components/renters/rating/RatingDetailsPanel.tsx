@@ -44,6 +44,7 @@ export default function RatingDetailsPanel({ renterId, open, onClose, onLoaded }
     useEffect(() => { if (open) void load(); }, [open, load]);
 
     async function remove(adjustmentId: string) {
+        if (!window.confirm(t("removeConfirm"))) return;
         setRemoveError(null);
         try {
             await renterRatingsApi.removeAdjustment(renterId, adjustmentId);
@@ -91,7 +92,7 @@ export default function RatingDetailsPanel({ renterId, open, onClose, onLoaded }
                                         <span dir="ltr" className={`font-semibold ${e.appliedPoints < 0 ? "text-red-700" : "text-green-700"}`}>{signedPoints(e.appliedPoints)}</span>
                                         {canAdjust && e.adjustmentId && (
                                             <button type="button" onClick={() => remove(e.adjustmentId!)}
-                                                aria-label={t("removeLabel", { reason: e.note ?? "" })}
+                                                aria-label={t("removeLabel", { reason: e.note || `${signedPoints(e.appliedPoints)} ${formatDate(e.date)}` })}
                                                 className="text-[11px] text-red-600 hover:underline cursor-pointer">{t("remove")}</button>
                                         )}
                                     </div>
@@ -99,7 +100,7 @@ export default function RatingDetailsPanel({ renterId, open, onClose, onLoaded }
                             ))}
                         </ul>
                     </section>
-                    {canAdjust && <AdjustmentForm renterId={renterId} onSaved={() => void load()} />}
+                    {canAdjust && data.hasStartedContract && <AdjustmentForm renterId={renterId} onSaved={() => void load()} />}
                 </div>
             )}
         </SideDrawer>

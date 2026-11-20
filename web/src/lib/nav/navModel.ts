@@ -104,7 +104,7 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
         ...(can("canViewLeases") ? [pi("renewal-season", "/dashboard/leases/renewals", N("renewalSeason"), "sidebar-renewal-season")] : []),
         ...(ops ? [pi("tenants", "/dashboard/renters", { ns: "MasterData", key: "renters" }, "sidebar-renters")] : []),
         // Premium tenant rating (staff only): flag on for the org AND a viewing role.
-        ...(ops && isEnabled("RENTER_RATING") && can("canViewRenterRatings") ? [pi("renter-ratings", "/dashboard/renter-ratings", N("renterRatings"), "sidebar-renter-ratings")] : []),
+        ...(isEnabled("RENTER_RATING") && can("canViewRenterRatings") ? [pi("renter-ratings", "/dashboard/renter-ratings", N("renterRatings"), "sidebar-renter-ratings")] : []),
         ...(ops ? [pi("properties", "/dashboard/properties", N("propertiesAndUnits"), "sidebar-properties")] : []),
         ...(ops && isEnabled("LISTINGS") ? [pi("enquiry", "/dashboard/listings", N("enquiry"), "sidebar-listings")] : []),
     ]), {

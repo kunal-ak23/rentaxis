@@ -15,7 +15,7 @@ export type RatingEvent = {
 export type RatingTrendPoint = { date: string; score: number; grade: RatingGrade };
 export type RenterRatingDetail = {
   renterId: string; score: number; grade: RatingGrade; deductionsCount: number; base: number;
-  events: RatingEvent[]; trend: RatingTrendPoint[];
+  events: RatingEvent[]; trend: RatingTrendPoint[]; hasStartedContract: boolean;
 };
 export type RenterRatingRow = {
   renterId: string; renterName: string; renterNameAr: string | null; score: number; grade: RatingGrade;

@@ -354,7 +354,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                     <p className="font-semibold"><Link href={`/dashboard/leases/${l.id}`}>{l.unitIdentifier ?? "—"}</Link> · <span className="font-normal">{l.renterName ?? "—"}</span></p>
                                     <p className="text-muted truncate">{l.propertyName ?? "—"}</p>
                                     <p>{t("endsOn", { date: fmtIsoDate(l.endDate, locale) })} · <bdi dir="ltr">{formatCurrency(l.currentRentAmount ?? l.rentAmount)}</bdi></p>
-                                    {ratingOn && <p>{ratingCell(l)}</p>}
+                                    {ratingOn && <div>{ratingCell(l)}</div>}
                                     <p className={s.tone}>{s.text}</p>
                                 </div>
                                 <ActionsMenu label={t("actions")} items={actions(l, "card")} variant="icon" testId={`renewal-card-actions-${l.id}`} triggerTestId={`renewal-card-actions-trigger-${l.id}`} />

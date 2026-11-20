@@ -66,4 +66,23 @@ describe("renter ratings page", () => {
         render(<RenterRatingsPage />);
         expect(await screen.findByText("Ratings are being calculated")).toBeInTheDocument();
     });
+
+    it("noCalculatingMessageBesideLoadError", async () => {
+        list.mockRejectedValue(new Error("boom"));
+        render(<RenterRatingsPage />);
+        expect(await screen.findByRole("alert")).toHaveTextContent("Could not load");
+        expect(screen.queryByText("Ratings are being calculated")).toBeNull();
+    });
+
+    it("hidesPropertyFilterForRolesWithoutPropertyAccess", async () => {
+        h.role = "ACCOUNTANT";
+        render(<RenterRatingsPage />);
+        await screen.findByRole("link", { name: "Tenant r1" });
+        expect(screen.queryByTestId("rating-property-filter")).toBeNull();
+        cleanup();
+        h.role = "TENANT_ADMIN";
+        render(<RenterRatingsPage />);
+        await screen.findByRole("link", { name: "Tenant r1" });
+        expect(screen.getByTestId("rating-property-filter")).toBeInTheDocument();
+    });
 });

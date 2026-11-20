@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import RatingBadge from "@/components/renters/rating/RatingBadge";
+import { useSession } from "next-auth/react";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 import { useRenterRatingEnabled } from "@/components/renters/rating/useRenterRatingEnabled";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { saveResponse } from "@/lib/download";
@@ -24,7 +26,10 @@ export default function RenterRatingsPage() {
     const t = useTranslations("RenterRating");
     const locale = useLocale();
     const enabled = useRenterRatingEnabled();
-    const properties = useNameLookup("properties", enabled);
+    const { data: session } = useSession();
+    // The property lookup (GET /properties) is closed to roles without canViewProperties (e.g. ACCOUNTANT).
+    const canPickProperty = hasPermission(session?.user?.role as UserRole | undefined, "canViewProperties");
+    const properties = useNameLookup("properties", enabled && canPickProperty);
 
     const [grade, setGrade] = useState<RatingGrade | "">("");
     const [propertyId, setPropertyId] = useState("");
@@ -95,7 +100,7 @@ export default function RenterRatingsPage() {
         </button>
     );
     const empty = !loading && total === 0;
-    const nothingYet = empty && !grade && !propertyId && !q;
+    const nothingYet = empty && !error && !grade && !propertyId && !q;
     const nameOf = (r: RenterRatingRow) => (locale === "ar" ? r.renterNameAr || r.renterName : r.renterName);
 
     return (
@@ -111,12 +116,12 @@ export default function RenterRatingsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-                <select aria-label={t("property")} data-testid="rating-property-filter" value={propertyId}
+                {canPickProperty && <select aria-label={t("property")} data-testid="rating-property-filter" value={propertyId}
                     onChange={e => { setPropertyId(e.target.value); setPage(1); }}
                     className="max-w-[14rem] bg-surface border border-border rounded-lg px-3 py-2 text-xs text-foreground cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none">
                     <option value="">{t("allProperties")}</option>
                     {properties.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                </select>
+                </select>}
                 <div className="relative">
                     <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
                     <input type="search" value={searchText} onChange={e => setSearchText(e.target.value)} placeholder={t("search")}

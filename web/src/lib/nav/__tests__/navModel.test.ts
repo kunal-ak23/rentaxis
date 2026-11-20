@@ -128,8 +128,8 @@ describe("tenant ratings entry", () => {
     const ids = (role: UserRole, on: string[]) => (buildNav(ctx(role, on)).find(s => s.id === "leasing")?.groups[0].items.map(i => i.id) ?? []);
     it("is present only when RENTER_RATING is on and the role is staff", () => {
         expect(ids("TENANT_ADMIN", ["RENTER_RATING"])).toEqual(["contracts", "renewal-season", "tenants", "renter-ratings", "properties"]);
-        // Like Tenants and Properties beside it, the entry follows the operations gate (the accountant reaches the page by link only).
-        for (const role of ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"] as UserRole[])
+        // The entry follows canViewRenterRatings, so the accountant (no Tenants/Properties entry) still sees it.
+        for (const role of ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"] as UserRole[])
             expect(ids(role, ["RENTER_RATING"]), role).toContain("renter-ratings");
         expect(ids("TENANT_ADMIN", [])).not.toContain("renter-ratings");
         for (const role of ["TENANT_USER", "RENTER", "SECURITY_GUARD", "PROMOTER"] as UserRole[])

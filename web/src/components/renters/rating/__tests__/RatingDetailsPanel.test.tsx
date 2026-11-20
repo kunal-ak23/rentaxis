@@ -15,13 +15,14 @@ import RatingDetailsPanel from "../RatingDetailsPanel";
 
 const get = renterRatingsApi.get as unknown as ReturnType<typeof vi.fn>;
 const add = renterRatingsApi.addAdjustment as unknown as ReturnType<typeof vi.fn>;
+const removeAdj = renterRatingsApi.removeAdjustment as unknown as ReturnType<typeof vi.fn>;
 
 const ev = (over: Record<string, unknown>) => ({
     type: "BOUNCE", date: "2026-03-01", basePoints: -15, weight: 1, appliedPoints: -15, sourceType: "CHEQUE",
     sourceId: "s1", leaseId: null, adjustmentId: null, note: null, ...over,
 });
 const detail = () => ({
-    renterId: "r1", score: 52, grade: "C", deductionsCount: 1, base: 70,
+    renterId: "r1", score: 52, grade: "C", deductionsCount: 1, base: 70, hasStartedContract: true,
     trend: [{ date: "2026-01-01", score: 70, grade: "B" }, { date: "2026-02-01", score: 60, grade: "C" }],
     events: [
         ev({ type: "BOUNCE", appliedPoints: -7.5, weight: 0.5, basePoints: -15, leaseId: "L9" }),
@@ -30,7 +31,7 @@ const detail = () => ({
     ],
 });
 
-beforeEach(() => { h.role = "TENANT_ADMIN"; get.mockReset(); add.mockReset(); get.mockResolvedValue(detail()); });
+beforeEach(() => { h.role = "TENANT_ADMIN"; get.mockReset(); add.mockReset(); removeAdj.mockReset(); get.mockResolvedValue(detail()); });
 afterEach(cleanup);
 
 const open = () => render(<RatingDetailsPanel renterId="r1" open onClose={() => {}} />);
@@ -77,5 +78,36 @@ describe("RatingDetailsPanel", () => {
         fireEvent.click(screen.getByRole("button", { name: "Add adjustment" }));
         expect(await screen.findByRole("alert")).toHaveTextContent("from -30 to 30");
         expect(add).not.toHaveBeenCalled();
+    });
+
+    it("hidesAdjustFormWithoutStartedContract", async () => {
+        get.mockResolvedValue({ ...detail(), events: [], grade: "NEW", score: 70, hasStartedContract: false });
+        open();
+        await screen.findByText("Every tenant starts at 70");
+        expect(screen.queryByLabelText("Reason")).toBeNull();
+        expect(screen.queryByTestId("rating-adjust-form")).toBeNull();
+    });
+
+    it("removeAsksForConfirmationFirst", async () => {
+        removeAdj.mockResolvedValue(undefined);
+        const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+        open();
+        const btn = await screen.findByRole("button", { name: /Remove adjustment: Goodwill/ });
+        fireEvent.click(btn);
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(removeAdj).not.toHaveBeenCalled();
+        confirm.mockReturnValue(true);
+        fireEvent.click(btn);
+        await waitFor(() => expect(removeAdj).toHaveBeenCalledWith("r1", "adj1"));
+        confirm.mockRestore();
+    });
+
+    it("removeLabelFallsBackToPointsAndDateWhenNoteIsNull", async () => {
+        const d = detail();
+        d.events = [ev({ type: "ADJUSTMENT", basePoints: 5, appliedPoints: 5, adjustmentId: "adj2", note: null, date: "2026-02-10" })];
+        get.mockResolvedValue(d);
+        open();
+        const btn = await screen.findByRole("button", { name: /Remove adjustment: \+5/ });
+        expect(btn.getAttribute("aria-label")).not.toMatch(/:\s*$/);
     });
 });
