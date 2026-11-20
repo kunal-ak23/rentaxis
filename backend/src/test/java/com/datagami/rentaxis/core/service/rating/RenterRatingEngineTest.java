@@ -604,6 +604,25 @@ class RenterRatingEngineTest {
         assertThat(h.run().grade()).isEqualTo(RatingGrade.NEW);
     }
 
+    /**
+     * Round 3 M-b: only a real instalment counts toward NEW's cheque minimum - CLEARED, BOUNCED, DEPOSITED,
+     * REGISTERED, ONLINE_PENDING. A REPLACED, RETURNED or TRANSFERRED row is paper that was swapped, handed back
+     * or moved, and must not lift a thin file out of NEW.
+     */
+    @Test
+    void onlyRealInstalmentsCountTowardNewsChequeMinimum() {
+        H h = history().lease(TODAY.minusMonths(7), TODAY.plusMonths(5));
+        h.cheque(ChequeStatus.CLEARED, TODAY.minusDays(60), TODAY.minusDays(60), null, null, null);
+        h.cheque(ChequeStatus.CLEARED, TODAY.minusDays(30), TODAY.minusDays(30), null, null, null);
+        h.cheque(ChequeStatus.REPLACED, TODAY.minusDays(90), null, null, null, null);
+        h.cheque(ChequeStatus.RETURNED, TODAY.minusDays(100), null, null, null, null);
+        h.cheque(ChequeStatus.TRANSFERRED, TODAY.minusDays(110), null, null, null, null);
+        assertThat(h.run().grade()).isEqualTo(RatingGrade.NEW);
+
+        h.cheque(ChequeStatus.REGISTERED, TODAY.minusDays(5), null, null, null, null);
+        assertThat(h.run().grade()).isNotEqualTo(RatingGrade.NEW);
+    }
+
     @Test
     void nonClearedStatusWithStrayClearedAtGivesNoEvent() {
         LocalDate cd = TODAY.minusDays(60);

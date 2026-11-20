@@ -33,6 +33,14 @@ public final class RenterRatingEngine {
 
     private static final String ON_HOLD = "ON_HOLD";
 
+    /**
+     * Round 3 M-b: the statuses a real instalment is in, the only rows that count toward NEW's cheque minimum.
+     * DRAFT and CANCELLED were never paid; REPLACED and RETURNED paper was swapped or handed back (its successor
+     * counts); TRANSFERRED was copied onto the new lease (LeaseTransferService), where the copy counts.
+     */
+    private static final Set<ChequeStatus> INSTALMENT_STATUSES = java.util.EnumSet.of(ChequeStatus.CLEARED,
+            ChequeStatus.BOUNCED, ChequeStatus.DEPOSITED, ChequeStatus.REGISTERED, ChequeStatus.ONLINE_PENDING);
+
     public static RenterRatingResult score(RenterHistory h, LocalDate today) {
         List<LeaseRow> started = h.leases().stream()
                 .filter(l -> l.status() != LeaseStatus.DRAFT && l.status() != LeaseStatus.PENDING_SIGNATURE)
@@ -59,10 +67,8 @@ public final class RenterRatingEngine {
 
         for (ChequeRow c : h.cheques()) {
             if (c.leaseId() != null && !leaseIds.contains(c.leaseId())) continue;
-            // TRANSFERRED: the paper was copied onto the new lease (LeaseTransferService); the copy counts.
             if (c.chequeDate() != null && inWindow(c.chequeDate(), today)
-                    && c.status() != ChequeStatus.DRAFT && c.status() != ChequeStatus.CANCELLED
-                    && c.status() != ChequeStatus.TRANSFERRED) windowCheques++;
+                    && INSTALMENT_STATUSES.contains(c.status())) windowCheques++;
             LocalDate bounceDate = c.bouncedAt() != null ? c.bouncedAt() : c.importedBouncedOn();
             if (bounceDate != null && c.failureReason() != ChequeFailureReason.TECHNICAL_RETURN) {
                 add(raw, RatingEventType.BOUNCE, bounceDate, BOUNCE_POINTS, "CHEQUE", c.id(), c.leaseId(), null, null,

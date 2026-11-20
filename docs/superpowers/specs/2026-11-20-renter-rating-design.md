@@ -127,7 +127,7 @@ Not counted:
 | D — Poor | 0–49 |
 | NEW — Not enough history | see below |
 
-A renter is **NEW** when their earliest lease in this org started less than 6 months ago, **or** they have fewer than 3 cheques dated in the window, **and** they have no deductions and no manual adjustments. A renter with any deduction always gets a real grade. A manual adjustment (positive or negative) also gives a real grade, because an admin has vouched for the renter's history. Negative adjustments count in `deductions_count`. A NEW renter's score is still computed and shown greyed out.
+A renter is **NEW** when their earliest lease in this org started less than 6 months ago, **or** they have fewer than 3 cheques dated in the window (only real instalments count: `CLEARED`, `BOUNCED`, `DEPOSITED`, `REGISTERED`, `ONLINE_PENDING`; not `DRAFT`, `CANCELLED`, `REPLACED`, `RETURNED` or `TRANSFERRED`), **and** they have no deductions and no manual adjustments. A renter with any deduction always gets a real grade. A manual adjustment (positive or negative) also gives a real grade, because an admin has vouched for the renter's history. Negative adjustments count in `deductions_count`. A NEW renter's score is still computed and shown greyed out.
 
 Worked example: a renter with 12 on-time cheques and an early renewal intent scores 70 + 12 + 3 = 85, grade A. One bounce 8 months ago brings it to 70, grade B.
 
