@@ -3,6 +3,7 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.api.dto.BookingCreateRequest;
 import com.datagami.rentaxis.api.dto.BookingDetailDTO;
+import com.datagami.rentaxis.api.dto.BookingOnBehalfRequest;
 import com.datagami.rentaxis.api.dto.BookingQuoteDTO;
 import com.datagami.rentaxis.api.dto.BookingRequestDTO;
 import com.datagami.rentaxis.api.dto.DecisionRequest;
@@ -177,6 +178,30 @@ public class BookingController {
         checkPropertyManagerAccess(bookingService.get(tenantId, id).getPropertyId());
         return ResponseEntity.ok(toDTO(bookingService.approve(
                 tenantId, id, currentUserId(), body == null ? null : body.adminNote())));
+    }
+
+    /**
+     * Spec 2026-11-19 section 4: the office books a bay or amenity for a renter on one of the renter's
+     * units. Created and approved in one transaction, so the fee posts at once; the renter must hold
+     * a live lease on the unit ({@code booking.noLease} otherwise, nothing created). A manager is
+     * checked against the unit's property, like the other staff endpoints.
+     */
+    @PostMapping("/bookings/on-behalf")
+    // One transaction for the create, the approval and the mapping (lazy unit and property reads, OSIV off).
+    @org.springframework.transaction.annotation.Transactional
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
+    public ResponseEntity<BookingRequestDTO> createOnBehalf(@Valid @RequestBody BookingOnBehalfRequest req) {
+        UUID tenantId = tenantId();
+        UUID unitId = req.booking().unitId();
+        if (unitId == null) {
+            throw new BusinessRuleViolationException("unitId is required");
+        }
+        Unit unit = unitRepository.findWithPlaceByTenantIdAndId(tenantId, unitId)
+                .orElseThrow(() -> new NotFoundException("Unit not found"));
+        checkPropertyManagerAccess(unit.getProperty().getId());
+        BookingRequest booking = bookingService.createOnBehalf(
+                tenantId, currentUserId(), req.renterUserId(), unit, req.booking());
+        return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(booking));
     }
 
     @PostMapping("/bookings/{id}/reject")

@@ -168,6 +168,19 @@ public class BookingFeeService {
     }
 
     /**
+     * The renter's live lease on the unit, in the tenant; {@code booking.noLease} when there is none.
+     * Shared by the charge on approval and the staff pre-check before a booking is created for a renter.
+     */
+    public Lease requireLiveLease(UUID tenantId, UUID unitId, UUID renterUserId) {
+        return leases.findByUnitIdAndStatusIn(unitId, LIVE).stream()
+                .filter(l -> Objects.equals(l.getTenantId(), tenantId))
+                .filter(l -> l.getRenter() != null && Objects.equals(l.getRenter().getUserId(), renterUserId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessRuleViolationException(
+                        "The renter has no live lease on this unit to charge the booking fee to.", "booking.noLease", Map.of()));
+    }
+
+    /**
      * On approval: the quoted fee becomes a BOOKING_FEE charge on the renter's live
      * lease of the booked-from unit, approved (posted) at once as a journal voucher to
      * {@link #incomeAccountFor}. No live lease with a fee to charge refuses the approval.
@@ -175,12 +188,7 @@ public class BookingFeeService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void chargeOnApproval(BookingRequest b, String what, LocalDate on) {
         if (b.getFeeAmount() == null || b.getFeeAmount().signum() <= 0 || b.getChargeId() != null) return;
-        Lease lease = leases.findByUnitIdAndStatusIn(b.getUnitId(), LIVE).stream()
-                .filter(l -> Objects.equals(l.getTenantId(), b.getTenantId()))
-                .filter(l -> l.getRenter() != null && Objects.equals(l.getRenter().getUserId(), b.getRenterUserId()))
-                .findFirst()
-                .orElseThrow(() -> new BusinessRuleViolationException(
-                        "The renter has no live lease on this unit to charge the booking fee to.", "booking.noLease", Map.of()));
+        Lease lease = requireLiveLease(b.getTenantId(), b.getUnitId(), b.getRenterUserId());
         // Before anything is saved: a refused income account leaves no charge behind.
         UUID incomeAccountId = incomeAccountFor(b, b.getPropertyId());
         LocalDate start = b.getPreferredDate();

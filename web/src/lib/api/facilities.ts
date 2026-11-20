@@ -341,3 +341,13 @@ export async function fetchBookingQuote(params: {
   }
   return handle(await fetch(`${BOOKINGS}/quote?${q.toString()}`))
 }
+
+/** Staff book for a renter: created and approved at once, the fee posted. 201 with the approved booking. */
+export async function createBookingOnBehalf(body: {
+  booking: BookingCreateRequest
+  renterUserId: string
+}): Promise<BookingRequestDTO> {
+  return handle(
+    await fetch(`${BOOKINGS}/on-behalf`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
+  )
+}

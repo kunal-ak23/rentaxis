@@ -216,6 +216,9 @@ export interface BookingCreateRequest {
   preferredDate?: string
   /** Parking only: last day of the booking (inclusive); omitted = open-ended. */
   preferredEndDate?: string
+  /** Amenity only: the slot's times, HH:mm. */
+  preferredStartTime?: string
+  preferredEndTime?: string
   note?: string
 }
 

@@ -584,6 +584,19 @@ public class BookingService {
         return decide(booking, BookingRequestStatus.APPROVED, adminUserId, adminNote);
     }
 
+    /**
+     * Staff book on behalf of a renter (spec 2026-11-19 §4): the booking is created and approved
+     * in one transaction, so the fee posts at once. The renter must hold a live lease on the unit
+     * (checked before anything is created: {@code booking.noLease}); a taken bay or a refused
+     * approval rolls the whole thing back.
+     */
+    public BookingRequest createOnBehalf(UUID tenantId, UUID staffUserId, UUID renterUserId, Unit unit,
+                                         BookingCreateRequest req) {
+        if (bookingFees != null) bookingFees.requireLiveLease(tenantId, unit.getId(), renterUserId);
+        BookingRequest created = create(tenantId, renterUserId, unit, req);
+        return approve(tenantId, created.getId(), staffUserId, null);
+    }
+
     public BookingRequest reject(UUID tenantId, UUID id, UUID adminUserId, String adminNote) {
         BookingRequest booking = getForUpdate(tenantId, id);
         requirePending(booking);
