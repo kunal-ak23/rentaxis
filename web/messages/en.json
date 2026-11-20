@@ -6168,5 +6168,51 @@
     "keyClose": "Close tab",
     "keyReopen": "Reopen closed tab",
     "keySearch": "Find and open a screen"
+  },
+  "RenterRating": {
+    "title": "Tenant rating",
+    "score": "Score",
+    "baseline": "Every tenant starts at {base}",
+    "openDetails": "Tenant rating {grade}, score {score}: open details",
+    "close": "Close",
+    "trend": "Score trend",
+    "trendLabel": "Score trend over recent months",
+    "events": "Score history",
+    "noEvents": "No scored events yet.",
+    "halfWeight": "half weight",
+    "contract": "Contract",
+    "loadError": "Could not load the tenant rating.",
+    "loading": "Loading...",
+    "adjustTitle": "Manual adjustment",
+    "points": "Points (-30 to 30)",
+    "reason": "Reason",
+    "add": "Add adjustment",
+    "saving": "Saving...",
+    "remove": "Remove",
+    "removeLabel": "Remove adjustment: {reason}",
+    "errPoints": "Points must be a whole number from -30 to 30, not zero.",
+    "errReason": "Enter a reason of 1 to 500 characters.",
+    "saveError": "Could not save the change.",
+    "grade": {
+      "A": "Excellent",
+      "B": "Good",
+      "C": "Fair",
+      "D": "Poor",
+      "NEW": "New"
+    },
+    "event": {
+      "ON_TIME_CHEQUE": "On-time cheque",
+      "RENEWAL": "Contract renewed",
+      "EARLY_INTENT": "Early renewal intent",
+      "BOUNCE": "Bounced cheque",
+      "LATE_CLEAR": "Cheque cleared late",
+      "LATE_PAYMENT_PENALTY": "Late payment penalty",
+      "MISCONDUCT_PENALTY": "Misconduct penalty",
+      "WRITE_OFF": "Bad-debt write-off",
+      "LONG_HOLD": "Long hold on cheque",
+      "NO_RESPONSE": "No response to renewal",
+      "MEETING_NO_SHOW": "Missed meeting",
+      "ADJUSTMENT": "Manual adjustment"
+    }
   }
 }
