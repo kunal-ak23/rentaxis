@@ -405,4 +405,87 @@ class GoldenBookingJournalVoucherIT extends AbstractPostgresIT {
                 .isEqualTo("APPROVED");
         assertThat(traceOf(chargeId)).as("the JV only: nothing reversed or added").hasSize(1);
     }
+
+    /**
+     * Spec ledger rules 1-6, end to end in one tenant: a mix of approved, cancelled, paid,
+     * staff-booked and free bookings leaves the booking list, the charges and the journals
+     * saying the same thing.
+     */
+    @Test
+    void bookingsChargesAndJournalsReconcile() {
+        // two-month PER_MONTH parking, approved: 600 + 30 VAT
+        approve(bookParking(bay("P-70", "PER_MONTH", "300", null), twoMonthsFrom(), twoMonthsTo()));
+        // amenity approved, then cancelled by the renter before its slot: nets to zero
+        BookingRequest renterCancelled = bookAmenity(amenity("Hall", "PER_BOOKING", "600", null), today.plusDays(10));
+        approve(renterCancelled);
+        tx.executeWithoutResult(s -> bookings.cancel(fixtures.tenantId(), renterCancelled.getId(), renterUser));
+        // amenity approved, paid, then cancelled by staff: the 630 stays as a credit
+        BookingRequest paidCancelled = bookAmenity(amenity("Gym", "PER_BOOKING", "600", null), today.plusDays(11));
+        UUID paidChargeId = approve(paidCancelled).getChargeId();
+        UUID paidRow = tx.execute(s -> assessments.findById(paidChargeId).orElseThrow().getCollectionCheque().getId());
+        chequeService.receive(paidRow, com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest.on(today));
+        tx.execute(s -> bookings.cancelByStaff(fixtures.tenantId(), paidCancelled.getId(), UUID.randomUUID(), "Gym closed"));
+        // staff on-behalf PER_DAY amenity (one day slot): 100 + 5 VAT
+        PropertyAmenity court = amenity("Court", "PER_DAY", "100", null);
+        BookingRequest onBehalf = tx.execute(s -> bookings.createOnBehalf(fixtures.tenantId(), UUID.randomUUID(),
+                renterUser, fixtures.unit(), new BookingCreateRequest(BookingResourceType.AMENITY, court.getId(),
+                        fixtures.unit().getId(), today.plusDays(20), null, LocalTime.of(9, 0), LocalTime.of(11, 0), null)));
+        assertThat(onBehalf.getChargeId()).isNotNull();
+        // a free booking: approved, no fee, no charge
+        BookingRequest free = approve(bookAmenity(amenity("Garden", "FREE", "0", null), today.plusDays(12)));
+        assertThat(free.getChargeId()).isNull();
+
+        UUID tenant = fixtures.tenantId();
+        // 1. approved, not-cancelled bookings with a fee = APPROVED BOOKING_FEE charges (count and amount)
+        Map<String, Object> bookingSide = jdbc.queryForMap("select count(*) as n, coalesce(sum(fee_amount), 0) as total"
+                + " from booking_requests where tenant_id = ? and status = 'APPROVED' and fee_amount > 0", tenant);
+        Map<String, Object> chargeSide = jdbc.queryForMap("select count(*) as n, coalesce(sum(amount), 0) as total"
+                + " from penalty_assessments where tenant_id = ? and source_type = 'BOOKING' and reason = 'BOOKING_FEE'"
+                + " and status = 'APPROVED'", tenant);
+        assertThat(((Number) bookingSide.get("n")).longValue()).isEqualTo(2L);
+        assertThat(chargeSide.get("n")).isEqualTo(bookingSide.get("n"));
+        assertThat((BigDecimal) chargeSide.get("total")).isEqualByComparingTo((BigDecimal) bookingSide.get("total"))
+                .isEqualByComparingTo("700.00");
+        assertThat(jdbc.queryForObject("select count(*) from booking_requests b where b.tenant_id = ?"
+                + " and b.status = 'APPROVED' and b.fee_amount > 0 and not exists (select 1 from penalty_assessments p"
+                + " where p.id = b.charge_id and p.status = 'APPROVED' and p.amount = b.fee_amount)", Integer.class, tenant))
+                .as("every such booking has its own matching charge").isZero();
+
+        // 2. those charges' journals' income credits sum to the same total
+        BigDecimal income = jdbc.queryForObject("select coalesce(sum(l.credit) - sum(l.debit), 0) from journal_lines l"
+                + " join accounts a on a.id = l.account_id join journal_entries j on j.id = l.journal_entry_id"
+                + " join penalty_assessments p on j.source_type = 'PENALTY' and j.source_id = p.id"
+                + " where p.tenant_id = ? and p.source_type = 'BOOKING' and p.status = 'APPROVED'"
+                + " and a.account_type = 'INCOME'", BigDecimal.class, tenant);
+        assertThat(income).isEqualByComparingTo((BigDecimal) bookingSide.get("total"));
+
+        // 3. every charge's receivable debits equal its collection row's amount (fee + VAT)
+        List<Map<String, Object>> perCharge = jdbc.queryForList("select p.id, p.amount, p.vat_amount, c.amount as row_amount,"
+                + " (select coalesce(sum(l.debit), 0) from journal_lines l join accounts a on a.id = l.account_id"
+                + "   join journal_entries j on j.id = l.journal_entry_id where j.source_type = 'PENALTY'"
+                + "   and j.source_id = p.id and a.account_sub_type = 'RECEIVABLE') as receivable_debit"
+                + " from penalty_assessments p join cheques c on c.id = p.collection_cheque_id"
+                + " where p.tenant_id = ? and p.source_type = 'BOOKING'", tenant);
+        assertThat(perCharge).hasSize(4).allSatisfy(r -> {
+            assertThat((BigDecimal) r.get("receivable_debit")).as("charge " + r.get("id"))
+                    .isEqualByComparingTo((BigDecimal) r.get("row_amount"));
+            assertThat((BigDecimal) r.get("row_amount"))
+                    .isEqualByComparingTo(((BigDecimal) r.get("amount")).add((BigDecimal) r.get("vat_amount")));
+        });
+
+        // 4. cancelled bookings' charges net to 0 on income and receivable, journal plus reversal
+        List<UUID> cancelledCharges = jdbc.queryForList("select b.charge_id from booking_requests b where b.tenant_id = ?"
+                + " and b.status = 'CANCELLED' and b.charge_id is not null", UUID.class, tenant);
+        assertThat(cancelledCharges).hasSize(2);
+        for (UUID chargeId : cancelledCharges) {
+            assertThat(traceOf(chargeId)).as("the JV and its reversal").hasSize(2);
+            for (String type : List.of("INCOME", "RECEIVABLE")) {
+                String col = "INCOME".equals(type) ? "a.account_type" : "a.account_sub_type";
+                BigDecimal net = jdbc.queryForObject("select coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0)"
+                        + " from journal_lines l join accounts a on a.id = l.account_id where " + col + " = ?"
+                        + " and l.journal_entry_id in (" + TRACE + ")", BigDecimal.class, type, chargeId, chargeId);
+                assertThat(net).as(type + " net of charge " + chargeId).isEqualByComparingTo("0");
+            }
+        }
+    }
 }
