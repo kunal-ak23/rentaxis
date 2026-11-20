@@ -1,0 +1,6 @@
+package com.datagami.rentaxis.core.service.rating;
+
+public enum RatingEventType {
+    ON_TIME_CHEQUE, RENEWAL, EARLY_INTENT, BOUNCE, LATE_CLEAR, LATE_PAYMENT_PENALTY,
+    MISCONDUCT_PENALTY, WRITE_OFF, LONG_HOLD, NO_RESPONSE, MEETING_NO_SHOW, ADJUSTMENT
+}
