@@ -35,7 +35,7 @@
 
 **Files:**
 - Modify: `backend/src/main/java/com/datagami/rentaxis/core/service/BookingFeeService.java` (`TYPES`, `validate`, `quote`)
-- Create: `backend/src/main/resources/db/changelog/changesets/190-booking-fee-periods.yaml`
+- Create: `backend/src/main/resources/db/changelog/changesets/191-booking-fee-periods.yaml`
 - Modify: `backend/src/main/resources/db/changelog/db.changelog-master.yaml`
 - Test: `backend/src/test/java/com/datagami/rentaxis/core/service/BookingFeeQuoteTest.java` (new, plain JUnit)
 
@@ -90,7 +90,7 @@ return total.setScale(2, RoundingMode.HALF_UP);
 
 A null `end` means `end = start`. `validate` refuses `PER_MONTH` when `!parking`, keeps refusing `PER_HOUR` when `parking`; error code stays `booking.feeType`.
 
-- [ ] **Step 4: Changeset 190.** Drop and re-add `ck_spot_fee` with `('FREE','PER_BOOKING','PER_DAY','PER_MONTH')` and `ck_amenity_fee` with `('FREE','PER_BOOKING','PER_HOUR','PER_DAY')`, both keeping `AND fee_amount >= 0`. Rollback restores the `143-booking-fees.yaml` definitions. Include in master.
+- [ ] **Step 4: Changeset 191.** Drop and re-add `ck_spot_fee` with `('FREE','PER_BOOKING','PER_DAY','PER_MONTH')` and `ck_amenity_fee` with `('FREE','PER_BOOKING','PER_HOUR','PER_DAY')`, both keeping `AND fee_amount >= 0`. Rollback restores the `143-booking-fees.yaml` definitions. Include in master.
 
 - [ ] **Step 5: Run** `./gradlew test --tests '*BookingFeeQuoteTest' --tests '*BookingFeeIT'`. Expected: PASS.
 
@@ -109,7 +109,7 @@ A null `end` means `end = start`. `validate` refuses `PER_MONTH` when `!parking`
 - Modify: `domain/entity/ParkingSpot.java`, `domain/entity/PropertyAmenity.java` (`UUID incomeAccountId`)
 - Modify: `api/dto/ParkingSpotCreateRequest.java`, `ParkingSpotUpdateRequest.java`, `ParkingSpotDTO.java`, `AmenityCreateRequest.java`, `AmenityUpdateRequest.java`, `AmenityDTO.java` (add `UUID incomeAccountId` as the last component; the two update requests also add `Boolean clearIncomeAccount` after it; keep every existing compatibility constructor compiling by passing `null`)
 - Modify: `core/service/FacilityService.java` (validate on create/update)
-- Create: `backend/src/main/resources/db/changelog/changesets/191-booking-income-account.yaml`
+- Create: `backend/src/main/resources/db/changelog/changesets/192-booking-income-account.yaml`
 - Test: `backend/src/test/java/com/datagami/rentaxis/core/service/FacilityIncomeAccountIT.java`
 
 **Interfaces:**
@@ -126,7 +126,7 @@ A null `end` means `end = start`. `validate` refuses `PER_MONTH` when `!parking`
 
 - [ ] **Step 3: Implement** entity fields, DTOs, `IncomeLeafRule`, `FacilityService` validation (only when `incomeAccountId != null`; null clears it on update only when a new `Boolean clearIncomeAccount` is true — otherwise null = unchanged, matching patch semantics).
 
-- [ ] **Step 4: Changeset 191**, following `138-interproperty-clearing.yaml`:
+- [ ] **Step 4: Changeset 192**, following `138-interproperty-clearing.yaml`:
   - `ALTER TABLE parking_spots ADD COLUMN income_account_id UUID REFERENCES accounts(id) ON DELETE SET NULL`; same for `property_amenities`.
   - Insert an `AMENITY_INCOME` row into `property_account_template_rows` (`name_pattern 'Amenity Income - {property}'`, parent = the tenant's `C-01-02`) for tenants that already have template rows and none for this role.
   - No per-property leaves here. Rollback drops the columns and deletes the template rows.

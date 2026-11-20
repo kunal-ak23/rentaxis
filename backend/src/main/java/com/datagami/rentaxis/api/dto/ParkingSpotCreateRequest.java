@@ -9,7 +9,7 @@ import java.util.UUID;
 /**
  * covered null = true; buildingIds null/empty = visible to all towers;
  * attachedUnitId (changeset 175) null = a bookable bay, otherwise the unit it is
- * allocated to from the start; incomeAccountId (changeset 191) null = the role default.
+ * allocated to from the start; incomeAccountId (changeset 192) null = the role default.
  */
 public record ParkingSpotCreateRequest(
         UUID propertyId,

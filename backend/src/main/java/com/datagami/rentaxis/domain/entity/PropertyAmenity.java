@@ -54,7 +54,7 @@ public class PropertyAmenity extends BaseTenantEntity {
     @Column(name = "fee_type", nullable = false, length = 12)
     private String feeType = "FREE";
 
-    /** Income leaf the booking fee credits (changeset 191); null = the role default. */
+    /** Income leaf the booking fee credits (changeset 192); null = the role default. */
     @Column(name = "income_account_id")
     private UUID incomeAccountId;
 

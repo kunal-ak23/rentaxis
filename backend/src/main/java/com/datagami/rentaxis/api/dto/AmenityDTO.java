@@ -19,7 +19,7 @@ public record AmenityDTO(
         Instant updatedAt,
         /* F14-50 */ String feeType,
         java.math.BigDecimal feeAmount,
-        /* changeset 191 */ UUID incomeAccountId) {
+        /* changeset 192 */ UUID incomeAccountId) {
     public AmenityDTO(UUID id,
         UUID propertyId,
         String nameEn,

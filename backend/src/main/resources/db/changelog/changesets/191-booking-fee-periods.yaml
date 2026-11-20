@@ -2,7 +2,7 @@
 # PER_MONTH for parking spots only (PER_HOUR stays amenity-only).
 databaseChangeLog:
   - changeSet:
-      id: 190-booking-fee-periods
+      id: 191-booking-fee-periods
       author: claude
       changes:
         - sql:

@@ -13,7 +13,7 @@ import java.util.UUID;
  * of the edit, so a refused part leaves the bay exactly as it was. Absent or false
  * leaves the attachment alone.</p>
  *
- * <p>Income account (changeset 191): null {@code incomeAccountId} = unchanged;
+ * <p>Income account (changeset 192): null {@code incomeAccountId} = unchanged;
  * {@code clearIncomeAccount = true} clears it.</p>
  */
 public record ParkingSpotUpdateRequest(
