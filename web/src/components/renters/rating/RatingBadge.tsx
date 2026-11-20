@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { renterRatingsApi, type RatingGrade } from "@/lib/api/renterRatings";
 import RatingDetailsPanel from "./RatingDetailsPanel";
 import { useRenterRatingEnabled } from "./useRenterRatingEnabled";
-import { GRADE_CLASS } from "./ratingFormat";
+import { GRADE_CLASS, gradeText } from "./ratingFormat";
 
 /**
  * Grade + score chip; click opens the details panel. With `prefetched` (the list
@@ -34,14 +34,15 @@ export default function RatingBadge({ renterId, compact, prefetched }: {
     const r = live ?? prefetched;
     if (!r) return null;
     const label = t(`grade.${r.grade}`);
+    const shown = gradeText(r.grade, t("grade.NEW"));
     return (
         <>
             <button type="button" onClick={() => setOpen(true)} data-testid={`rating-badge-${renterId}`}
-                aria-label={t("openDetails", { grade: r.grade, score: r.score })}
+                aria-label={t("openDetails", { grade: shown, score: r.score })}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-semibold cursor-pointer hover:opacity-80 ${GRADE_CLASS[r.grade]}`}>
-                <span>{r.grade}</span>
+                <span>{shown}</span>
                 <span>{r.score}</span>
-                {!compact && <span className="font-normal">{label}</span>}
+                {!compact && r.grade !== "NEW" && <span className="font-normal">{label}</span>}
             </button>
             {open && (
                 <RatingDetailsPanel renterId={renterId} open onClose={() => setOpen(false)}

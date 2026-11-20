@@ -47,6 +47,16 @@ describe("renter ratings page", () => {
         await waitFor(() => expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ grade: "D" })));
     });
 
+    it("gradeChipsUseTranslatedNewLabel", async () => {
+        list.mockResolvedValue(page([row("r3", 70, "NEW")]));
+        render(<RenterRatingsPage />);
+        await screen.findByRole("link", { name: "Tenant r3" });
+        expect(screen.getByTestId("rating-grade-NEW")).toHaveTextContent(/^New$/);
+        expect(screen.getByTestId("rating-grade-A")).toHaveTextContent(/^A$/);
+        expect(screen.getByTestId("rating-badge-r3")).toHaveTextContent("New");
+        expect(screen.queryByText("NEW")).toBeNull();
+    });
+
     it("exportUsesFilters", async () => {
         const res = new Response("csv", { status: 200 });
         const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(res);

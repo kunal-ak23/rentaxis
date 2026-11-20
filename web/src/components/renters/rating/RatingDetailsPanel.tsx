@@ -9,7 +9,7 @@ import { renterRatingsApi, type RenterRatingDetail } from "@/lib/api/renterRatin
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
 import AdjustmentForm from "./AdjustmentForm";
-import { GRADE_CLASS, signedPoints } from "./ratingFormat";
+import { GRADE_CLASS, gradeText, signedPoints } from "./ratingFormat";
 
 function Trend({ points, label }: { points: { score: number }[]; label: string }) {
     if (points.length < 2) return null;
@@ -62,9 +62,9 @@ export default function RatingDetailsPanel({ renterId, open, onClose, onLoaded }
                 <div className="space-y-5">
                     <div className="flex items-center gap-4">
                         <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-bold ${GRADE_CLASS[data.grade]}`}>
-                            <span>{data.grade}</span><span>{data.score}</span>
+                            <span>{gradeText(data.grade, t("grade.NEW"))}</span><span>{data.score}</span>
                         </span>
-                        <span className="text-sm text-foreground">{t(`grade.${data.grade}`)}</span>
+                        {data.grade !== "NEW" && <span className="text-sm text-foreground">{t(`grade.${data.grade}`)}</span>}
                     </div>
                     <p className="text-xs text-muted">{t("baseline", { base: data.base })}</p>
                     <Trend points={data.trend} label={t("trendLabel")} />

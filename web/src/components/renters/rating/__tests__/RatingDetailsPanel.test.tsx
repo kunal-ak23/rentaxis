@@ -89,6 +89,8 @@ describe("RatingDetailsPanel", () => {
         await screen.findByText("Every tenant starts at 70");
         expect(screen.queryByLabelText("Reason")).toBeNull();
         expect(screen.queryByTestId("rating-adjust-form")).toBeNull();
+        expect(screen.getAllByText("New")).toHaveLength(1);
+        expect(screen.queryByText("NEW")).toBeNull();
     });
 
     it("removeAsksForConfirmationFirst", async () => {

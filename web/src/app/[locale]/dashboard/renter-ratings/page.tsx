@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import RatingBadge from "@/components/renters/rating/RatingBadge";
+import { gradeText } from "@/components/renters/rating/ratingFormat";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { useRenterRatingEnabled } from "@/components/renters/rating/useRenterRatingEnabled";
@@ -112,7 +113,7 @@ export default function RenterRatingsPage() {
 
             <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("filterGrade")}>
                 {chip("", t("all"))}
-                {GRADES.map(g => chip(g, g))}
+                {GRADES.map(g => chip(g, gradeText(g, t("grade.NEW"))))}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

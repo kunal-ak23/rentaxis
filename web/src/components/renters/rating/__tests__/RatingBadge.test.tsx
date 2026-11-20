@@ -47,9 +47,12 @@ describe("RatingBadge", () => {
     it("newGradeGrey", async () => {
         get.mockResolvedValue(detail(70, "NEW"));
         render(<RatingBadge renterId="r1" />);
-        const btn = await screen.findByRole("button", { name: /Tenant rating NEW/ });
+        const btn = await screen.findByRole("button", { name: /Tenant rating New, score 70/ });
         expect(btn.className).toMatch(/gray/);
-        expect(screen.getByText("New")).toBeInTheDocument();
+        // translated label, shown once, and never the raw enum name
+        expect(screen.getAllByText("New")).toHaveLength(1);
+        expect(screen.queryByText("NEW")).toBeNull();
+        expect(btn.getAttribute("aria-label")).not.toMatch(/NEW/);
     });
 
     it("prefetched values render without fetching", () => {
