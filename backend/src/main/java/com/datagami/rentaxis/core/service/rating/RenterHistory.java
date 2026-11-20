@@ -27,7 +27,7 @@ public record RenterHistory(UUID renterId,
     public record ChequeRow(UUID id, UUID leaseId, ChequeStatus status, LocalDate chequeDate, LocalDate clearedAt,
                             LocalDate bouncedAt, LocalDate importedBouncedOn, ChequeFailureReason failureReason) {}
 
-    /** sourceChequeId is null unless the penalty's sourceId is a cheque. */
+    /** sourceChequeId is the penalty's linked cheque (penalty_assessments.cheque_id, same tenant), else null. */
     public record PenaltyRow(UUID id, UUID leaseId, PenaltyReason reason, PenaltyAssessmentStatus status,
                              LocalDate incidentDate, UUID sourceChequeId) {}
 

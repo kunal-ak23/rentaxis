@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.rating;
 
+import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.rating.RatingEventDTO;
 import com.datagami.rentaxis.api.dto.rating.RenterRatingDetailDTO;
 import com.datagami.rentaxis.api.dto.rating.RenterRatingRowDTO;
@@ -9,14 +10,20 @@ import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
+import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.LandlordOrgFineSettings;
+import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
+import com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus;
 import com.datagami.rentaxis.domain.entity.enums.RatingGrade;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import com.datagami.rentaxis.domain.repository.LandlordOrgFineSettingsRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
@@ -31,7 +38,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -62,6 +71,10 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
     @Autowired AccountService accountService;
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
+    @Autowired ChequeService chequeService;
+    @Autowired PenaltyAssessmentService penaltyService;
+    @Autowired LandlordOrgFineSettingsRepository fineSettingsRepo;
+    @Autowired TransactionTemplate tx;
 
     private int seq;
 
@@ -134,6 +147,61 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
         });
         assertThat(d.trend()).hasSize(1);
         assertThat(d.trend().get(0).score()).isEqualTo(55);
+    }
+
+    /**
+     * PR round 1 C1: the cheque-return fine the system proposes on a bounce links the cheque through
+     * {@code cheque_id} (source_type/source_id stay null). Driven through the real register path,
+     * ChequeService.bounce -> PenaltyRuleEngine.onBounce -> PenaltyAssessmentService.proposeBySystem,
+     * then approved: the bounce counts once (-15) and the fine is not a second, misconduct deduction.
+     */
+    @Test
+    void systemProposedChequeReturnFineIsNotDoubleCounted() {
+        LeaseTestFixtures f = newOrgFixtures();
+        tx.executeWithoutResult(s -> {
+            LandlordOrgFineSettings o = fineSettingsRepo.findByLandlordOrgId(f.tenantId()).orElseGet(() -> {
+                LandlordOrgFineSettings n = new LandlordOrgFineSettings();
+                n.setLandlordOrgId(f.tenantId());
+                n.setTenantId(f.tenantId());
+                n.setFineBounceAmount(new BigDecimal("500"));
+                n.setFineSignatureMismatchAmount(new BigDecimal("500"));
+                n.setFineAccountClosedAmount(new BigDecimal("1000"));
+                n.setFineGraceDays(7);
+                n.setFinePerDayRate(new BigDecimal("25"));
+                n.setAutoProposeLatePayment(false);
+                return n;
+            });
+            o.setBouncesBeforePenalty(1);
+            o.setAutoProposeChequeReturn(true);
+            fineSettingsRepo.save(o);
+        });
+        UUID leaseId = postedLease(f);
+        UUID chequeId = chequeIds(f.tenantId(), leaseId).get(0);
+        LocalDate bounceDay = LocalDate.of(2026, 10, 12);
+        chequeService.deposit(chequeId, ChequeActionRequest.on(LocalDate.of(2026, 10, 5)));
+        chequeService.bounce(chequeId, new ChequeActionRequest(bounceDay, null, ChequeFailureReason.BOUNCE, null));
+
+        List<java.util.Map<String, Object>> fines = jdbc.queryForList(
+                "select id, cheque_id, source_type, source_id from penalty_assessments "
+                        + "where tenant_id = ? and lease_id = ? and reason = 'CHEQUE_RETURN'", f.tenantId(), leaseId);
+        assertThat(fines).as("the rule proposed exactly one fine").hasSize(1);
+        assertThat(fines.get(0).get("cheque_id")).isEqualTo(chequeId);
+        assertThat(fines.get(0).get("source_type")).isNull();
+        assertThat(fines.get(0).get("source_id")).isNull();
+        UUID fineId = (UUID) fines.get(0).get("id");
+        assertThat(penaltyService.approve(fineId, LocalDate.of(2026, 10, 20)).status())
+                .isEqualTo(PenaltyAssessmentStatus.APPROVED);
+
+        RenterRatingDetailDTO d = service.live(f.tenantId(), f.renter().getId(), TODAY);
+
+        assertThat(d.events()).filteredOn(e -> e.appliedPoints() < 0).singleElement().satisfies(e -> {
+            assertThat(e.type()).isEqualTo(RatingEventType.BOUNCE);
+            assertThat(e.appliedPoints()).isEqualTo(-15.0);
+            assertThat(e.sourceId()).isEqualTo(chequeId);
+        });
+        assertThat(d.events()).noneMatch(e -> e.type() == RatingEventType.MISCONDUCT_PENALTY);
+        assertThat(d.deductionsCount()).isEqualTo(1);
+        assertThat(d.score()).isEqualTo(55);
     }
 
     @Test

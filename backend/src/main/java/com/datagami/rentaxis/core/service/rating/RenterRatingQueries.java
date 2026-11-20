@@ -54,13 +54,18 @@ class RenterRatingQueries {
     }
 
     /**
-     * id, renter_id, lease_id, reason, status, incident_date, source cheque id (only if that cheque exists
+     * id, renter_id, lease_id, reason, status, incident_date, linked cheque id (only if that cheque exists
      * in this tenant).
+     *
+     * <p>The linked cheque is {@code cheque_id}: the cheque-return fine the system proposes on a bounce
+     * (PenaltyRuleEngine.onBounce -> PenaltyAssessmentService.proposeBySystem) and a fine raised by hand
+     * against a cheque both carry it there, and leave source_type/source_id null. No code path records a
+     * cheque as {@code source_type}/{@code source_id} (those are JOURNAL, BOOKING, HOLDOVER, TICKET).</p>
      */
     List<Object[]> penalties(UUID tenantId, Collection<UUID> renterIds, LocalDate since) {
         return rows("select p.id, p.renter_id, p.lease_id, p.reason, p.status, p.incident_date, sc.id "
                         + "from penalty_assessments p "
-                        + "left join cheques sc on sc.id = p.source_id and sc.tenant_id = :tenantId "
+                        + "left join cheques sc on sc.id = p.cheque_id and sc.tenant_id = :tenantId "
                         + "where p.tenant_id = :tenantId and p.renter_id in (:renterIds) and p.incident_date >= :since",
                 tenantId, renterIds, since);
     }

@@ -109,7 +109,7 @@ Not counted:
 - Write-offs that are `PROPOSED`, `REJECTED` or `REVERSED`.
 - `RETURNED` cheques. That status means the landlord handed an unused cheque back, for example at termination. It is not a bounce.
 
-`CHEQUE_RETURN` penalties whose `sourceId` points at a cheque are not counted, because the bounce already counts.
+`CHEQUE_RETURN` penalties linked to a cheque of this organisation through `chequeId` (`penalty_assessments.cheque_id`) are not counted, because the bounce already counts. That is where the system-proposed cheque-return fine (`PenaltyRuleEngine.onBounce`) and a fine raised by hand against a cheque record the cheque; `sourceType`/`sourceId` are never a cheque.
 
 ### 5.5 Manual adjustments
 

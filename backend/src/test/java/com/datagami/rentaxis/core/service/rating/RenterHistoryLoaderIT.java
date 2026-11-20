@@ -94,12 +94,14 @@ class RenterHistoryLoaderIT extends AbstractPostgresIT {
         jdbc.update("update cheques set status = 'BOUNCED', bounced_at = ? where id = ?",
                 LocalDate.of(2026, 10, 20), chequeId);
 
+        // Production shape of a system-proposed cheque-return fine (PenaltyRuleEngine.onBounce ->
+        // PenaltyAssessmentService.proposeBySystem): the cheque is on cheque_id, source_type/source_id are null.
         UUID penaltyId = UUID.randomUUID();
         jdbc.update("insert into penalty_assessments (id, tenant_id, lease_id, cheque_id, renter_id, property_id, "
                         + "reason, amount, status, proposed_at, vatable, vat_amount, incident_date, source_type, source_id) "
-                        + "values (?,?,?,?,?,?, 'LATE_PAYMENT', 100, 'APPROVED', now(), false, 0, ?, 'CHEQUE', ?)",
+                        + "values (?,?,?,?,?,?, 'CHEQUE_RETURN', 100, 'APPROVED', now(), false, 0, ?, null, null)",
                 penaltyId, tenantId, leaseId, chequeId, renterId, f.property().getId(),
-                LocalDate.of(2026, 10, 25), chequeId);
+                LocalDate.of(2026, 10, 25));
 
         UUID writeOffId = UUID.randomUUID();
         jdbc.update("insert into bad_debt_write_offs (id, tenant_id, lease_id, renter_id, amount, write_off_date, "
