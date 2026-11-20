@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -208,6 +210,45 @@ void main() {
       expect(fake.quoteCalls.last['resourceId'], 'spot-1');
       // 630.00 is the server's total; the bay's own 300 would be the on-device guess.
       expect(find.textContaining('630.00'), findsOneWidget);
+    });
+
+    testWidgets('a date change drops the old total until the new quote arrives', (
+      tester,
+    ) async {
+      final fake = FakeFacilityService(parkingSpots: [bay])
+        ..quoteResult = {
+          'feeType': 'PER_MONTH',
+          'unitAmount': 300,
+          'net': 600,
+          'vat': 30,
+          'total': 630,
+        };
+      await pumpBay(tester, fake);
+      await tester.tap(find.text('REQUEST'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('630.00'), findsOneWidget);
+
+      // Choose a start date; the next quote is held back.
+      fake.quoteGate = Completer<void>();
+      fake.quoteResult = {
+        'feeType': 'PER_MONTH',
+        'unitAmount': 300,
+        'net': 300,
+        'vat': 15,
+        'total': 315,
+      };
+      await tester.tap(find.text('Pick a date').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pump();
+      expect(find.textContaining('630.00'), findsNothing);
+      expect(find.text('Working out the fee...'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 400));
+      fake.quoteGate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.textContaining('315.00'), findsOneWidget);
     });
 
     testWidgets('a per-month bay says "per month"', (tester) async {

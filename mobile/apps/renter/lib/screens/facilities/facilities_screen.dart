@@ -877,7 +877,11 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
   void _scheduleQuote() {
     if (!_paid) return;
     _quoteTimer?.cancel();
-    setState(() => _quoteFailed = false);
+    // The old total belongs to other dates: drop it until the new quote arrives.
+    setState(() {
+      _quote = null;
+      _quoteFailed = false;
+    });
     _quoteTimer = Timer(const Duration(milliseconds: 300), _fetchQuote);
   }
 

@@ -174,6 +174,8 @@ export default function RenterFacilitiesPage() {
             return;
         }
         let cancelled = false;
+        // The old figure belongs to other dates or another resource: drop it until the new answer arrives.
+        setQuote(null);
         setQuoteState("loading");
         const timer = setTimeout(async () => {
             try {

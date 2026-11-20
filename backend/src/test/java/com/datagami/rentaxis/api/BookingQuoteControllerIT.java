@@ -64,6 +64,7 @@ class BookingQuoteControllerIT extends AbstractPostgresIT {
     private LeaseTestFixtures fx;
     private User admin;
     private User renterUser;
+    private User vatRenterUser;
     private ParkingSpot bay;
 
     @BeforeEach
@@ -80,6 +81,10 @@ class BookingQuoteControllerIT extends AbstractPostgresIT {
         LocalDate start = today.minusDays(30);
         fx.postedLease(fx.unit(), r, start.minusDays(5), start, today.plusDays(300),
                 List.of(line("RENT", "60000")), 1, LeaseTestFixtures.nextChequeNumber());
+        Renter vatRenter = fx.createRenter("Vat Renter");
+        vatRenterUser = userRepo.findById(vatRenter.getUserId()).orElseThrow();
+        fx.postedLease(fx.createUnit(p, "102"), vatRenter, start.minusDays(5), start, today.plusDays(300),
+                List.of(LeaseTestFixtures.vatLine("RENT", "60000")), 1, LeaseTestFixtures.nextChequeNumber());
         bay = bay(p.getId(), "P-1");
         admin = http.admin(t);
         TenantContextHolder.clear();
@@ -129,6 +134,15 @@ class BookingQuoteControllerIT extends AbstractPostgresIT {
         assertThat(num(res, "net")).isEqualByComparingTo("600.00");
         assertThat(num(res, "vat")).isEqualByComparingTo("0");
         assertThat(num(res, "total")).isEqualByComparingTo("600.00");
+    }
+
+    @Test
+    void aRenterOnAVatLeaseGetsFivePercentVat() {
+        ResponseEntity<Map> res = http.call(vatRenterUser, HttpMethod.GET, path(bay), null);
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(num(res, "net")).isEqualByComparingTo("600.00");
+        assertThat(num(res, "vat")).isEqualByComparingTo("30.00");
+        assertThat(num(res, "total")).isEqualByComparingTo("630.00");
     }
 
     @Test

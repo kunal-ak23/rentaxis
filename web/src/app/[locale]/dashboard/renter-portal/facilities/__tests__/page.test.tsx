@@ -246,6 +246,35 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         }));
         expect(screen.getByTestId("request-quote-total")).not.toHaveTextContent("300");
     });
+
+    it("shows no stale total while a new quote is pending, after a date change or reopening the dialog", async () => {
+        api.fetchMyFacilities.mockResolvedValue({
+            ...facilitiesWithSpot(false),
+            parkingSpots: [{ ...facilitiesWithSpot(false).parkingSpots[0], feeType: "PER_MONTH", feeAmount: 300 }],
+        } as unknown as MyFacilitiesDTO);
+        api.fetchMyBookings.mockResolvedValue([]);
+        let release: (q: unknown) => void = () => {};
+        api.fetchBookingQuote
+            .mockResolvedValueOnce({ feeType: "PER_MONTH", unitAmount: 300, net: 600, vat: 30, total: 630 })
+            .mockImplementationOnce(() => new Promise(res => { release = res; }))
+            .mockResolvedValue({ feeType: "PER_MONTH", unitAmount: 300, net: 300, vat: 15, total: 315 });
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByText("available")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("630.00"));
+        // A date change: the old figure goes at once, the loading line shows until the answer arrives.
+        fireEvent.change(screen.getByTestId("request-start-date"), { target: { value: "2099-12-01" } });
+        expect(screen.queryByTestId("request-quote-total")).not.toBeInTheDocument();
+        expect(screen.getByTestId("request-quote")).toHaveTextContent("quoteLoading");
+        await waitFor(() => expect(api.fetchBookingQuote).toHaveBeenCalledTimes(2));
+        release({ feeType: "PER_MONTH", unitAmount: 300, net: 500, vat: 25, total: 525 });
+        await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("525.00"));
+        // Close and reopen: the previous total is not carried into the new dialog.
+        fireEvent.click(screen.getByRole("button", { name: "cancel" }));
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        expect(screen.queryByTestId("request-quote-total")).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("315.00"));
+    });
 });
 
 describe("RenterFacilitiesPage — tutorial 24", () => {

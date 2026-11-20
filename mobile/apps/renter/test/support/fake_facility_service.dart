@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 /// Canned [FacilityApiService] for widget tests: serves fixed rows and records
@@ -165,6 +167,9 @@ class FakeFacilityService implements FacilityApiService {
   };
   final List<Map<String, String?>> quoteCalls = [];
 
+  /// When set, [quote] waits on it, so a test can look at the sheet while a quote is pending.
+  Completer<void>? quoteGate;
+
   @override
   Future<Map<String, dynamic>> quote({
     required String resourceType,
@@ -182,6 +187,7 @@ class FakeFacilityService implements FacilityApiService {
       'from': from,
       'to': to,
     });
+    await quoteGate?.future;
     return quoteResult;
   }
 
