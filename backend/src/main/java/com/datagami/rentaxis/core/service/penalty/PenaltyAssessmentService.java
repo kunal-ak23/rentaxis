@@ -248,6 +248,17 @@ public class PenaltyAssessmentService {
     @Transactional
     public PenaltyAssessmentDTO proposeFromSource(ProposePenaltyRequest r, UUID byUser, String sourceType, UUID sourceId,
                                                  boolean system) {
+        return proposeFromSource(r, byUser, sourceType, sourceId, system, null);
+    }
+
+    /**
+     * Booking journal vouchers (spec 2026-11-19 §2): the same, crediting
+     * {@code incomeAccountId} on approval instead of the reason's role. The caller has
+     * already checked the account ({@code IncomeLeafRule}); null = the reason's role.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO proposeFromSource(ProposePenaltyRequest r, UUID byUser, String sourceType, UUID sourceId,
+                                                 boolean system, UUID incomeAccountId) {
         PenaltyAssessment a;
         if (system) {
             Lease lease = leaseRepository.findById(r.leaseId()).orElseThrow(() -> new NotFoundException("Lease not found"));
@@ -260,6 +271,7 @@ public class PenaltyAssessmentService {
         }
         a.setSourceType(sourceType);
         a.setSourceId(sourceId);
+        if (incomeAccountId != null) a.setIncomeAccountId(incomeAccountId);
         return dto(repository.save(a));
     }
 
@@ -467,7 +479,7 @@ public class PenaltyAssessmentService {
                             .withNarration(vatNarration)));
         }
         JournalEntry pen = postingService.post(PostingRequest.ofPairs(
-                a.getReason() == PenaltyReason.JOURNAL_VOUCHER ? JournalDocType.JV : JournalDocType.PEN,
+                a.getReason().requestedByRenter() ? JournalDocType.JV : JournalDocType.PEN,
                 on,
                 narration,
                 LeaseChequeRegistrar.dimensions(lease, chequeId),
@@ -492,7 +504,7 @@ public class PenaltyAssessmentService {
         // raised in the ledger a line above, and no user typed it.
         ChequeDTO row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(
                 null, null, on, null, on, null, null, null, owed,
-                a.getReason() == PenaltyReason.JOURNAL_VOUCHER ? narration : "Penalty - " + a.getReason().label(),
+                a.getReason().requestedByRenter() ? narration : "Penalty - " + a.getReason().label(),
                 ChequeMode.CASH));
 
         // Set on the entity rather than widened into ChequeRowInput: the link is a
@@ -519,11 +531,12 @@ public class PenaltyAssessmentService {
         // transaction rollback-only and surface as an UnexpectedRollbackException on
         // the approval — a fine nobody could charge because a notification failed.
         //
-        // Not for a journal voucher: the renter asked for what it charges (extra
-        // parking, a key), and "penalty incurred" would tell them they were fined.
-        // It reaches them as a payable row like any other.
+        // Not for a journal voucher or a booking fee: the renter asked for what it
+        // charges (extra parking, a key, a booking), and "penalty incurred" would tell
+        // them they were fined. It reaches them as a payable row like any other (a
+        // booking's approval notification names the fee).
         try {
-            if (approved.getReason() != PenaltyReason.JOURNAL_VOUCHER) {
+            if (!approved.getReason().requestedByRenter()) {
                 notificationService.sendPenaltyIncurred(approved);
             }
         } catch (Exception e) {
@@ -850,9 +863,13 @@ public class PenaltyAssessmentService {
         }
     }
 
-    /** "Penalty - Cheque return - cheque 100041", or without the tail where there is no instrument. */
+    /**
+     * "Penalty - Cheque return - cheque 100041", or without the tail where there is no
+     * instrument. A charge the renter asked for (a journal voucher, a booking fee) reads
+     * as its own description instead.
+     */
     private static String narrationFor(PenaltyAssessment a) {
-        if (a.getReason() == PenaltyReason.JOURNAL_VOUCHER) return a.getDescription();
+        if (a.getReason().requestedByRenter()) return a.getDescription();
         String head = "Penalty - " + a.getReason().label();
         Cheque c = a.getCheque();
         if (c == null) return head;

@@ -4219,6 +4219,7 @@
       "GATE_REGISTERED_VENDOR_ARRIVED": {"title": "Registered vendor checked in", "body": "{guestName} is visiting unit {unit}."},
       "BOOKING_REQUESTED": {"title": "New booking request", "body": "A tenant has requested {resource}.", "bodyShort": "A tenant has requested a booking."},
       "BOOKING_APPROVED": {"title": "Booking update", "body": "Your booking request for {resource} has been approved.", "bodyShort": "Your booking request has been approved."},
+      "BOOKING_APPROVED_FEE": {"title": "Booking update", "body": "Your booking request for {resource} has been approved. The fee is {amount} including VAT. Pay it in Payments.", "bodyShort": "Your booking request has been approved. The fee is {amount} including VAT. Pay it in Payments."},
       "BOOKING_REJECTED": {"title": "Booking update", "body": "Your booking request for {resource} has been rejected.", "bodyShort": "Your booking request has been rejected."},
       "BOOKING_RELEASED": {"title": "Booking update", "body": "Your parking booking for {resource} has been released.", "bodyShort": "Your parking booking has been released."},
       "RENEWAL_INTENT": {"title": "Tenant responded to renewal reminder", "body": "{renterName} chose to {intent} for unit {unit}"},

@@ -4219,6 +4219,7 @@
       "GATE_REGISTERED_VENDOR_ARRIVED": {"title": "سُجّل دخول مورد مسجَّل", "body": "{guestName} يزور الوحدة {unit}."},
       "BOOKING_REQUESTED": {"title": "طلب حجز جديد", "body": "طلب مستأجر حجز {resource}.", "bodyShort": "طلب مستأجر حجزًا."},
       "BOOKING_APPROVED": {"title": "تحديث الحجز", "body": "تمت الموافقة على طلب حجزك لـ {resource}.", "bodyShort": "تمت الموافقة على طلب حجزك."},
+      "BOOKING_APPROVED_FEE": {"title": "تحديث الحجز", "body": "تمت الموافقة على طلب حجزك لـ {resource}. الرسوم {amount} شاملة ضريبة القيمة المضافة. ادفعها من المدفوعات.", "bodyShort": "تمت الموافقة على طلب حجزك. الرسوم {amount} شاملة ضريبة القيمة المضافة. ادفعها من المدفوعات."},
       "BOOKING_REJECTED": {"title": "تحديث الحجز", "body": "رُفض طلب حجزك لـ {resource}.", "bodyShort": "رُفض طلب حجزك."},
       "BOOKING_RELEASED": {"title": "تحديث الحجز", "body": "أُنهي حجزك لـ {resource}.", "bodyShort": "أُنهي حجز موقف السيارة الخاص بك."},
       "RENEWAL_INTENT": {"title": "ردّ المستأجر على تذكير التجديد", "body": "اختار {renterName} {intent} للوحدة {unit}"},

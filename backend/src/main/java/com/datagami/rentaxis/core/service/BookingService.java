@@ -534,12 +534,15 @@ public class BookingService {
         requirePending(booking);
         // Changeset 175: an undated parking request left from before runs from the day
         // it is approved, open-ended (see create).
+        boolean datesFilledIn = false;
         if (booking.getResourceType() == BookingResourceType.PARKING_SPOT && booking.getPreferredDate() == null) {
             booking.setPreferredDate(LocalDate.now(clock.withZone(DUBAI)));
+            datesFilledIn = true;
         }
         if (booking.getResourceType() == BookingResourceType.PARKING_SPOT && booking.getPreferredEndDate() == null) {
             booking.setPreferredEndDate(contractEnd(tenantId, booking.getRenterUserId(), booking.getUnitId(),
                     booking.getPreferredDate()));
+            datesFilledIn = true;
         }
         // Break-it R3 ops3 F8: the request's dates are checked again — it may have sat
         // pending past its date, or the contract may have changed since.
@@ -555,6 +558,10 @@ public class BookingService {
                 throw new SlotConflictException("Parking spot is already booked for those dates", null,
                         "booking.spotTaken");
             }
+            // Booking journal vouchers (review focus 2): the request's quote was made
+            // without the dates filled in above, so it is quoted again for them. A dated
+            // request keeps the fee the renter was shown, even if the bay's fee changed.
+            if (datesFilledIn) booking.setFeeAmount(BookingFeeService.quote(spot, booking));
         }
         if (booking.getResourceType() == BookingResourceType.AMENITY) {
             // Break-it R3 ops3 F7: under the amenity's row lock, so two approvals for the
@@ -673,7 +680,7 @@ public class BookingService {
         }
         if (b.getParkingSpotId() != null) {
             return facilityService.findParkingSpot(b.getTenantId(), b.getParkingSpotId())
-                    .map(sp -> "parking " + sp.getSpotNumber()).orElse("booking");
+                    .map(sp -> "Parking " + sp.getSpotNumber()).orElse("booking");
         }
         return "booking";
     }

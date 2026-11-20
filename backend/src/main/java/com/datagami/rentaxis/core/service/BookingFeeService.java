@@ -3,15 +3,23 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
 import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.ledger.AccountResolver;
+import com.datagami.rentaxis.core.service.ledger.IncomeLeafRule;
 import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
+import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.BookingRequest;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.ParkingSpot;
 import com.datagami.rentaxis.domain.entity.PropertyAmenity;
+import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
+import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,13 +35,16 @@ import java.util.EnumSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 /**
- * F14-50: booking fees. An amenity is free, a fixed fee per booking or a fee per
- * hour; a parking spot is free or a fixed fee per booking. The fee is quoted when
- * the renter asks (the portal shows it first) and becomes a BOOKING_FEE charge on
- * the renter's lease — income, VAT per F14-30 — when the booking is approved,
- * posted at once. A booking cancelled before its slot has the charge reversed.
+ * F14-50: booking fees. An amenity is free, a fixed fee per booking, a fee per hour
+ * or a fee per day; a parking spot is free, a fixed fee per booking, a fee per day
+ * or a fee per month. The fee is quoted when the renter asks (the portal shows it
+ * first) and becomes a BOOKING_FEE charge on the renter's lease when the booking is
+ * approved, posted at once as a journal voucher (spec 2026-11-19 §3): Dr the
+ * receivable, Cr the bay's or amenity's income leaf (see {@link #incomeAccountFor}),
+ * VAT per F14-30. A booking cancelled before its slot has the charge reversed.
  */
 @Service
 public class BookingFeeService {
@@ -46,10 +57,20 @@ public class BookingFeeService {
 
     private final PenaltyAssessmentService charges;
     private final LeaseRepository leases;
+    private final ParkingSpotRepository spots;
+    private final PropertyAmenityRepository amenities;
+    private final AccountRepository accounts;
+    private final AccountResolver accountResolver;
 
-    public BookingFeeService(PenaltyAssessmentService charges, LeaseRepository leases) {
+    public BookingFeeService(PenaltyAssessmentService charges, LeaseRepository leases, ParkingSpotRepository spots,
+                             PropertyAmenityRepository amenities, AccountRepository accounts,
+                             AccountResolver accountResolver) {
         this.charges = charges;
         this.leases = leases;
+        this.spots = spots;
+        this.amenities = amenities;
+        this.accounts = accounts;
+        this.accountResolver = accountResolver;
     }
 
     /** Validates a fee setting; PER_HOUR is for amenities only, PER_MONTH for parking spots only. */
@@ -72,7 +93,7 @@ public class BookingFeeService {
         return quote(s.getFeeType(), s.getFeeAmount(), b);
     }
 
-    /** Per hour: the slot's hours on each day it covers (a slot without times counts one hour a day). */
+    /** The request's dates and times, quoted by fee type as the overload below describes. */
     static BigDecimal quote(String type, BigDecimal amount, BookingRequest b) {
         return quote(type, amount, b.getPreferredDate(), b.getPreferredEndDate(), b.getPreferredStartTime(), b.getPreferredEndTime());
     }
@@ -112,9 +133,44 @@ public class BookingFeeService {
     }
 
     /**
+     * Spec 2026-11-19 §2: the income account a booking's fee credits. The bay's or
+     * amenity's own leaf when it names one (checked again here: it may have been
+     * deactivated or moved since it was picked, and then the approval is refused with
+     * {@link IncomeLeafRule#CODE}); otherwise the property's PARKING_INCOME for a bay,
+     * and for an amenity the property's AMENITY_INCOME, falling back to OTHER_INCOME
+     * while the property has no amenity leaf yet ("Generate missing accounts" not run).
+     *
+     * <p>{@code resolveOrNull}, never {@code resolve} inside a try/catch: a resolver
+     * exception would mark the approval's transaction rollback-only (see
+     * {@link AccountResolver#resolveOrNull}).</p>
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public UUID incomeAccountFor(BookingRequest b, UUID propertyId) {
+        UUID own = null;
+        if (b.getParkingSpotId() != null) {
+            own = spots.findById(b.getParkingSpotId()).map(ParkingSpot::getIncomeAccountId).orElse(null);
+        } else if (b.getAmenityId() != null) {
+            own = amenities.findById(b.getAmenityId()).map(PropertyAmenity::getIncomeAccountId).orElse(null);
+        }
+        if (own != null) {
+            Account account = accounts.findByIdScopedToTenant(own)
+                    .orElseThrow(() -> new BusinessRuleViolationException("The booking's income account was not found",
+                            IncomeLeafRule.CODE, Map.of()));
+            IncomeLeafRule.require(account, propertyId);
+            return account.getId();
+        }
+        if (b.getResourceType() == BookingResourceType.PARKING_SPOT) {
+            return accountResolver.resolve(AccountRole.PARKING_INCOME, propertyId).getId();
+        }
+        Account amenityIncome = accountResolver.resolveOrNull(AccountRole.AMENITY_INCOME, propertyId);
+        if (amenityIncome != null) return amenityIncome.getId();
+        return accountResolver.resolve(AccountRole.OTHER_INCOME, propertyId).getId();
+    }
+
+    /**
      * On approval: the quoted fee becomes a BOOKING_FEE charge on the renter's live
-     * lease of the booked-from unit, approved (posted) at once. No live lease with a
-     * fee to charge refuses the approval.
+     * lease of the booked-from unit, approved (posted) at once as a journal voucher to
+     * {@link #incomeAccountFor}. No live lease with a fee to charge refuses the approval.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void chargeOnApproval(BookingRequest b, String what, LocalDate on) {
@@ -125,9 +181,15 @@ public class BookingFeeService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessRuleViolationException(
                         "The renter has no live lease on this unit to charge the booking fee to.", "booking.noLease", Map.of()));
-        String description = "Booking fee – " + what + (b.getPreferredDate() == null ? "" : " on " + b.getPreferredDate());
+        // Before anything is saved: a refused income account leaves no charge behind.
+        UUID incomeAccountId = incomeAccountFor(b, b.getPropertyId());
+        LocalDate start = b.getPreferredDate();
+        LocalDate end = b.getPreferredEndDate();
+        String description = "Booking fee - " + what + (start == null ? ""
+                : " " + start + (end != null && !end.equals(start) ? " to " + end : ""));
         PenaltyAssessmentDTO c = charges.proposeFromSource(new ProposePenaltyRequest(lease.getId(), null,
-                PenaltyReason.BOOKING_FEE, b.getFeeAmount(), description, on, null), null, SOURCE, b.getId(), true);
+                PenaltyReason.BOOKING_FEE, b.getFeeAmount(), description, on, null), null, SOURCE, b.getId(), true,
+                incomeAccountId);
         charges.approveBySystem(c.id(), on);
         b.setChargeId(c.id());
     }

@@ -11,6 +11,7 @@ import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
+import com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,7 @@ class BookingNotificationServiceTest {
     private ParkingSpotRepository parkingSpotRepository;
     private UserRepository userRepository;
     private NotificationService notificationService;
+    private PenaltyAssessmentRepository chargeRepository;
     private BookingNotificationService service;
 
     private final UUID tenantId = UUID.randomUUID();
@@ -50,8 +52,9 @@ class BookingNotificationServiceTest {
         parkingSpotRepository = mock(ParkingSpotRepository.class);
         userRepository = mock(UserRepository.class);
         notificationService = mock(NotificationService.class);
+        chargeRepository = mock(PenaltyAssessmentRepository.class);
         service = new BookingNotificationService(bookingRepository, amenityRepository,
-                parkingSpotRepository, userRepository, notificationService);
+                parkingSpotRepository, userRepository, notificationService, chargeRepository);
     }
 
     private User user(UserRole role) {
@@ -215,6 +218,48 @@ class BookingNotificationServiceTest {
                 // #81: the spot as values, so "parking spot" is worded in the reader's language.
                 eq(com.datagami.rentaxis.core.notification.NotificationMessage.of("BOOKING_APPROVED",
                         "resourceType", "PARKING", "resourceName", "P1")));
-        assertThat(messageCaptor.getValue()).contains("parking spot P1");
+        assertThat(messageCaptor.getValue()).contains("parking spot P1").doesNotContain("fee");
+    }
+
+    /**
+     * Booking journal vouchers (spec 2026-11-19 §3): an approval that charged a fee names
+     * it, VAT included, and says where to pay it; the structured message carries it as
+     * the amount of BOOKING_APPROVED_FEE so the web words it in Arabic too.
+     */
+    @Test
+    void onBookingDecided_approvedWithFee_namesTheFeeWithVatAndWhereToPay() {
+        BookingRequest b = parkingBooking();
+        b.setChargeId(UUID.randomUUID());
+        com.datagami.rentaxis.domain.entity.PenaltyAssessment charge = new com.datagami.rentaxis.domain.entity.PenaltyAssessment();
+        charge.setAmount(new java.math.BigDecimal("600.00"));
+        charge.setVatAmount(new java.math.BigDecimal("30.00"));
+        when(chargeRepository.findById(b.getChargeId())).thenReturn(Optional.of(charge));
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+
+        service.onBookingDecided(new BookingDecidedEvent(
+                b.getId(), tenantId, b.getRenterUserId(), BookingRequestStatus.APPROVED));
+
+        verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(b.getRenterUserId()), eq("BOOKING_APPROVED"),
+                anyString(), messageCaptor.capture(), eq("BOOKING"), eq(b.getId()),
+                eq(com.datagami.rentaxis.core.notification.NotificationMessage.of("BOOKING_APPROVED_FEE",
+                        "resourceType", "PARKING", "resourceName", "P1", "amount", new java.math.BigDecimal("630.00"))));
+        assertThat(messageCaptor.getValue())
+                .isEqualTo("Your booking request for parking spot P1 has been approved."
+                        + " The fee is AED 630.00 including VAT. Pay it in Payments.");
+    }
+
+    @Test
+    void onBookingDecided_releasedWithCharge_saysNothingAboutTheFee() {
+        BookingRequest b = parkingBooking();
+        b.setChargeId(UUID.randomUUID());
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+
+        service.onBookingDecided(new BookingDecidedEvent(
+                b.getId(), tenantId, b.getRenterUserId(), BookingRequestStatus.RELEASED));
+
+        verify(notificationService).notifyInAppInNewTx(eq(tenantId), eq(b.getRenterUserId()), eq("BOOKING_RELEASED"),
+                anyString(), messageCaptor.capture(), eq("BOOKING"), eq(b.getId()), any());
+        assertThat(messageCaptor.getValue()).doesNotContain("fee");
+        verifyNoInteractions(chargeRepository);
     }
 }
