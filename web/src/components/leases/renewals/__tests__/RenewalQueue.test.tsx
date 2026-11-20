@@ -1,6 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
+// The rating column is staff + flag gated; these tests run with the feature off.
+vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } }, status: "authenticated" }) }));
+vi.mock("@/hooks/useTenantFeatures", () => ({ useTenantFeatures: () => ({ isEnabled: () => false, tenantSlug: "x" }) }));
 vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a>,
     useRouter: () => ({ push: vi.fn() }),

@@ -1,5 +1,6 @@
 "use client";
 
+import RatingBadge from "@/components/renters/rating/RatingBadge";
 import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { useTabTitle } from "@/components/workspace/WorkspaceContext";
 import { saveResponse } from "@/lib/download";
@@ -669,7 +670,10 @@ export default function LeaseDetailPage() {
                             )}
                         </div>
                         <p className="text-[12.5px] text-[var(--ink-500)]">{lease.propertyName}</p>
-                        <p className="text-sm text-muted">{lease.renterName}</p>
+                        <p className="text-sm text-muted flex items-center gap-2 flex-wrap">
+                            {lease.renterName}
+                            {lease.renterId && <RatingBadge renterId={lease.renterId} compact />}
+                        </p>
                         {lease.noticeDate && (
                             <p className="text-[11px] text-warning font-medium mt-0.5" data-testid="lease-notice-summary">
                                 {t("noticeSummary", {

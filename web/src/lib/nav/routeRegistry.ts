@@ -4,7 +4,7 @@ import { buildCollectionsTabs } from "./collectionsModel";
 import { buildSettingsSections } from "./settingsModel";
 
 export type RouteAllow = "authenticated" | Permission | ((role: UserRole) => boolean);
-export interface RouteEntry { path: string; allow: RouteAllow; flag?: "LISTINGS" | "MEETINGS" | "GATEPASS" }
+export interface RouteEntry { path: string; allow: RouteAllow; flag?: "LISTINGS" | "MEETINGS" | "GATEPASS" | "RENTER_RATING" }
 
 const r = (path: string, allow: RouteAllow, flag?: RouteEntry["flag"]): RouteEntry => ({ path, allow, ...(flag ? { flag } : {}) });
 const D = "/dashboard";
@@ -33,6 +33,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     // GETs admit it); the pages render read-only for that role.
     r(`${D}/properties`, propertyReadAllow), r(`${D}/properties/[id]`, propertyReadAllow), r(`${D}/properties/[id]/units`, propertyReadAllow),
     r(`${D}/renters`, "canViewLeases"), r(`${D}/renters/[id]`, "canViewLeases"),
+    r(`${D}/renter-ratings`, "canViewRenterRatings", "RENTER_RATING"),
     r(`${D}/leases`, "canViewLeases"), r(`${D}/leases/[id]`, "canViewLeases"), r(`${D}/leases/renewals`, "canViewLeases"),
     r(`${D}/leases/[id]/terminate`, "canPreviewTermination"), r(`${D}/leases/[id]/settlement`, "canViewSettlement"),
     r(`${D}/listings`, "canViewProperties", "LISTINGS"), r(`${D}/listings/[id]`, "canViewProperties", "LISTINGS"),

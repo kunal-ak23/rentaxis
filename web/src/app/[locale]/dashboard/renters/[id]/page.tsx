@@ -16,6 +16,7 @@ import { ApiError, type Cheque, type LeaseStatus } from "@/lib/api/leasing";
 import { chequeSummary } from "@/components/renters/chequeSummary";
 import { EditRenterDialog } from "@/components/renters/EditRenterDialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import RatingBadge from "@/components/renters/rating/RatingBadge";
 
 /**
  * One renter, for staff (#8): their profile, their contracts, the cheques on
@@ -267,6 +268,7 @@ export default function RenterDetailPage() {
                 <div className="flex-1 min-w-[240px]">
                     <div className="flex items-center gap-3 flex-wrap">
                         <h1 className="mb-0 font-serif text-[26px] font-semibold tracking-tight">{displayName}</h1>
+                        <RatingBadge renterId={renterId} />
                         {renter.invitePending && (
                             <span data-testid="renter-invite-status" className="px-2.5 py-1 rounded-lg text-[10px] font-semibold border bg-warning/10 text-warning border-warning/20">
                                 {inviteExpired ? tInv("expired") : tInv("pending")}

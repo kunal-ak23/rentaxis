@@ -24,6 +24,8 @@ const NEW_DESTINATIONS: Record<string, string> = {
     "/dashboard/finance/bank-accounts": "/dashboard/finance/bank-reconciliation",
     // Scale #16/#17: the renewal season queue works the same contracts as the list, under its gate (canViewLeases).
     "/dashboard/leases/renewals": "/dashboard/leases",
+    // Premium tenant ratings (flag RENTER_RATING, staff roles): a portfolio view of the tenants the role already reads.
+    "/dashboard/renter-ratings": "/dashboard/renters",
     // The Reports hub lists pages the role already had (canViewReportsHub = the union of the catalog's gates).
     "/dashboard/reports": "/dashboard/finance/reports/property-pl",
 };

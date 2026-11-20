@@ -24,6 +24,12 @@ import BulkRenewDialog from "./BulkRenewDialog";
 import BulkChequeNumbersDialog from "./BulkChequeNumbersDialog";
 import NotRenewingDialog from "./NotRenewingDialog";
 import ContactRenterDialog from "./ContactRenterDialog";
+import RatingBadge from "@/components/renters/rating/RatingBadge";
+import { useRenterRatingEnabled } from "@/components/renters/rating/useRenterRatingEnabled";
+import { renterRatingsApi, type RatingGrade } from "@/lib/api/renterRatings";
+
+/** The list endpoint takes at most 200 renter ids per call. */
+const RATING_BATCH = 200;
 
 export interface QueueFilters { month: string; stage: QueueStage; propertyId: string; buildingId: string; floor: string; search: string }
 
@@ -46,6 +52,8 @@ export default function RenewalQueue({ filters, onStage, perms }: {
     const t = useTranslations("RenewalSeason");
     const tl = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
+    const tRating = useTranslations("RenterRating");
+    const ratingOn = useRenterRatingEnabled();
     const locale = useLocale();
     const router = useRouter();
     const [rows, setRows] = useState<LeaseDetail[]>([]);
@@ -68,6 +76,8 @@ export default function RenewalQueue({ filters, onStage, perms }: {
     const [marking, setMarking] = useState<LeaseDetail | null>(null);
     const [numbering, setNumbering] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
+    // Stored ratings of the visible rows' tenants, read in one batch (never one request per row).
+    const [ratings, setRatings] = useState<Map<string, { score: number; grade: RatingGrade }>>(new Map());
     const begin = useLatestRequest();
     const beginCounts = useLatestRequest();
 
@@ -112,6 +122,32 @@ export default function RenewalQueue({ filters, onStage, perms }: {
             .catch(() => {});
         // eslint-disable-next-line react-hooks/exhaustive-deps -- read() closes over common, listed
     }, [common, reloadKey]);
+
+    useEffect(() => {
+        if (!ratingOn) return;
+        const ids = [...new Set(rows.map(r => r.renterId).filter(Boolean))];
+        if (ids.length === 0) return;
+        let alive = true;
+        const chunks: string[][] = [];
+        for (let i = 0; i < ids.length; i += RATING_BATCH) chunks.push(ids.slice(i, i + RATING_BATCH));
+        Promise.all(chunks.map(c => renterRatingsApi.list({ renterIds: c, size: c.length })))
+            .then(pages => {
+                if (!alive) return;
+                const m = new Map<string, { score: number; grade: RatingGrade }>();
+                pages.forEach(p => (p.content ?? []).forEach(x => m.set(x.renterId, { score: x.score, grade: x.grade })));
+                setRatings(m);
+            })
+            .catch(() => {});
+        return () => { alive = false; };
+    }, [ratingOn, rows]);
+
+    const ratingCell = (l: LeaseDetail) => {
+        const r = ratings.get(l.renterId);
+        return r
+            ? <RatingBadge compact renterId={l.renterId} prefetched={r} />
+            : <span className="text-muted" title={tRating("notRated")}>—</span>;
+    };
+    const cols = ratingOn ? 9 : 8;
 
     useEffect(() => {
         setPage(1);
@@ -270,13 +306,14 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                 <th className="p-2 text-start">{t("colTenant")}</th>
                                 <th className="p-2 text-start">{t("colProperty")}</th>
                                 <th className="p-2 text-end">{t("colRent")}</th>
+                                {ratingOn && <th className="p-2 text-start">{tRating("colRating")}</th>}
                                 <th className="p-2 text-start">{t("colState")}</th>
                                 <th className="p-2 text-end"><span className="sr-only">{t("actions")}</span></th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                            {loading && rows.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-muted">{t("loading")}</td></tr>}
-                            {!loading && rows.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-muted" data-testid="renewal-queue-empty">{t("emptyStage")}</td></tr>}
+                            {loading && rows.length === 0 && <tr><td colSpan={cols} className="p-6 text-center text-muted">{t("loading")}</td></tr>}
+                            {!loading && rows.length === 0 && <tr><td colSpan={cols} className="p-6 text-center text-muted" data-testid="renewal-queue-empty">{t("emptyStage")}</td></tr>}
                             {rows.map(l => {
                                 const s = stateOf(l);
                                 return (
@@ -291,6 +328,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                         <td className="p-2">{l.renterName ?? "—"}</td>
                                         <td className="p-2">{l.propertyName ?? "—"}</td>
                                         <td className="p-2 text-end tabular-nums"><bdi dir="ltr">{formatCurrency(l.currentRentAmount ?? l.rentAmount)}</bdi></td>
+                                        {ratingOn && <td className="p-2">{ratingCell(l)}</td>}
                                         <td className={cn("p-2", s.tone)}>
                                             {l.renewedToLeaseId ? <Link href={`/dashboard/leases/${l.renewedToLeaseId}`} className="hover:underline">{s.text}</Link> : s.text}
                                         </td>
@@ -316,6 +354,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                     <p className="font-semibold"><Link href={`/dashboard/leases/${l.id}`}>{l.unitIdentifier ?? "—"}</Link> · <span className="font-normal">{l.renterName ?? "—"}</span></p>
                                     <p className="text-muted truncate">{l.propertyName ?? "—"}</p>
                                     <p>{t("endsOn", { date: fmtIsoDate(l.endDate, locale) })} · <bdi dir="ltr">{formatCurrency(l.currentRentAmount ?? l.rentAmount)}</bdi></p>
+                                    {ratingOn && <p>{ratingCell(l)}</p>}
                                     <p className={s.tone}>{s.text}</p>
                                 </div>
                                 <ActionsMenu label={t("actions")} items={actions(l, "card")} variant="icon" testId={`renewal-card-actions-${l.id}`} triggerTestId={`renewal-card-actions-trigger-${l.id}`} />

@@ -124,6 +124,23 @@ describe("flags", () => {
     });
 });
 
+describe("tenant ratings entry", () => {
+    const ids = (role: UserRole, on: string[]) => (buildNav(ctx(role, on)).find(s => s.id === "leasing")?.groups[0].items.map(i => i.id) ?? []);
+    it("is present only when RENTER_RATING is on and the role is staff", () => {
+        expect(ids("TENANT_ADMIN", ["RENTER_RATING"])).toEqual(["contracts", "renewal-season", "tenants", "renter-ratings", "properties"]);
+        // Like Tenants and Properties beside it, the entry follows the operations gate (the accountant reaches the page by link only).
+        for (const role of ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"] as UserRole[])
+            expect(ids(role, ["RENTER_RATING"]), role).toContain("renter-ratings");
+        expect(ids("TENANT_ADMIN", [])).not.toContain("renter-ratings");
+        for (const role of ["TENANT_USER", "RENTER", "SECURITY_GUARD", "PROMOTER"] as UserRole[])
+            expect(flattenNav(buildNav(ctx(role, ["RENTER_RATING"]))), role).not.toContain("/dashboard/renter-ratings");
+    });
+    it("labels resolve in English and Arabic", () => {
+        expect(en.Navigation.renterRatings).toBe("Tenant ratings");
+        expect(ar.Navigation.renterRatings).toBe("تقييم المستأجرين");
+    });
+});
+
 describe("shape guarantees", () => {
     it("never yields an empty section or group for any role × flag combination", () => {
         const combos = [[], ["LISTINGS"], ["MEETINGS"], ["GATEPASS"], ["LISTINGS", "MEETINGS"], ["LISTINGS", "GATEPASS"], ["MEETINGS", "GATEPASS"], [...FLAGS]];

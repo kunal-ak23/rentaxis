@@ -98,11 +98,13 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
         ...(ops ? [pi("unit-status", "/dashboard#unit-status", N("unitStatus"), "sidebar-unit-status", true)] : []),
     ])));
 
-    rail.push(section("leasing", "leasing", "sidebar-leases", ["/dashboard/leases", "/dashboard/renters", "/dashboard/properties", "/dashboard/listings"], one("main", [
+    rail.push(section("leasing", "leasing", "sidebar-leases", ["/dashboard/leases", "/dashboard/renters", "/dashboard/renter-ratings", "/dashboard/properties", "/dashboard/listings"], one("main", [
         ...(can("canViewLeases") ? [pi("contracts", "/dashboard/leases", N("tenancyContracts"), "sidebar-leases")] : []),
         // Scale #16/#17: the month's expiring contracts in one queue (renew, extend, notice, bulk terminate).
         ...(can("canViewLeases") ? [pi("renewal-season", "/dashboard/leases/renewals", N("renewalSeason"), "sidebar-renewal-season")] : []),
         ...(ops ? [pi("tenants", "/dashboard/renters", { ns: "MasterData", key: "renters" }, "sidebar-renters")] : []),
+        // Premium tenant rating (staff only): flag on for the org AND a viewing role.
+        ...(ops && isEnabled("RENTER_RATING") && can("canViewRenterRatings") ? [pi("renter-ratings", "/dashboard/renter-ratings", N("renterRatings"), "sidebar-renter-ratings")] : []),
         ...(ops ? [pi("properties", "/dashboard/properties", N("propertiesAndUnits"), "sidebar-properties")] : []),
         ...(ops && isEnabled("LISTINGS") ? [pi("enquiry", "/dashboard/listings", N("enquiry"), "sidebar-listings")] : []),
     ]), {
