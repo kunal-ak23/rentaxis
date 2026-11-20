@@ -47,6 +47,16 @@ public final class RenterRatingEngine {
         List<RatingEvent> raw = new ArrayList<>();
         int windowCheques = 0;
 
+        // One deduction per late cheque (round-2 ruling): a scored LATE_PAYMENT fine linked to a cheque keeps its
+        // -8 and that cheque's own LATE_CLEAR -3 is dropped, as a linked cheque-return fine defers to the bounce.
+        Set<UUID> chequesWithLateFine = new java.util.HashSet<>();
+        for (PenaltyRow p : h.penalties()) {
+            if (p.reason() == PenaltyReason.LATE_PAYMENT && p.sourceChequeId() != null
+                    && isScoredPenalty(p, leaseIds)) {
+                chequesWithLateFine.add(p.sourceChequeId());
+            }
+        }
+
         for (ChequeRow c : h.cheques()) {
             if (c.leaseId() != null && !leaseIds.contains(c.leaseId())) continue;
             // TRANSFERRED: the paper was copied onto the new lease (LeaseTransferService); the copy counts.
@@ -63,7 +73,7 @@ public final class RenterRatingEngine {
             if (!c.clearedAt().isAfter(c.chequeDate().plusDays(ON_TIME_GRACE_DAYS))) {
                 add(raw, RatingEventType.ON_TIME_CHEQUE, c.clearedAt(), ON_TIME_CHEQUE_POINTS, "CHEQUE", c.id(),
                         c.leaseId(), null, null, today);
-            } else {
+            } else if (!chequesWithLateFine.contains(c.id())) {
                 add(raw, RatingEventType.LATE_CLEAR, c.clearedAt(), LATE_CLEAR_POINTS, "CHEQUE", c.id(),
                         c.leaseId(), null, null, today);
             }
@@ -78,8 +88,7 @@ public final class RenterRatingEngine {
         }
 
         for (PenaltyRow p : h.penalties()) {
-            if (p.leaseId() == null || !leaseIds.contains(p.leaseId()) || p.incidentDate() == null) continue;
-            if (p.status() != PenaltyAssessmentStatus.APPROVED && p.status() != PenaltyAssessmentStatus.WRITTEN_OFF) continue;
+            if (!isScoredPenalty(p, leaseIds)) continue;
             if (p.reason() == PenaltyReason.LATE_PAYMENT) {
                 add(raw, RatingEventType.LATE_PAYMENT_PENALTY, p.incidentDate(), LATE_PAYMENT_POINTS, "PENALTY",
                         p.id(), p.leaseId(), null, null, today);
@@ -146,6 +155,13 @@ public final class RenterRatingEngine {
         RatingGrade grade = (thin && deductions == 0 && !hasAdjustment) ? RatingGrade.NEW : gradeFor(score);
 
         return new RenterRatingResult(h.renterId(), score, grade, deductions, List.copyOf(events));
+    }
+
+    /** A penalty on one of the started leases, with an incident date, APPROVED or WRITTEN_OFF. */
+    private static boolean isScoredPenalty(PenaltyRow p, Set<UUID> leaseIds) {
+        return p.leaseId() != null && leaseIds.contains(p.leaseId()) && p.incidentDate() != null
+                && (p.status() == PenaltyAssessmentStatus.APPROVED
+                    || p.status() == PenaltyAssessmentStatus.WRITTEN_OFF);
     }
 
     private static void addLongHolds(RenterHistory h, Set<UUID> leaseIds, LocalDate today, List<RatingEvent> raw) {

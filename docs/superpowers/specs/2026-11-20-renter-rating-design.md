@@ -95,7 +95,7 @@ Caps apply after age weighting.
 | Event | Points | Event date |
 |---|---|---|
 | Cheque bounced: `bouncedAt` or `importedBouncedOn` is set, whatever the current status (a replaced bounce ends as `REPLACED` and still counts). Counted once per cheque. Excluded when `failureReason = TECHNICAL_RETURN` | −15 | `bouncedAt`, else `importedBouncedOn` |
-| Cheque cleared late (more than 7 days after `chequeDate`) | −3 | `clearedAt` |
+| Cheque cleared late (more than 7 days after `chequeDate`). Not counted when an `APPROVED`/`WRITTEN_OFF` `LATE_PAYMENT` penalty is linked to the same cheque (`chequeId`): one deduction per late cheque, and the penalty's −8 is kept | −3 | `clearedAt` |
 | Late-payment penalty (`LATE_PAYMENT`, status `APPROVED` or `WRITTEN_OFF`) | −8 | `incidentDate` |
 | Other misconduct penalty (`DAMAGE`, and `CHEQUE_RETURN` without a linked cheque; status `APPROVED` or `WRITTEN_OFF`) | −10 | `incidentDate` |
 | Bad-debt write-off (status `WRITTEN_OFF`) | −30 | `writeOffDate` |

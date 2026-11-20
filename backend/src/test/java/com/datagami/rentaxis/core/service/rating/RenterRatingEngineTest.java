@@ -516,6 +516,37 @@ class RenterRatingEngineTest {
         assertThat(h.run().grade()).isNotEqualTo(RatingGrade.NEW);
     }
 
+    /**
+     * Round 2 M2 (ruling): one deduction per late cheque. A finance-approved LATE_PAYMENT fine linked to the
+     * cheque keeps its -8 and the cheque's own LATE_CLEAR -3 is dropped; an unapproved fine changes nothing.
+     */
+    @Test
+    void approvedLatePaymentFineReplacesTheChequesLateClear() {
+        LocalDate cd = TODAY.minusDays(60);
+        H h = history().lease13().cheque(ChequeStatus.CLEARED, cd, cd.plusDays(10), null, null, null);
+        UUID chequeId = h.cheques.get(0).id();
+        RenterRatingResult approved = h.penalty(PenaltyReason.LATE_PAYMENT, PenaltyAssessmentStatus.APPROVED,
+                cd.plusDays(10), chequeId).run();
+        assertThat(of(approved, RatingEventType.LATE_CLEAR)).isEmpty();
+        assertThat(of(approved, RatingEventType.LATE_PAYMENT_PENALTY)).singleElement()
+                .extracting(RatingEvent::appliedPoints).isEqualTo(-8.0);
+        assertThat(approved.score()).isEqualTo(62);
+        assertThat(approved.deductionsCount()).isEqualTo(1);
+
+        H proposed = history().lease13().cheque(ChequeStatus.CLEARED, cd, cd.plusDays(10), null, null, null);
+        RenterRatingResult p = proposed.penalty(PenaltyReason.LATE_PAYMENT, PenaltyAssessmentStatus.PROPOSED,
+                cd.plusDays(10), proposed.cheques.get(0).id()).run();
+        assertThat(of(p, RatingEventType.LATE_CLEAR)).singleElement()
+                .extracting(RatingEvent::appliedPoints).isEqualTo(-3.0);
+
+        // a fine linked to another cheque leaves this cheque's LATE_CLEAR alone
+        H other = history().lease13().cheque(ChequeStatus.CLEARED, cd, cd.plusDays(10), null, null, null);
+        RenterRatingResult o = other.penalty(PenaltyReason.LATE_PAYMENT, PenaltyAssessmentStatus.APPROVED,
+                cd.plusDays(10), UUID.randomUUID()).run();
+        assertThat(of(o, RatingEventType.LATE_CLEAR)).hasSize(1);
+        assertThat(o.score()).isEqualTo(59);
+    }
+
     @Test
     void postDatedAndVoidChequesDontLeaveNew() {
         H h = history().lease(TODAY.minusDays(195), TODAY.plusMonths(6));
