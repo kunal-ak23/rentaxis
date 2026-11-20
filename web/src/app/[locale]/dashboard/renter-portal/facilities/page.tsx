@@ -167,8 +167,14 @@ export default function RenterFacilitiesPage() {
     const [quote, setQuote] = useState<BookingQuoteDTO | null>(null);
     const [quoteState, setQuoteState] = useState<"idle" | "loading" | "error">("idle");
     const paidTarget = !!target && !!target.feeType && target.feeType !== "FREE";
+    // A bay charged by the day or the month is quoted for its dates: both are required (the server
+    // refuses a booking without an end date, booking.endDateRequired), and no quote is shown until
+    // both are chosen, since a one-day figure would be far from what approval charges.
+    const periodicParking = !!target && target.resourceType === "PARKING_SPOT"
+        && (target.feeType === "PER_DAY" || target.feeType === "PER_MONTH");
+    const quoteNeedsDates = periodicParking && (!preferredDate || !preferredEndDate);
     useEffect(() => {
-        if (!target || !paidTarget) {
+        if (!target || !paidTarget || quoteNeedsDates) {
             setQuote(null);
             setQuoteState("idle");
             return;
@@ -195,7 +201,7 @@ export default function RenterFacilitiesPage() {
             }
         }, 300);
         return () => { cancelled = true; clearTimeout(timer); };
-    }, [target, paidTarget, preferredDate, preferredEndDate]);
+    }, [target, paidTarget, quoteNeedsDates, preferredDate, preferredEndDate]);
 
     // Escape closes the request dialog while it's open — document-level
     // listener (same pattern as BookingDetailDrawer.tsx) rather than a
@@ -213,6 +219,10 @@ export default function RenterFacilitiesPage() {
         // The end date is optional but, when given, cannot precede the start (or today, when
         // no start is chosen) — the date inputs' `min` is only a hint, a typed date skips it.
         const isParking = target.resourceType === "PARKING_SPOT";
+        if (periodicParking && (!preferredDate || !preferredEndDate)) {
+            setDialogError(t("periodicDatesRequired"));
+            return;
+        }
         if (isParking && preferredEndDate && preferredEndDate < (preferredDate || toDateInput(new Date()))) {
             setDialogError(t("endBeforeStart"));
             return;
@@ -729,7 +739,7 @@ export default function RenterFacilitiesPage() {
                                     type="date"
                                     min={toDateInput(new Date())}
                                     data-testid="request-start-date"
-                                    required={!!target?.dateRequired}
+                                    required={!!target?.dateRequired || periodicParking}
                                     value={preferredDate}
                                     onChange={e => setPreferredDate(e.target.value)}
                                     className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
@@ -737,17 +747,18 @@ export default function RenterFacilitiesPage() {
                             </div>
                             {target.resourceType === "PARKING_SPOT" && (
                                 <div>
-                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("preferredEndDate")}</label>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t(periodicParking ? "preferredEndDateRequired" : "preferredEndDate")}</label>
                                     <input
                                         type="date"
                                         // No `min`: the browser would block an earlier date with its own
                                         // unlocalized tooltip; submitRequest says why in the renter's language.
                                         value={preferredEndDate}
                                         onChange={e => setPreferredEndDate(e.target.value)}
+                                        required={periodicParking}
                                         data-testid="request-end-date"
                                         className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                     />
-                                    <p className="text-[10px] text-muted mt-1">{t("preferredEndDateHint")}</p>
+                                    {!periodicParking && <p className="text-[10px] text-muted mt-1">{t("preferredEndDateHint")}</p>}
                                 </div>
                             )}
                             <div>
@@ -775,6 +786,8 @@ export default function RenterFacilitiesPage() {
                                                 </p>
                                             )}
                                         </>
+                                    ) : quoteNeedsDates ? (
+                                        <p className="text-muted" data-testid="request-quote-needs-dates">{t("quoteNeedsDates")}</p>
                                     ) : quoteState === "error" ? (
                                         <p className="text-muted">{t("quoteError")}</p>
                                     ) : (

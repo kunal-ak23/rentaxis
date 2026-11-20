@@ -17,7 +17,7 @@ import type { BookingQuoteDTO, BookingRequestDTO, BookingResourceType } from "@/
 
 type PropertyOption = { id: string; nameEn: string; nameAr: string | null };
 type LeaseRow = { unitId: string; renterId: string; renterName: string | null; status: string };
-type Resource = { id: string; label: string };
+type Resource = { id: string; label: string; feeType?: string };
 
 /** A contract that still holds the unit; the server takes the same set (BookingFeeService.LIVE). */
 const LIVE = new Set(["ACTIVE", "NOTICE_GIVEN", "EXPIRED", "ON_HOLD", "RENEWED"]);
@@ -118,7 +118,7 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, onClose,
                         .map(a => ({ id: a.id, label: locale === "ar" && a.nameAr ? a.nameAr : a.nameEn }))
                     : (await fetchParkingSpots(propertyId, 0, 200)).content
                         .filter(s => s.active && !s.attachedUnitId)
-                        .map(s => ({ id: s.id, label: s.level ? `${s.spotNumber} (${s.level})` : s.spotNumber }));
+                        .map(s => ({ id: s.id, label: s.level ? `${s.spotNumber} (${s.level})` : s.spotNumber, feeType: s.feeType }));
                 if (!cancelled) setResources(list);
             } catch {
                 if (!cancelled) setError(t("onBehalfLoadError"));
@@ -127,27 +127,36 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, onClose,
         return () => { cancelled = true; };
     }, [open, propertyId, resourceType, locale, t]);
 
-    // An amenity is booked for one day (and an optional time slot); only a bay has an end date.
-    const effectiveEnd = resourceType === "PARKING_SPOT" ? end || start : undefined;
+    // A bay charged by the day or the month is quoted for its dates, so it needs an end date (the
+    // server refuses one without: booking.endDateRequired) and shows no quote until both are set.
+    const feeType = resources.find(r => r.id === resourceId)?.feeType;
+    const periodic = resourceType === "PARKING_SPOT" && (feeType === "PER_DAY" || feeType === "PER_MONTH");
+    // An amenity is booked for one day (and an optional time slot); only a bay has an end date. A
+    // flat-fee bay with no end date is booked for its start day.
+    const effectiveEnd = resourceType === "PARKING_SPOT" ? (periodic ? end || undefined : end || start) : undefined;
+    const needsEnd = periodic && !end;
+    const renterUserId = renter?.userId;
 
-    // The server's quote for the chosen facility and dates.
+    // The server's quote for the chosen facility and dates, with VAT per the renter's lease.
     useEffect(() => {
         setQuote(null);
-        if (!resourceType || !resourceId || !start) return;
+        setQuoting(false);
+        if (!resourceType || !resourceId || !start || needsEnd) return;
         let cancelled = false;
         setQuoting(true);
         fetchBookingQuote({
             resourceType, resourceId, start, end: effectiveEnd,
             from: resourceType === "AMENITY" ? from || undefined : undefined,
             to: resourceType === "AMENITY" ? to || undefined : undefined,
+            ...(unitId && renterUserId ? { unitId, renterUserId } : {}),
         })
             .then(q => { if (!cancelled) setQuote(q); })
             .catch(() => { /* the booking still goes through: the fee is charged on approval */ })
             .finally(() => { if (!cancelled) setQuoting(false); });
         return () => { cancelled = true; };
-    }, [resourceType, resourceId, start, effectiveEnd, from, to]);
+    }, [resourceType, resourceId, start, effectiveEnd, needsEnd, from, to, unitId, renterUserId]);
 
-    const ready = !!(renter && resourceType && resourceId && start && !submitting);
+    const ready = !!(renter && resourceType && resourceId && start && !needsEnd && !submitting);
 
     async function submit() {
         if (!renter || !resourceType) return;
@@ -234,9 +243,9 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, onClose,
                             onChange={e => setStart(e.target.value)} />
                     </div>
                     {resourceType === "PARKING_SPOT" && <div>
-                        <label className={LABEL} htmlFor="onbehalf-end">{t("onBehalfEnd")}</label>
+                        <label className={LABEL} htmlFor="onbehalf-end">{t(periodic ? "onBehalfEndRequired" : "onBehalfEnd")}</label>
                         <input id="onbehalf-end" data-testid="onbehalf-end" type="date" className={INPUT} value={end} min={start || undefined}
-                            onChange={e => setEnd(e.target.value)} />
+                            required={periodic} onChange={e => setEnd(e.target.value)} />
                     </div>}
                 </div>
 
@@ -253,6 +262,10 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, onClose,
                                 onChange={e => setTo(e.target.value)} />
                         </div>
                     </div>
+                )}
+
+                {periodic && start && needsEnd && (
+                    <p data-testid="onbehalf-needs-end" className="text-xs text-muted font-medium">{t("onBehalfNeedsEnd")}</p>
                 )}
 
                 {(quote || quoting) && (

@@ -188,6 +188,18 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    /// Picks today as the start and as the end date in the open request sheet.
+    Future<void> pickBothDates(WidgetTester tester) async {
+      await tester.tap(find.text('Pick a date').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pick a date').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('the request sheet shows the fee the server quoted', (
       tester,
     ) async {
@@ -201,15 +213,49 @@ void main() {
         };
       await pumpBay(tester, fake);
       await tester.tap(find.text('REQUEST'));
-      // Debounced: the quote is asked 300 ms after the sheet opens or a date changes.
+      await tester.pumpAndSettle();
+      await pickBothDates(tester);
+      // Debounced: the quote is asked 300 ms after a date changes.
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
       expect(fake.quoteCalls, isNotEmpty);
       expect(fake.quoteCalls.last['resourceType'], 'PARKING_SPOT');
       expect(fake.quoteCalls.last['resourceId'], 'spot-1');
+      expect(fake.quoteCalls.last['end'], isNotNull);
       // 630.00 is the server's total; the bay's own 300 would be the on-device guess.
       expect(find.textContaining('630.00'), findsOneWidget);
+    });
+
+    // Final review I1: a per-day or per-month bay is quoted for its dates; with
+    // no end date the one-day figure would be far from what approval charges.
+    testWidgets('a per-month bay shows no fee until both dates are chosen', (
+      tester,
+    ) async {
+      final fake = FakeFacilityService(parkingSpots: [bay])
+        ..quoteResult = {
+          'feeType': 'PER_MONTH',
+          'unitAmount': 300,
+          'net': 10.16,
+          'vat': 0.51,
+          'total': 10.67,
+        };
+      await pumpBay(tester, fake);
+      await tester.tap(find.text('REQUEST'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(fake.quoteCalls, isEmpty);
+      expect(find.byKey(const Key('booking-quote-needs-dates')), findsOneWidget);
+
+      // A start date alone is not enough either.
+      await tester.tap(find.text('Pick a date').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(fake.quoteCalls, isEmpty);
+      expect(find.textContaining('10.67'), findsNothing);
+      expect(find.byKey(const Key('booking-quote-needs-dates')), findsOneWidget);
     });
 
     testWidgets('a date change drops the old total until the new quote arrives', (
@@ -225,11 +271,13 @@ void main() {
         };
       await pumpBay(tester, fake);
       await tester.tap(find.text('REQUEST'));
+      await tester.pumpAndSettle();
+      await pickBothDates(tester);
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
       expect(find.textContaining('630.00'), findsOneWidget);
 
-      // Choose a start date; the next quote is held back.
+      // Choose the end date again; the next quote is held back.
       fake.quoteGate = Completer<void>();
       fake.quoteResult = {
         'feeType': 'PER_MONTH',
@@ -238,7 +286,7 @@ void main() {
         'vat': 15,
         'total': 315,
       };
-      await tester.tap(find.text('Pick a date').first);
+      await tester.tap(find.text('End date'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
       await tester.pump();

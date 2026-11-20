@@ -334,9 +334,12 @@ export async function fetchBookingQuote(params: {
   end?: string
   from?: string
   to?: string
+  /** Staff quoting for a renter: the VAT then follows that renter's lease on the unit. */
+  unitId?: string
+  renterUserId?: string
 }): Promise<BookingQuoteDTO> {
   const q = new URLSearchParams({ resourceType: params.resourceType, resourceId: params.resourceId })
-  for (const k of ['start', 'end', 'from', 'to'] as const) {
+  for (const k of ['start', 'end', 'from', 'to', 'unitId', 'renterUserId'] as const) {
     if (params[k]) q.set(k, params[k]!)
   }
   return handle(await fetch(`${BOOKINGS}/quote?${q.toString()}`))

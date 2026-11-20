@@ -124,6 +124,14 @@ public class BookingController {
         this.charges = charges;
     }
 
+    private BookingFeeService bookingFees;
+
+    /** The renter's live lease, for a staff quote's VAT; absent in unit tests (standard VAT then). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBookingFees(BookingFeeService bookingFees) {
+        this.bookingFees = bookingFees;
+    }
+
     private PenaltyAssessmentService penalties;
 
     /** VAT on a quote follows the charge rules; absent in unit tests, where a renter's quote carries no VAT. */
@@ -339,8 +347,10 @@ public class BookingController {
      * The server's fee quote for a bay or amenity and dates (spec 2026-11-19 §1), so the month and day
      * maths and the VAT live in one place. A renter may quote only what {@code /facilities/my} shows
      * them (404 otherwise, so ids cannot be probed) and gets VAT as approval would charge it on their
-     * live lease; staff quote any resource of the tenant (a manager only on assigned properties),
-     * with VAT at the standard rate as no renter is in play.
+     * live lease; staff quote any resource of the tenant (a manager only on assigned properties).
+     * Staff booking for a renter pass {@code unitId} and {@code renterUserId}, and the VAT follows
+     * that renter's live lease on the unit exactly as approval will charge it (final review m4);
+     * without them, or with no live lease, the VAT is at the standard rate.
      */
     @GetMapping("/bookings/quote")
     @org.springframework.transaction.annotation.Transactional(readOnly = true)   // lazy unit/property reads (OSIV is off)
@@ -351,7 +361,9 @@ public class BookingController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime to) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime to,
+            @RequestParam(required = false) UUID unitId,
+            @RequestParam(required = false) UUID renterUserId) {
         UUID tenantId = tenantId();
         boolean parking = resourceType == BookingResourceType.PARKING_SPOT;
         ParkingSpot spot = null;
@@ -374,10 +386,25 @@ public class BookingController {
             vat = penalties == null ? BigDecimal.ZERO.setScale(2) : penalties.bookingFeeVat(lease, net);
         } else {
             checkPropertyManagerAccess(propertyId);
-            vat = LeaseVat.vatOfNet(net);
+            vat = staffQuoteVat(tenantId, unitId, renterUserId, net);
         }
         return ResponseEntity.ok(new BookingQuoteDTO(feeType == null ? "FREE" : feeType,
                 unitAmount == null ? BigDecimal.ZERO.setScale(2) : unitAmount, net, vat, net.add(vat)));
+    }
+
+    /** VAT on a staff quote: per the renter's live lease on the unit when both are given, else the standard rate. */
+    private BigDecimal staffQuoteVat(UUID tenantId, UUID unitId, UUID renterUserId, BigDecimal net) {
+        if (unitId == null || renterUserId == null || bookingFees == null || penalties == null) {
+            return LeaseVat.vatOfNet(net);
+        }
+        Lease lease;
+        try {
+            lease = bookingFees.requireLiveLease(tenantId, unitId, renterUserId);
+        } catch (BusinessRuleViolationException noLease) {
+            // The booking itself will be refused (booking.noLease); the quote stays informative.
+            return LeaseVat.vatOfNet(net);
+        }
+        return penalties.bookingFeeVat(lease, net);
     }
 
     /**

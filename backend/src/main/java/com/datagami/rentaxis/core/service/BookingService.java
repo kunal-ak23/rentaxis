@@ -201,6 +201,7 @@ public class BookingService {
                 throw new NotFoundException("Parking spot not found");
             }
             requireNotAttached(spot);
+            requireEndDateForPeriodicFee(spot, req);
             Optional<BookingRequest> existing =
                     bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
                             tenantId, renterUserId, spot.getId(), BookingRequestStatus.PENDING);
@@ -231,6 +232,23 @@ public class BookingService {
         }
 
         return saveNewBooking(tenantId, booking);
+    }
+
+    /**
+     * Final review I1 (spec 2026-11-19 §1): a bay charged by the day or the month is quoted
+     * for its dates, so the renter (or staff booking for them) must choose the end date.
+     * Without one the request would be filled in to the contract end and charged for
+     * months, while the quote shown was for a single day. Refused here, so no undated
+     * periodic request exists for approval to re-quote. FREE and PER_BOOKING bays may
+     * still be requested without an end date.
+     */
+    private static void requireEndDateForPeriodicFee(ParkingSpot spot, BookingCreateRequest req) {
+        if (req.preferredEndDate() == null
+                && ("PER_DAY".equals(spot.getFeeType()) || "PER_MONTH".equals(spot.getFeeType()))) {
+            throw new BusinessRuleViolationException(
+                    "Choose an end date: this parking bay is charged by the day or the month.",
+                    "booking.endDateRequired", Map.of());
+        }
     }
 
     /** Changeset 175: a bay allocated to a unit is never bookable — refused here, not only hidden. */

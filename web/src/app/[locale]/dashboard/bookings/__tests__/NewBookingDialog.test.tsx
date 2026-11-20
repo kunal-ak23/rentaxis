@@ -72,6 +72,43 @@ describe("NewBookingDialog", () => {
         expect(onClose).not.toHaveBeenCalled();
     });
 
+    /** Final review I1 and m4: a per-month bay needs an end date; the quote waits for it and carries the renter. */
+    it("requires an end date for a per-month bay and quotes only once both dates are set", async () => {
+        api.on("GET", "/v1/parking-spots", {
+            body: { content: [{ id: "s-1", propertyId: "p-1", spotNumber: "P-12", level: null, active: true, attachedUnitId: null, feeType: "PER_MONTH", feeAmount: 300 }], totalElements: 1, number: 0, size: 200, totalPages: 1 },
+        });
+        api.on("GET", "/v1/bookings/quote", { body: { feeType: "PER_MONTH", unitAmount: 300, net: 600, vat: 0, total: 600 } });
+        const onClose = vi.fn();
+        render(<NewBookingDialog open properties={[PROPERTY]} defaultPropertyId="p-1" onClose={onClose} onCreated={vi.fn()} />);
+        await screen.findByRole("option", { name: "101" });
+        fireEvent.change(screen.getByTestId("onbehalf-unit"), { target: { value: "u-1" } });
+        await waitFor(() => expect(screen.getByTestId("onbehalf-renter").textContent).toContain("Sara"));
+        fireEvent.change(screen.getByTestId("onbehalf-type"), { target: { value: "PARKING_SPOT" } });
+        await screen.findByRole("option", { name: "P-12" });
+        fireEvent.change(screen.getByTestId("onbehalf-resource"), { target: { value: "s-1" } });
+        fireEvent.change(screen.getByTestId("onbehalf-start"), { target: { value: "2026-12-01" } });
+
+        expect(await screen.findByTestId("onbehalf-needs-end")).toBeInTheDocument();
+        expect(screen.getByTestId("onbehalf-end")).toBeRequired();
+        expect(screen.queryByTestId("onbehalf-quote")).not.toBeInTheDocument();
+        expect(api.callsTo("GET", "/v1/bookings/quote")).toHaveLength(0);
+        expect((screen.getByTestId("onbehalf-submit") as HTMLButtonElement).disabled).toBe(true);
+
+        fireEvent.change(screen.getByTestId("onbehalf-end"), { target: { value: "2027-01-31" } });
+        await waitFor(() => expect(screen.getByTestId("onbehalf-quote").textContent).toContain("600"));
+        const url = api.callsTo("GET", "/v1/bookings/quote")[0].url;
+        expect(url).toContain("end=2027-01-31");
+        expect(url).toContain("unitId=u-1");
+        expect(url).toContain("renterUserId=user-1");
+
+        fireEvent.click(screen.getByTestId("onbehalf-submit"));
+        await waitFor(() => expect(onClose).toHaveBeenCalled());
+        expect(api.callsTo("POST", "/v1/bookings/on-behalf")[0].body).toEqual({
+            booking: { resourceType: "PARKING_SPOT", resourceId: "s-1", unitId: "u-1", preferredDate: "2026-12-01", preferredEndDate: "2027-01-31" },
+            renterUserId: "user-1",
+        });
+    });
+
     it("a unit with no live contract has no renter and cannot be submitted", async () => {
         render(<NewBookingDialog open properties={[PROPERTY]} defaultPropertyId="p-1" onClose={vi.fn()} onCreated={vi.fn()} />);
         await screen.findByRole("option", { name: "102" });

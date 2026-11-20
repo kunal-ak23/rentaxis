@@ -857,7 +857,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
   @override
   void initState() {
     super.initState();
-    if (_paid) {
+    if (_paid && _datesForQuote) {
       _quoteTimer = Timer(const Duration(milliseconds: 300), _fetchQuote);
     }
   }
@@ -871,6 +871,17 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
 
   bool get _paid => widget.feeType != 'FREE' && widget.feeAmount > 0;
 
+  /// A bay charged by the day or the month is quoted for its dates, so the
+  /// server needs both before its quote means anything (and refuses a booking
+  /// without an end date: `booking.endDateRequired`).
+  bool get _periodicParking =>
+      widget.resourceType == 'PARKING_SPOT' &&
+      (widget.feeType == 'PER_DAY' || widget.feeType == 'PER_MONTH');
+
+  bool get _datesForQuote =>
+      !_periodicParking ||
+      (_preferredDate != null && _preferredEndDate != null);
+
   /// The server's quote for the dates chosen (the day and month maths and the
   /// VAT live there only). Asked 300 ms after the sheet opens or an input
   /// changes, so a run of taps asks once.
@@ -882,6 +893,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
       _quote = null;
       _quoteFailed = false;
     });
+    if (!_datesForQuote) return;
     _quoteTimer = Timer(const Duration(milliseconds: 300), _fetchQuote);
   }
 
@@ -1148,7 +1160,14 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                             Text(
                               '${Formatters.currency(num.parse(_quote!['net'].toString()))} + ${Formatters.currency(num.parse(_quote!['vat'].toString()))} ${l.ar ? 'ضريبة' : 'VAT'}',
                             ),
-                        ] else
+                        ] else if (!_datesForQuote)
+                          Text(
+                            l.ar
+                                ? 'اختر تاريخ البدء والانتهاء لمعرفة الرسوم.'
+                                : 'Choose the start and end dates to see the fee.',
+                            key: const Key('booking-quote-needs-dates'),
+                          )
+                        else
                           Text(
                             _quoteFailed
                                 ? (l.ar

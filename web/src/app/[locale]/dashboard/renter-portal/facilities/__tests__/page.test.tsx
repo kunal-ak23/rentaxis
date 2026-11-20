@@ -248,9 +248,10 @@ describe("RenterFacilitiesPage stale-state resync", () => {
     });
 
     it("shows no stale total while a new quote is pending, after a date change or reopening the dialog", async () => {
+        // A flat-fee bay: quoted with or without dates (a per-month bay waits for both, below).
         api.fetchMyFacilities.mockResolvedValue({
             ...facilitiesWithSpot(false),
-            parkingSpots: [{ ...facilitiesWithSpot(false).parkingSpots[0], feeType: "PER_MONTH", feeAmount: 300 }],
+            parkingSpots: [{ ...facilitiesWithSpot(false).parkingSpots[0], feeType: "PER_BOOKING", feeAmount: 300 }],
         } as unknown as MyFacilitiesDTO);
         api.fetchMyBookings.mockResolvedValue([]);
         let release: (q: unknown) => void = () => {};
@@ -274,6 +275,31 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         fireEvent.click(screen.getByRole("button", { name: "request" }));
         expect(screen.queryByTestId("request-quote-total")).not.toBeInTheDocument();
         await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("315.00"));
+    });
+
+    /** Final review I1: a per-day or per-month bay needs both dates; no one-day figure is shown before. */
+    it("asks for both dates on a per-month bay before quoting, and refuses to send it without an end date", async () => {
+        api.fetchMyFacilities.mockResolvedValue({
+            ...facilitiesWithSpot(false),
+            parkingSpots: [{ ...facilitiesWithSpot(false).parkingSpots[0], feeType: "PER_MONTH", feeAmount: 300 }],
+        } as unknown as MyFacilitiesDTO);
+        api.fetchMyBookings.mockResolvedValue([]);
+        api.fetchBookingQuote.mockResolvedValue({ feeType: "PER_MONTH", unitAmount: 300, net: 10.16, vat: 0.51, total: 10.67 });
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByText("available")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        expect(await screen.findByTestId("request-quote-needs-dates")).toHaveTextContent("quoteNeedsDates");
+        expect(screen.getByTestId("request-end-date")).toBeRequired();
+        expect(screen.getByTestId("request-start-date")).toBeRequired();
+        fireEvent.change(screen.getByTestId("request-start-date"), { target: { value: "2099-12-01" } });
+        await new Promise(r => setTimeout(r, 400));
+        expect(api.fetchBookingQuote).not.toHaveBeenCalled();
+        expect(screen.queryByTestId("request-quote-total")).not.toBeInTheDocument();
+        expect(screen.getByTestId("request-quote-needs-dates")).toBeInTheDocument();
+
+        fireEvent.submit(screen.getByTestId("request-end-date").closest("form")!);
+        expect(await screen.findByText("periodicDatesRequired")).toBeInTheDocument();
+        expect(api.createBooking).not.toHaveBeenCalled();
     });
 });
 
