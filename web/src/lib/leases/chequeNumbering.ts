@@ -204,9 +204,12 @@ export function applyChequeCsv(text: string, drafts: CsvDraft[], edits: Record<s
             headerAt = first;
         }
     }
+    // Sim r26 S26-06: a line above the header whose first cell names a draft ("VILLA-A,,") is a data line
+    // missing its date — reported, as it is without a header, never skipped as preamble.
+    const namesDraft = (l: string) => byKey.has(norm(cellsOf(l)[0] ?? ""));
     lines.forEach((line, i) => {
         if (!line.trim() || i === headerAt) return;
-        if (i < headerAt && !looksLikeData(line)) return;
+        if (i < headerAt && !looksLikeData(line) && !namesDraft(line)) return;
         const [contract = "", due = "", number = "", bank = "", chequeDate = ""] = csvCells(line, sep);
         const dueIso = csvDate(due);
         const chequeIso = chequeDate.trim() ? csvDate(chequeDate) : null;

@@ -177,6 +177,16 @@ describe("CSV import", () => {
         expect(applyChequeCsv("Tower A cheques\nRC-1,2026-12-01,500003", drafts, {}).invalidDates).toEqual([]);
     });
 
+    /** Sim r26 S26-06: the same line above a known header is data too — reported, never skipped silently. */
+    it("reports a line naming a draft above a known header", () => {
+        const drafts = [{ draftId: "d1", keys: ["VILLA-A", "RC-1"], rows: [c("r1", "2026-12-01")] }];
+        const r = applyChequeCsv("VILLA-A,,\ncontract,due,number\nRC-1,2026-12-01,500002", drafts, {});
+        expect(r.invalidDates).toEqual([1]);
+        expect(r.edits.r1?.chequeNumber).toBe("500002");
+        // A words-only title above the header is still preamble.
+        expect(applyChequeCsv("Tower A cheques\ncontract,due,number\nRC-1,2026-12-01,500003", drafts, {}).invalidDates).toEqual([]);
+    });
+
     it("reads a semicolon file by its first line", () => {
         const drafts = [{ draftId: "d1", keys: ["07-01"], rows: [c("r1", "2028-01-01")] }];
         const r = applyChequeCsv("contract;due_date;cheque_number;bank\n07-01;01/01/2028;900001;Emirates NBD, Dubai", drafts, {});

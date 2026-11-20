@@ -263,7 +263,7 @@ class StatementOrderPropertyTest {
     record Books(List<BankStatementImportService.StoredLine> lines, List<LocalDate> dates, Set<LocalDate> unconfirmed,
                  Set<LocalDate> unproven, Set<Integer> arrived, int moved, List<String> wrongTakes, Set<LocalDate> copies,
                  Map<String, Integer> swallowed, List<String> genuineRemoved, int marked,
-                 boolean backValueSeen, Set<LocalDate> everUnproven) {
+                 boolean backValueSeen, Set<LocalDate> everUnproven, boolean refusedForLock, boolean ownerOwnsLocked) {
         /**
          * #441 review: whether the paper's day totals settle every unproven day, as the service
          * decides — never a day holding a kept look-alike (changeset 183): there a copy can
@@ -312,7 +312,22 @@ class StatementOrderPropertyTest {
      * which removes it (a copy is held by the cut that kept it alone, as in the service).
      */
     private static Books importFiles(List<FileSpec> specs, boolean deleteShownCopies) {
+        return importFiles(specs, deleteShownCopies, 0, null);
+    }
+
+    /**
+     * As above. Sim r26 S26-01: the first {@code legacyFiles} files are imported as code from before
+     * #441 left them — a twin kept with no marker (changeset 183 set {@code lookalike_kept = false} on
+     * every existing row). S26-02: {@code lockedThrough}, when set, is a finalized period for the files
+     * after those: one bringing a new line, or a moved balance, on a day inside it is refused (the
+     * service's "reopen it first"; {@link Books#refusedForLock}), a day inside it is left alone, and no
+     * line inside it is shown as a copy.
+     */
+    private static Books importFiles(List<FileSpec> specs, boolean deleteShownCopies, int legacyFiles, LocalDate lockedThrough) {
         Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
+        // Sim r26: the files holding each stored line (bank_statement_line_sources), by hash.
+        Map<String, Set<Integer>> sources = new HashMap<>();
+        boolean refusedForLock = false;
         Map<LocalDate, BankStatementImportService.DayState> states = new HashMap<>();
         Set<Integer> arrived = new HashSet<>();
         int moved = 0;
@@ -330,11 +345,25 @@ class StatementOrderPropertyTest {
         for (FileSpec spec : specs) {
             List<Bank> f = spec.lines();
             if (f.isEmpty() || !acceptedRows(f)) continue;
-            int no = fileNo++;
-            f.forEach(l -> arrived.add(l.index()));
+            int no = fileNo;
             List<StatementMapper.Row> rows = f.stream().map(Bank::row).toList();
             BankStatementImportService.Matched m = BankStatementImportService.match(BANK, rows, stored,
                     spec.openingProves(), spec.closingProves());
+            boolean locks = lockedThrough != null && no >= legacyFiles;
+            if (locks) {
+                boolean inside = false;
+                for (int i = 0; i < rows.size(); i++) {
+                    if (rows.get(i).txnDate().isAfter(lockedThrough)) continue;
+                    String h = m.hashes().get(i);
+                    if (!m.duplicates().contains(h) || m.moved().containsKey(h)) inside = true;
+                }
+                if (inside) {
+                    refusedForLock = true;
+                    continue;
+                }
+            }
+            fileNo++;
+            f.forEach(l -> arrived.add(l.index()));
             Map<LocalDate, List<BankStatementImportService.StoredLine>> before = new HashMap<>(stored);
             // S25-01: lines taken at a moved balance carry the file's balance from now on.
             moved += m.moved().size();
@@ -357,10 +386,22 @@ class StatementOrderPropertyTest {
                             null, null, l.lookalike())
                     : l).toList());
             // #441 review r2: kept look-alikes this file proves copies are removed (none is booked here).
-            Set<String> copies = BankStatementImportService.provenCopies(rows, m.hashes(), before, spec.openingProves(),
-                    spec.closingProves());
-            // #441 review r3: marked only (copy_proven_by); the service removes nothing at import.
+            Map<String, Set<Integer>> sourcesBefore = new HashMap<>();
+            sources.forEach((h, v) -> sourcesBefore.put(h, Set.copyOf(v)));
+            Set<String> copies = new HashSet<>(BankStatementImportService.provenCopies(rows, m.hashes(), before,
+                    spec.openingProves(), spec.closingProves(), sourcesBefore));
+            if (locks) {
+                Set<String> lockedHashes = new HashSet<>();
+                stored.forEach((d, ls) -> { if (!d.isAfter(lockedThrough)) ls.forEach(l -> lockedHashes.add(l.hash())); });
+                copies.removeAll(lockedHashes);
+            }
+            for (String h : m.hashes()) sources.computeIfAbsent(h, k -> new HashSet<>()).add(no);
+            // #441 review r3: marked only (copy_proven_by); the service removes nothing at import. S26-01: a
+            // legacy look-alike shown as a copy becomes a kept look-alike (lookalike_kept = true) too.
             for (String h : copies) marked.put(h, no);
+            stored.replaceAll((d, ls) -> ls.stream().map(l -> copies.contains(l.hash()) && !l.lookalike()
+                    ? new BankStatementImportService.StoredLine(l.hash(), l.amount(), l.description(), l.balance(), null, null, true)
+                    : l).toList());
             TreeMap<LocalDate, List<Integer>> fileDays = new TreeMap<>();
             for (int i = 0; i < rows.size(); i++) fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(i);
             for (Map.Entry<LocalDate, List<Integer>> day : fileDays.entrySet()) {
@@ -374,12 +415,13 @@ class StatementOrderPropertyTest {
                     if (!m.duplicates().contains(h)) {
                         Bank l = f.get(i);
                         byHash.put(h, new BankStatementImportService.StoredLine(h, l.amount(), l.description(), l.balance(),
-                                null, null, m.twinned().contains(h)));
+                                null, null, no >= legacyFiles && m.twinned().contains(h)));
                     }
                 }
                 BankStatementImportService.Pos pos = BankStatementImportService.Pos.of(day.getKey(), fileDays.firstKey(),
                         fileDays.lastKey(), spec.openingProves(), spec.closingProves());
                 BankStatementImportService.DayState was = states.getOrDefault(day.getKey(), BankStatementImportService.DayState.UNKNOWN);
+                if (locks && !day.getKey().isAfter(lockedThrough)) continue;
                 BankStatementImportService.Settled s = BankStatementImportService.settle(
                         have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, pos, was,
                         fileHashes.stream().anyMatch(m.twinned()::contains),
@@ -409,9 +451,9 @@ class StatementOrderPropertyTest {
                 if (s.state().unproven()) everUnproven.add(day.getKey());
             }
         }
+        Set<String> gone = new HashSet<>();
         if (deleteShownCopies) {
             int lastNo = fileNo - 1;
-            Set<String> gone = new HashSet<>();
             marked.forEach((h, by) -> { if (by == lastNo) gone.add(h); });
             stored.forEach((d, ls) -> ls.stream().filter(l -> gone.contains(l.hash()))
                     .forEach(l -> genuineRemoved.add(d + "|" + l.amount() + "|" + l.description())));
@@ -428,8 +470,16 @@ class StatementOrderPropertyTest {
         stored.forEach((d, ls) -> {
             if (unproven.contains(d) && ls.stream().anyMatch(BankStatementImportService.StoredLine::lookalike)) copies.add(d);
         });
+        // S26-02: whether a removed copy was brought by a file that also brought a line inside the finalized period.
+        boolean ownerOwnsLocked = false;
+        if (lockedThrough != null) {
+            Set<Integer> lockedOwners = new HashSet<>();
+            owner.forEach((h, o) -> { if (stored.entrySet().stream().anyMatch(e -> !e.getKey().isAfter(lockedThrough)
+                    && e.getValue().stream().anyMatch(l -> l.hash().equals(h)))) lockedOwners.add(o); });
+            ownerOwnsLocked = gone.stream().anyMatch(h -> lockedOwners.contains(owner.get(h)));
+        }
         return new Books(lines, dates, unconfirmed, unproven, arrived, moved, wrongTakes, copies, swallowed, genuineRemoved,
-                marked.size(), backValueSeen[0], everUnproven);
+                marked.size(), backValueSeen[0], everUnproven, refusedForLock, ownerOwnsLocked);
     }
 
     /**
@@ -1387,6 +1437,124 @@ class StatementOrderPropertyTest {
         assertThat(deadEnds).as("states with the bank's true lines stored that do not finalize (%d checked)", trueStates).isEmpty();
         assertThat(finalized).as("finalized").isGreaterThan(trials / 40);
         assertThat(refused).as("refused").isGreaterThan(trials / 40);
+    }
+
+    /**
+     * Sim r26 S26-01 and S26-02, as a property. Every file before the remedy is imported as code from
+     * before #441 left it: twins kept with no marker (changeset 183 set {@code lookalike_kept = false} on
+     * every existing row). Then the check's step: a statement holding every day whole, exported now —
+     * half the time with the first day finalized (S26-02: refused if it brings a line there, and then
+     * imported after the reopen the check names; inside the finalized day nothing changes and nothing is
+     * shown as a copy) — and the copy step on its word: the copies it shows go, from every import holding
+     * them. The bars: no genuine line is ever removed; every day after the finalized period then settles by
+     * its paper totals (no dead end); a finalized day's lines are unchanged; and, as in the cuts property,
+     * from every state holding exactly the bank's lines, the paper's totals settle every day.
+     */
+    @Test
+    void legacyTwinsAreClearedByTheCopyStepAndNeverCostAGenuineLine() {
+        Random rnd = new Random(2601);
+        int trials = r25Trials(100_000), legacyMarked = 0, lockedRuns = 0, reopened = 0, ownersLocked = 0, trueStates = 0,
+                genuineCount = 0, settledRuns = 0;
+        List<String> genuine = new ArrayList<>(), stuck = new ArrayList<>(), deadEnds = new ArrayList<>(), lockChanged = new ArrayList<>();
+        for (int trial = 0; trial < trials; trial++) {
+            List<Bank> old = statement(rnd);
+            if (old.size() < 3) continue;
+            List<Bank> now = backValued(old, rnd, 1 + rnd.nextInt(2), true);
+            List<FileSpec> files = new ArrayList<>();
+            if (rnd.nextBoolean()) files.add(new FileSpec(old, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null));
+            for (int f = 0, n = rnd.nextInt(3); f < n; f++) {
+                int a = rnd.nextInt(old.size());
+                files.add(FileSpec.plain(old.subList(a, a + 1 + rnd.nextInt(old.size() - a))));
+            }
+            for (int f = 0, n = 1 + rnd.nextInt(3); f < n; f++) {
+                int a = rnd.nextInt(now.size());
+                files.add(FileSpec.plain(now.subList(a, a + 1 + rnd.nextInt(now.size() - a))));
+            }
+            int legacy = files.size();
+            Books books = importFiles(files, false, legacy, null);
+            if (books.lines().isEmpty()) continue;
+            List<BankReconciliationService.SL> nowSl = now.stream().map(l -> new BankReconciliationService.SL(
+                    UUID.randomUUID(), l.date(), l.index(), l.description(), null, null, l.amount(), l.balance())).toList();
+            {
+                Map<String, Integer> storedVals = new HashMap<>(), trueVals = new HashMap<>();
+                for (int i = 0; i < books.lines().size(); i++) {
+                    BankStatementImportService.StoredLine l = books.lines().get(i);
+                    storedVals.merge(books.dates().get(i) + "|" + l.amount() + "|" + l.description() + "|" + l.balance(), 1, Integer::sum);
+                }
+                for (Bank l : now) trueVals.merge(l.date() + "|" + l.amount() + "|" + l.description() + "|" + l.balance(), 1, Integer::sum);
+                if (storedVals.equals(trueVals)) {
+                    trueStates++;
+                    if (!books.totalsSettle(nowSl, sl(books)) && deadEnds.size() < 3) deadEnds.add("trial " + trial);
+                }
+            }
+            boolean lock = rnd.nextBoolean();
+            List<FileSpec> remedied = new ArrayList<>(files);
+            remedied.add(new FileSpec(now, DAYS[0].minusDays(1), DAYS[2].plusDays(1), null));
+            Books after = importFiles(remedied, true, legacy, lock ? DAYS[0] : null);
+            boolean held = lock;
+            if (lock) {
+                lockedRuns++;
+                if (after.refusedForLock()) {
+                    // The check's lock note: reopen the finalized period, then import it.
+                    reopened++;
+                    held = false;
+                    after = importFiles(remedied, true, legacy, null);
+                }
+            }
+            if (after.ownerOwnsLocked()) ownersLocked++;
+            if (after.marked() > books.marked()) legacyMarked++;
+            if (held) {
+                List<String> was = new ArrayList<>(), is = new ArrayList<>();
+                for (int i = 0; i < books.lines().size(); i++) if (books.dates().get(i).equals(DAYS[0])) was.add(books.lines().get(i).toString());
+                for (int i = 0; i < after.lines().size(); i++) if (after.dates().get(i).equals(DAYS[0])) is.add(after.lines().get(i).toString());
+                if (!was.equals(is) && lockChanged.size() < 3) lockChanged.add("trial " + trial + ": " + was + " -> " + is);
+            }
+            Map<String, Integer> haveKind = new HashMap<>(), broughtKind = new HashMap<>();
+            for (int i = 0; i < after.lines().size(); i++) {
+                BankStatementImportService.StoredLine l = after.lines().get(i);
+                haveKind.merge(key(after.dates().get(i), l.amount(), l.description()), 1, Integer::sum);
+            }
+            for (Bank l : now) if (after.arrived().contains(l.index())) broughtKind.merge(key(l.date(), l.amount(), l.description()), 1, Integer::sum);
+            for (String k : new HashSet<>(after.genuineRemoved())) {
+                if (haveKind.getOrDefault(k, 0) < broughtKind.getOrDefault(k, 0)) {
+                    genuineCount++;
+                    if (genuine.size() < 3) genuine.add(String.format("trial %d: %s short; old %s, now %s, files %s", trial, k,
+                            old, now, files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList()));
+                }
+            }
+            // Every open day (after the finalized one, while it holds) settles by its paper totals.
+            final boolean h = held;
+            final Books fa = after;
+            List<BankReconciliationService.SL> afterSl = sl(after);
+            boolean settled = fa.unproven().stream().filter(d -> !h || d.isAfter(DAYS[0])).allMatch(d -> {
+                if (fa.copies().contains(d)) return false;
+                BigDecimal[] paper = BankReconciliationService.dayTotals(nowSl, d);
+                return BankReconciliationService.totalsAgree(BankReconciliationService.dayTotals(afterSl, d), paper[0], paper[1]);
+            });
+            if (settled) settledRuns++;
+            else if (stuck.size() < 3) stuck.add(String.format("trial %d (lock %s): unproven %s, copies %s; now %s, files %s, books %s %s",
+                    trial, h, fa.unproven(), fa.copies(), now, files.stream().map(f -> f.lines().stream().map(Bank::index).toList()).toList(),
+                    fa.lines(), fa.dates()));
+        }
+        System.out.printf("S26-01 LEGACY: trials %d, remedies showing copies %d, settled %d; finalized first day %d (reopened %d, "
+                        + "copy holders owning a finalized line %d); genuine lines removed %d; true states %d, dead ends %d%n",
+                trials, legacyMarked, settledRuns, lockedRuns, reopened, ownersLocked, genuineCount, trueStates, deadEnds.size());
+        assertThat(genuine).as("a genuine line removed as a copy (%d)", genuineCount).isEmpty();
+        assertThat(stuck).as("an open day the copy step and the paper's totals do not settle").isEmpty();
+        assertThat(lockChanged).as("a finalized day changed").isEmpty();
+        assertThat(deadEnds).as("states with the bank's true lines stored that do not finalize").isEmpty();
+        assertThat(legacyMarked).as("legacy twins shown as copies").isGreaterThan(trials / 50);
+        assertThat(ownersLocked).as("copy holders owning a finalized line (the S26-02 shape)").isGreaterThan(0);
+    }
+
+    private static List<BankReconciliationService.SL> sl(Books b) {
+        List<BankReconciliationService.SL> out = new ArrayList<>();
+        for (int i = 0; i < b.lines().size(); i++) {
+            BankStatementImportService.StoredLine l = b.lines().get(i);
+            out.add(new BankReconciliationService.SL(UUID.randomUUID(), b.dates().get(i), i + 1, l.description(), null, null,
+                    l.amount(), l.balance()));
+        }
+        return out;
     }
 
     /**
