@@ -265,7 +265,10 @@ class RenterRatingEngineTest {
         });
         assertThat(of(history().lease13().hold(x, x.plusDays(14)).run(), RatingEventType.LONG_HOLD)).isEmpty();
         assertThat(of(history().lease13().hold(TODAY.minusDays(30), null).run(), RatingEventType.LONG_HOLD))
-                .hasSize(1);
+                .singleElement().satisfies(e -> {
+                    assertThat(e.appliedPoints()).isEqualTo(-10.0);
+                    assertThat(e.date()).isEqualTo(TODAY.minusDays(15));
+                });
     }
 
     @Test
@@ -329,10 +332,14 @@ class RenterRatingEngineTest {
 
         H b = history().lease(TODAY.minusMonths(5), TODAY.plusMonths(7)).onTime(6);
         b.cheque(ChequeStatus.CLEARED, TODAY.minusDays(60), TODAY.minusDays(50), null, null, null);
-        assertThat(b.run().grade()).isNotEqualTo(RatingGrade.NEW);
+        RenterRatingResult rb = b.run();
+        assertThat(rb.grade()).isEqualTo(RatingGrade.B);
+        assertThat(rb.score()).isEqualTo(73);
 
         H c = history().lease(TODAY.minusMonths(5), TODAY.plusMonths(7)).onTime(6).adj(5, "vouched", TODAY.minusDays(3));
-        assertThat(c.run().grade()).isNotEqualTo(RatingGrade.NEW);
+        RenterRatingResult rc = c.run();
+        assertThat(rc.grade()).isEqualTo(RatingGrade.B);
+        assertThat(rc.score()).isEqualTo(81);
 
         H d = history().lease13().onTime(2);
         assertThat(d.run().grade()).isEqualTo(RatingGrade.NEW);
@@ -384,6 +391,49 @@ class RenterRatingEngineTest {
         RenterRatingResult changed = new RenterRatingResult(base.renterId(), base.score() + 1, base.grade(),
                 base.deductionsCount(), base.events());
         assertThat(changed.fingerprint()).isNotEqualTo(base.fingerprint());
+        List<RatingEvent> swapped = new ArrayList<>(base.events());
+        RatingEvent e0 = swapped.get(0);
+        swapped.set(0, new RatingEvent(e0.type(), e0.date(), e0.basePoints(), e0.weight(), e0.appliedPoints(),
+                e0.sourceType(), UUID.randomUUID(), e0.leaseId(), e0.note()));
+        RenterRatingResult sameScore = new RenterRatingResult(base.renterId(), base.score(), base.grade(),
+                base.deductionsCount(), swapped);
+        assertThat(sameScore.fingerprint()).isNotEqualTo(base.fingerprint());
+    }
+
+    @Test
+    void technicalReturnLaterClearedGetsClearRules() {
+        LocalDate cd = TODAY.minusDays(60);
+        RenterRatingResult r = history().lease13()
+                .cheque(ChequeStatus.CLEARED, cd, cd.plusDays(2), cd.plusDays(1), null,
+                        ChequeFailureReason.TECHNICAL_RETURN).run();
+        assertThat(of(r, RatingEventType.BOUNCE)).isEmpty();
+        assertThat(of(r, RatingEventType.ON_TIME_CHEQUE)).hasSize(1);
+    }
+
+    @Test
+    void renewalFromForeignLeaseNotCredited() {
+        H h = history().lease13();
+        h.leases.add(new LeaseRow(UUID.randomUUID(), LeaseStatus.ACTIVE, TODAY.minusMonths(3), TODAY.plusMonths(9),
+                UUID.randomUUID()));
+        assertThat(of(h.run(), RatingEventType.RENEWAL)).isEmpty();
+    }
+
+    @Test
+    void postDatedAndVoidChequesDontLeaveNew() {
+        H h = history().lease(TODAY.minusDays(195), TODAY.plusMonths(6));
+        h.cheque(ChequeStatus.CLEARED, TODAY.minusDays(60), TODAY.minusDays(60), null, null, null);
+        h.cheque(ChequeStatus.CLEARED, TODAY.minusDays(30), TODAY.minusDays(30), null, null, null);
+        h.cheque(ChequeStatus.REGISTERED, TODAY.plusDays(30), null, null, null, null);
+        h.cheque(ChequeStatus.CANCELLED, TODAY.minusDays(90), null, null, null, null);
+        assertThat(h.run().grade()).isEqualTo(RatingGrade.NEW);
+    }
+
+    @Test
+    void nonClearedStatusWithStrayClearedAtGivesNoEvent() {
+        LocalDate cd = TODAY.minusDays(60);
+        RenterRatingResult r = history().lease13()
+                .cheque(ChequeStatus.REPLACED, cd, cd.plusDays(1), null, null, null).run();
+        assertThat(r.events()).isEmpty();
     }
 
     @Test

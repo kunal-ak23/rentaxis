@@ -49,16 +49,14 @@ public final class RenterRatingEngine {
 
         for (ChequeRow c : h.cheques()) {
             if (c.leaseId() != null && !leaseIds.contains(c.leaseId())) continue;
-            if (c.chequeDate() != null && inWindow(c.chequeDate(), today)) windowCheques++;
+            if (c.chequeDate() != null && inWindow(c.chequeDate(), today)
+                    && c.status() != ChequeStatus.DRAFT && c.status() != ChequeStatus.CANCELLED) windowCheques++;
             LocalDate bounceDate = c.bouncedAt() != null ? c.bouncedAt() : c.importedBouncedOn();
-            if (bounceDate != null) {
-                if (c.failureReason() != ChequeFailureReason.TECHNICAL_RETURN) {
-                    add(raw, RatingEventType.BOUNCE, bounceDate, BOUNCE_POINTS, "CHEQUE", c.id(), c.leaseId(), null, today);
-                }
+            if (bounceDate != null && c.failureReason() != ChequeFailureReason.TECHNICAL_RETURN) {
+                add(raw, RatingEventType.BOUNCE, bounceDate, BOUNCE_POINTS, "CHEQUE", c.id(), c.leaseId(), null, today);
                 continue;
             }
-            boolean cleared = c.status() == ChequeStatus.CLEARED || c.clearedAt() != null;
-            if (!cleared || c.clearedAt() == null || c.chequeDate() == null) continue;
+            if (c.status() != ChequeStatus.CLEARED || c.clearedAt() == null || c.chequeDate() == null) continue;
             if (!c.clearedAt().isAfter(c.chequeDate().plusDays(ON_TIME_GRACE_DAYS))) {
                 add(raw, RatingEventType.ON_TIME_CHEQUE, c.clearedAt(), ON_TIME_CHEQUE_POINTS, "CHEQUE", c.id(),
                         c.leaseId(), null, today);
@@ -69,7 +67,8 @@ public final class RenterRatingEngine {
         }
 
         for (LeaseRow l : started) {
-            if (l.renewedFromLeaseId() != null && l.startDate() != null) {
+            if (l.renewedFromLeaseId() != null && l.startDate() != null
+                    && h.leases().stream().anyMatch(o -> l.renewedFromLeaseId().equals(o.id()))) {
                 add(raw, RatingEventType.RENEWAL, l.startDate(), RENEWAL_POINTS, "LEASE", l.id(), l.id(), null, today);
             }
         }
@@ -211,7 +210,8 @@ public final class RenterRatingEngine {
     }
 
     private static boolean inWindow(LocalDate date, LocalDate today) {
-        return ChronoUnit.DAYS.between(date, today) <= HALF_WEIGHT_DAYS;
+        long age = ChronoUnit.DAYS.between(date, today);
+        return age >= 0 && age <= HALF_WEIGHT_DAYS;
     }
 
     private static RatingGrade gradeFor(int score) {
