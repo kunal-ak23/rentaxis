@@ -31,6 +31,7 @@ vi.mock("@/lib/api/facilities", async (importOriginal) => {
 
 import { ApiError } from "@/lib/api/facilities";
 import { BookingDetailDrawer } from "../BookingDetailDrawer";
+import { addDaysIso, businessTodayIso } from "@/lib/businessDate";
 
 function makeRequest(overrides: Partial<BookingRequestDTO>): BookingRequestDTO {
   return {
@@ -239,8 +240,29 @@ describe("BookingDetailDrawer staff cancel (ruling R12)", () => {
     expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: "CANCELLED" }));
   });
 
-  it("offers no cancel on an approved parking booking (it is released)", async () => {
-    api.fetchBooking.mockResolvedValue({ request: makeRequest({ status: "APPROVED" }), otherRequests: [] });
+  // Spec 2026-11-19 §6: staff cancel an approved parking booking only before its start
+  // date (Dubai); from its start date on it is released (the unused days are credited).
+  it("cancels an approved parking booking that starts after today, beside release", async () => {
+    const tomorrow = addDaysIso(businessTodayIso(), 1);
+    const parking = makeRequest({ status: "APPROVED", preferredDate: tomorrow, preferredEndDate: addDaysIso(tomorrow, 30) });
+    api.fetchBooking.mockResolvedValue({ request: parking, otherRequests: [] });
+    api.staffCancelBooking.mockResolvedValue({ ...parking, status: "CANCELLED", adminNote: "Bay under repair" });
+    render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={() => {}} />);
+    const button = await screen.findByTestId("booking-staff-cancel");
+    expect(screen.getByText("release")).toBeInTheDocument();
+    expect(button).toBeDisabled();
+    fireEvent.change(screen.getByTestId("booking-cancel-reason"), { target: { value: "Bay under repair" } });
+    fireEvent.click(button);
+    await waitFor(() => expect(api.staffCancelBooking).toHaveBeenCalledWith("req-1", { adminNote: "Bay under repair" }));
+  });
+
+  it.each([
+    ["starts today", () => businessTodayIso()],
+    ["started yesterday", () => addDaysIso(businessTodayIso(), -1)],
+    ["has no date", () => null],
+  ])("offers no cancel on an approved parking booking that %s (it is released)", async (_label, start) => {
+    api.fetchBooking.mockResolvedValue({ request: makeRequest({ status: "APPROVED", preferredDate: start() }),
+      otherRequests: [] });
     render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText("release");
     expect(screen.queryByTestId("booking-staff-cancel")).toBeNull();
