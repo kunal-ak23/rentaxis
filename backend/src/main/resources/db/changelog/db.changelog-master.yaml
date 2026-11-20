@@ -385,3 +385,5 @@ databaseChangeLog:
       file: db/changelog/changesets/189-penalty-income-account.yaml
   - include:
       file: db/changelog/changesets/190-renter-rating.yaml
+  - include:
+      file: db/changelog/changesets/190-booking-fee-periods.yaml

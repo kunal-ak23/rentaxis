@@ -21,6 +21,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.Map;
@@ -38,7 +39,7 @@ import java.util.Set;
 public class BookingFeeService {
 
     public static final String SOURCE = "BOOKING";
-    public static final Set<String> TYPES = Set.of("FREE", "PER_BOOKING", "PER_HOUR");
+    public static final Set<String> TYPES = Set.of("FREE", "PER_BOOKING", "PER_HOUR", "PER_DAY", "PER_MONTH");
 
     private static final EnumSet<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN,
             LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD, LeaseStatus.RENEWED);
@@ -51,10 +52,11 @@ public class BookingFeeService {
         this.leases = leases;
     }
 
-    /** Validates a fee setting; PER_HOUR is for amenities only. */
+    /** Validates a fee setting; PER_HOUR is for amenities only, PER_MONTH for parking spots only. */
     public static void validate(String type, BigDecimal amount, boolean parking) {
         String t = type == null ? "FREE" : type;
-        if (!TYPES.contains(t) || (parking && "PER_HOUR".equals(t))) {
+        if (!TYPES.contains(t) || (parking && "PER_HOUR".equals(t))
+                || (!parking && "PER_MONTH".equals(t))) {
             throw new BusinessRuleViolationException("Unknown fee type " + t, "booking.feeType", Map.of("type", t));
         }
         if (!"FREE".equals(t) && (amount == null || amount.signum() <= 0)) {
@@ -72,15 +74,38 @@ public class BookingFeeService {
 
     /** Per hour: the slot's hours on each day it covers (a slot without times counts one hour a day). */
     static BigDecimal quote(String type, BigDecimal amount, BookingRequest b) {
+        return quote(type, amount, b.getPreferredDate(), b.getPreferredEndDate(), b.getPreferredStartTime(), b.getPreferredEndTime());
+    }
+
+    /**
+     * PER_HOUR: the slot's hours on each day it covers (no times counts one hour a day). PER_DAY: amount
+     * times the days covered, both ends counted. PER_MONTH: whole months from the start date, then the
+     * leftover days at the day rate of the month they fall in. A null end means a single day.
+     */
+    static BigDecimal quote(String type, BigDecimal amount, LocalDate start, LocalDate end, LocalTime from, LocalTime to) {
         if (type == null || "FREE".equals(type) || amount == null) return BigDecimal.ZERO.setScale(2);
         if ("PER_BOOKING".equals(type)) return amount.setScale(2, RoundingMode.HALF_UP);
-        long days = b.getPreferredDate() == null ? 1
-                : ChronoUnit.DAYS.between(b.getPreferredDate(),
-                        b.getPreferredEndDate() != null ? b.getPreferredEndDate() : b.getPreferredDate()) + 1;
+        LocalDate last = end != null ? end : start;
+        if ("PER_MONTH".equals(type)) {
+            if (start == null) return amount.setScale(2, RoundingMode.HALF_UP);
+            int n = 0;
+            while (!start.plusMonths(n + 1).minusDays(1).isAfter(last)) n++;
+            LocalDate rest = start.plusMonths(n);
+            BigDecimal total = amount.multiply(BigDecimal.valueOf(n));
+            if (!rest.isAfter(last)) {
+                long days = ChronoUnit.DAYS.between(rest, last) + 1;
+                total = total.add(amount.multiply(BigDecimal.valueOf(days))
+                        .divide(BigDecimal.valueOf(rest.lengthOfMonth()), 10, RoundingMode.HALF_UP));
+            }
+            return total.setScale(2, RoundingMode.HALF_UP);
+        }
+        long days = start == null ? 1 : ChronoUnit.DAYS.between(start, last) + 1;
+        if ("PER_DAY".equals(type)) {
+            return amount.multiply(BigDecimal.valueOf(Math.max(1, days))).setScale(2, RoundingMode.HALF_UP);
+        }
         BigDecimal hours = BigDecimal.ONE;
-        if (b.getPreferredStartTime() != null && b.getPreferredEndTime() != null
-                && b.getPreferredEndTime().isAfter(b.getPreferredStartTime())) {
-            long minutes = Duration.between(b.getPreferredStartTime(), b.getPreferredEndTime()).toMinutes();
+        if (from != null && to != null && to.isAfter(from)) {
+            long minutes = Duration.between(from, to).toMinutes();
             hours = BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
         }
         return amount.multiply(hours).multiply(BigDecimal.valueOf(Math.max(1, days))).setScale(2, RoundingMode.HALF_UP);
