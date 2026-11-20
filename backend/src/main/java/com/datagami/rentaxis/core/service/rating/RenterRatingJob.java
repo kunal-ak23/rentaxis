@@ -7,6 +7,7 @@ import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
@@ -53,6 +54,7 @@ public class RenterRatingJob {
     }
 
     @Scheduled(cron = "0 0 2 * * *")
+    @SchedulerLock(name = "renter-rating", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
     public void runDaily() {
         if (!enabled) {
             log.debug("Renter rating job disabled via flag");
@@ -91,12 +93,16 @@ public class RenterRatingJob {
             while (true) {
                 List<UUID> ids = loader.ratedRenterIds(tenantId, after, BATCH_SIZE);
                 if (ids.isEmpty()) break;
-                Integer n = tx.execute(status -> {
-                    int w = service.recomputeAndStore(tenantId, ids, today);
-                    if (monthStart) service.snapshotMonth(tenantId, ids, month);
-                    return w;
-                });
-                written += n == null ? 0 : n;
+                try {
+                    Integer n = tx.execute(status -> {
+                        int w = service.recomputeAndStore(tenantId, ids, today);
+                        if (monthStart) service.snapshotMonth(tenantId, ids, month);
+                        return w;
+                    });
+                    written += n == null ? 0 : n;
+                } catch (Exception e) {
+                    log.error("Renter rating tenant {} batch after {} failed: {}", tenantId, after, e.getMessage(), e);
+                }
                 after = ids.get(ids.size() - 1);
                 if (ids.size() < BATCH_SIZE) break;
             }

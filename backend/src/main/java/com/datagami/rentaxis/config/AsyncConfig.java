@@ -53,6 +53,9 @@ public class AsyncConfig {
         executor.setQueueCapacity(50);
         executor.setThreadNamePrefix("renter-rating-");
         executor.setTaskDecorator(tenantContextResetDecorator());
+        executor.setRejectedExecutionHandler((r, e) ->
+                LoggerFactory.getLogger(AsyncConfig.class)
+                        .warn("renter_rating.task_rejected reason=executor_saturated queue={}", e.getQueue().size()));
         executor.initialize();
         return executor;
     }
