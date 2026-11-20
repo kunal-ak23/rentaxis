@@ -74,7 +74,9 @@ public class RenterRatingService {
     @Transactional(readOnly = true)
     public RenterRatingDetailDTO live(UUID tenantId, UUID renterId, LocalDate today) {
         requireRenter(tenantId, renterId);
-        RenterRatingResult r = scoreOne(tenantId, renterId, today);
+        RenterHistory history = loader.load(tenantId, List.of(renterId), today.minusDays(WINDOW_DAYS)).get(renterId);
+        RenterRatingResult r = RenterRatingEngine.score(history, today);
+        boolean started = isRated(history);
         List<RenterRatingSnapshot> last = new ArrayList<>(
                 snapshots.findTop12ByTenantIdAndRenterIdOrderByMonthDesc(tenantId, renterId));
         last.sort(Comparator.comparing(RenterRatingSnapshot::getMonth));
@@ -82,7 +84,7 @@ public class RenterRatingService {
         for (RenterRatingSnapshot s : last) trend.add(new RatingTrendPointDTO(s.getMonth(), s.getScore(), s.getGrade()));
         trend.add(new RatingTrendPointDTO(today, r.score(), r.grade()));
         return new RenterRatingDetailDTO(renterId, r.score(), r.grade(), r.deductionsCount(),
-                RenterRatingPolicy.BASE_SCORE, r.events().stream().map(RatingEventDTO::of).toList(), trend);
+                RenterRatingPolicy.BASE_SCORE, r.events().stream().map(RatingEventDTO::of).toList(), trend, started);
     }
 
     /**
@@ -230,6 +232,10 @@ public class RenterRatingService {
             throw new BusinessRuleViolationException("Reason is required (1-500 characters)");
         }
         requireRenter(tenantId, renterId);
+        RenterHistory history = loader.load(tenantId, List.of(renterId), today.minusDays(WINDOW_DAYS)).get(renterId);
+        if (history == null || !isRated(history)) {
+            throw new BusinessRuleViolationException("Tenant has no started contract");
+        }
         RenterRatingAdjustment a = new RenterRatingAdjustment();
         a.setTenantId(tenantId);
         a.setRenterId(renterId);

@@ -126,6 +126,7 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
         assertThat(d.score()).isEqualTo(55);
         assertThat(d.grade()).isEqualTo(RatingGrade.C);
         assertThat(d.base()).isEqualTo(70);
+        assertThat(d.hasStartedContract()).isTrue();
         assertThat(d.deductionsCount()).isEqualTo(1);
         assertThat(d.events()).anySatisfy(e -> {
             assertThat(e.type()).isEqualTo(RatingEventType.BOUNCE);
@@ -249,6 +250,22 @@ class RenterRatingServiceIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class);
         assertThatThrownBy(() -> service.addAdjustment(f.tenantId(), renterId, 5, "x".repeat(501), user, TODAY))
                 .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void adjustmentRefusedWhenNoStartedContract() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        jdbc.update("update leases set status = 'DRAFT' where id = ?", leaseId);
+        UUID user = TestIdentities.user(userRepo, UserRole.TENANT_ADMIN, f.tenantId());
+        UUID renterId = f.renter().getId();
+
+        assertThatThrownBy(() -> service.addAdjustment(f.tenantId(), renterId, 5, "reason", user, TODAY))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("no started contract");
+        assertThat(service.live(f.tenantId(), renterId, TODAY).hasStartedContract()).isFalse();
+        assertThat(jdbc.queryForObject("select count(*) from renter_rating_adjustments where renter_id = ?",
+                Integer.class, renterId)).isZero();
     }
 
     @Test
