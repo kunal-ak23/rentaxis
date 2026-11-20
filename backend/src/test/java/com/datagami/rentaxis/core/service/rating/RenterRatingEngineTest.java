@@ -371,7 +371,8 @@ class RenterRatingEngineTest {
 
     @Test
     void earlyIntentNeeds30Days() {
-        LocalDate end = TODAY.plusDays(60);
+        // intents captured in the past (an intent dated after today is not scored)
+        LocalDate end = TODAY.plusDays(20);
         RenterRatingResult a = history().lease(TODAY.minusMonths(13), end)
                 .opp(RenewalIntent.RENEW, end.minusDays(29), null, null).run();
         assertThat(of(a, RatingEventType.EARLY_INTENT)).isEmpty();
