@@ -154,10 +154,11 @@ class AccountSeedNonPactChartIT extends AbstractPostgresIT {
         // 14 since the penalty module (spec §7.3) added OTHER_INCOME, which
         // PenaltyReason.OTHER credits and which had no mapping of any kind before;
         // 15 with F15-11's INTERPROPERTY_CLEARING (one clearing leaf per property).
+        // 16 with the booking journal vouchers feature's AMENITY_INCOME (C-01-02, changeset 191).
         assertThat(templateRoles(tenantId))
-                .hasSize(15)
+                .hasSize(16)
                 .contains(AccountRole.OTHER_INCOME.name(), AccountRole.RENT_PENALTY.name(),
-                        AccountRole.CHEQUE_RETURN_PENALTY.name(), AccountRole.INTERPROPERTY_CLEARING.name());
+                        AccountRole.CHEQUE_RETURN_PENALTY.name(), AccountRole.INTERPROPERTY_CLEARING.name(), AccountRole.AMENITY_INCOME.name());
         assertThat(defaultRoles(tenantId)).contains(AccountRole.CASH.name(), AccountRole.OUTPUT_VAT.name(),
                 AccountRole.INPUT_VAT.name(), AccountRole.ROUNDING_OFF.name(), AccountRole.DISCOUNT_ALLOWED.name(),
                 AccountRole.FORFEITED_INCOME.name(), AccountRole.OPENING_BALANCE_DIFFERENCE.name());
