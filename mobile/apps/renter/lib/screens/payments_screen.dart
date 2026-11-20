@@ -23,9 +23,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   final Set<String> _ticked = {};
   bool _downloading = false;
 
-  Future<void> _download(Rect origin) async {
+  Future<void> _download(Rect origin, List<String> ids) async {
     final ar = context.isAr;
-    final ids = _ticked.toList();
     final fetch = ref.read(combinedReceiptProvider);
     final share = ref.read(shareRenterDocumentProvider);
     setState(() => _downloading = true);
@@ -33,7 +32,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       final pdf = await fetch(ids);
       if (!mounted) return;
       await share(pdf.bytes, pdf.fileName, origin);
-      if (mounted) setState(_ticked.clear);
+      if (mounted) setState(() => _ticked.removeAll(ids));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -197,6 +196,11 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                                 .length <=
                             1;
                     final years = receiptYears(rows);
+                    final shown = filtered
+                        .where(isReceiptable)
+                        .map((r) => '${r['id']}')
+                        .toSet();
+                    final effective = _ticked.intersection(shown).toList();
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -264,14 +268,14 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                         ] else if (selectable && rows.any(isReceiptable)) ...[
                           ReceiptPickerBar(
                             years: years,
-                            selected: _ticked.length,
+                            selected: effective.length,
                             busy: _downloading,
                             onYear: (y) => setState(() {
                               _ticked
                                 ..clear()
                                 ..addAll(idsInYear(rows, y));
                             }),
-                            onDownload: _download,
+                            onDownload: (o) => _download(o, effective),
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -362,10 +366,7 @@ class _PaymentCard extends ConsumerWidget {
           const SizedBox(height: 10),
           Text(
             Formatters.currency((row['amount'] as num?) ?? 0),
-            style: MiftahType.amount(
-              size: 25,
-              color: context.miftah.textPrimary,
-            ),
+            style: MiftahType.amount(size: 25, color: context.miftah.textPrimary),
           ),
           Text('$mode · ${Formatters.date(row['dueDate'] as String?, ar: ar)}'),
           if (isOwedNow(row))
@@ -501,9 +502,7 @@ class _TaxInvoices extends ConsumerWidget {
                   ar
                       ? 'الفواتير الضريبية والإشعارات الدائنة'
                       : 'Tax invoices & credit notes',
-                  style: MiftahType.cardTitle(
-                    color: context.miftah.textPrimary,
-                  ),
+                  style: MiftahType.cardTitle(color: context.miftah.textPrimary),
                 ),
                 for (final row in rows)
                   ListTile(

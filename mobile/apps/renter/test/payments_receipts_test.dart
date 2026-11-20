@@ -213,6 +213,33 @@ void main() {
       find.byKey(const Key('receipt-download')),
     );
     expect(btn.onPressed, isNull);
-    expect(find.textContaining('100'), findsWidgets);
+    expect(
+      find.textContaining('At most 100 receipts per file'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('ticks hidden by the filter are neither counted nor sent', (
+    tester,
+  ) async {
+    final calls = <List<String>>[];
+    await pump(
+      tester,
+      [row('a', 'L1'), row('b', 'L1', status: 'REGISTERED')],
+      [
+        {'id': 'L1'},
+      ],
+      calls: calls,
+    );
+    await tester.tap(find.byKey(const Key('receipt-pick-a')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Upcoming'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Download selected (0)'), findsOneWidget);
+    final btn = tester.widget<ButtonStyleButton>(
+      find.byKey(const Key('receipt-download')),
+    );
+    expect(btn.onPressed, isNull);
+    expect(calls, isEmpty);
   });
 }
