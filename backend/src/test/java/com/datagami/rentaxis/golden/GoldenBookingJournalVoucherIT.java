@@ -92,6 +92,7 @@ class GoldenBookingJournalVoucherIT extends AbstractPostgresIT {
     @Autowired PenaltyAssessmentRepository assessments;
     @Autowired com.datagami.rentaxis.core.service.cheque.ChequeService chequeService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService penalties;
     @Autowired TransactionTemplate tx;
 
     private LeaseTestFixtures fixtures;
@@ -521,6 +522,31 @@ class GoldenBookingJournalVoucherIT extends AbstractPostgresIT {
         assertThat(creditNotes()).isOne();
     }
 
+    /**
+     * Final review I3: the settlement's "penalties outstanding" for an unpaid booking released
+     * early is fee + VAT less credit + its VAT, the same figure as the lowered collection row
+     * and the receivable movement, not the full fee.
+     */
+    @Test
+    void settlementOutstandingNetsAnEarlyReleaseCredit() {
+        BigDecimal before = tx.execute(s -> penalties.outstandingForLease(leaseId));
+        BookingRequest b = approvedAMonthAgo("P-86");
+        UUID chargeId = b.getChargeId();
+        UUID row = collectionRowOf(chargeId);
+        assertThat(tx.execute(s -> penalties.outstandingForLease(leaseId)).subtract(before))
+                .as("the whole fee with VAT, before the release").isEqualByComparingTo("630.00");
+        BigDecimal credit = expectedCredit();
+        BigDecimal sum = credit.add(LeaseVat.vatOfNet(credit));
+
+        release(b);
+
+        BigDecimal owed = tx.execute(s -> penalties.outstandingForLease(leaseId)).subtract(before);
+        assertThat(owed).as("fee + VAT - (credit + credit VAT)")
+                .isEqualByComparingTo(new BigDecimal("630.00").subtract(sum));
+        assertThat(owed).as("matches the uncleared collection row")
+                .isEqualByComparingTo(jdbc.queryForObject("select amount from cheques where id = ?", BigDecimal.class, row));
+    }
+
     @Test
     void earlyReleasePaidLeavesRenterCredit() {
         BookingRequest b = approvedAMonthAgo("P-81");
@@ -611,6 +637,32 @@ class GoldenBookingJournalVoucherIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select status from booking_requests where id = ?", String.class, b.getId()))
                 .isEqualTo("APPROVED");
         assertThat(traceOf(chargeId)).as("no journal").hasSize(1);
+    }
+
+    /**
+     * Final review I2 (ledger rule 3): a bounced fee row still asks for the full fee (and its
+     * replacement would too), so crediting the receivable now would leave the row and the books
+     * apart. The release is refused until the payment is settled or replaced; nothing posts.
+     */
+    @Test
+    void earlyReleaseWithBouncedRowIsRefused() {
+        BookingRequest b = approvedAMonthAgo("P-85");
+        UUID chargeId = b.getChargeId();
+        UUID row = collectionRowOf(chargeId);
+        assertThat(jdbc.update("update cheques set status = 'BOUNCED' where id = ?", row)).isOne();
+
+        assertThatThrownBy(() -> release(b))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                .isEqualTo("booking.feeRowNotSettled");
+        assertThat(jdbc.queryForObject("select status from booking_requests where id = ?", String.class, b.getId()))
+                .isEqualTo("APPROVED");
+        assertThat(traceOf(chargeId)).as("no journal").hasSize(1);
+        assertThat(jdbc.queryForObject("select credited_amount from penalty_assessments where id = ?", BigDecimal.class,
+                chargeId)).isNull();
+        assertThat(jdbc.queryForObject("select amount from cheques where id = ?", BigDecimal.class, row))
+                .isEqualByComparingTo("630.00");
+        assertThat(creditNotes()).isZero();
     }
 
     @Test

@@ -319,9 +319,15 @@ public class BookingFeeService {
     /**
      * Spec 2026-11-19 §6: a parking booking released early has the unused part of its fee
      * credited ({@link #creditForRelease}), on {@code on}, through
-     * {@link PenaltyAssessmentService#creditPart}. A payment in flight refuses the release
-     * ({@code booking.feeInFlight}, as for staff cancel); a fee written off, reversed or
-     * whose collection row was closed elsewhere stands, and the release goes ahead.
+     * {@link PenaltyAssessmentService#creditPart}. The credit is posted only while the fee's
+     * collection row is settled one way or the other: no row, unpaid (REGISTERED) or paid
+     * (CLEARED), so the receivable still equals the row (ledger rule 3). A payment in flight
+     * refuses the release ({@code booking.feeInFlight}, as for staff cancel); any other row
+     * (bounced, replaced, returned, transferred, draft) refuses it with
+     * {@code booking.feeRowNotSettled}: the row, or its replacement, would still ask for the
+     * full fee after the receivable was credited (final review I2). A fee written off or
+     * reversed, or whose collection row was cancelled elsewhere, stands, and the release goes
+     * ahead with no credit.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void creditOnRelease(BookingRequest b, LocalDate on) {
@@ -334,9 +340,15 @@ public class BookingFeeService {
         if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED
                 || row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING) {
             throw new BusinessRuleViolationException("The fee's payment is still being collected; release the booking"
-                    + " once it has cleared or bounced.", "booking.feeInFlight", Map.of());
+                    + " once it has cleared.", "booking.feeInFlight", Map.of());
         }
         if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED) return;
+        if (row != null && row != com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED
+                && row != com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED) {
+            throw new BusinessRuleViolationException("The fee's payment is " + row.name().toLowerCase()
+                    + "; settle or replace it before the booking is released.", "booking.feeRowNotSettled",
+                    Map.of());
+        }
         charges.creditPart(b.getChargeId(), credit, on, "Parking released early on " + on + ": unused days credited");
     }
 
