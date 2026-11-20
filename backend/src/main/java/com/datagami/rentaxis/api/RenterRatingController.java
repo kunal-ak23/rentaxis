@@ -122,7 +122,7 @@ public class RenterRatingController {
         List<UUID> ids = parseIds(renterIds);
         Sort s = parseSort(sort);
         List<List<String>> rows = new ArrayList<>();
-        rows.add(List.of("Renter", "Grade", "Score", "Deductions", "Unit", "Property", "Computed at"));
+        rows.add(List.of("Tenant", "Grade", "Score", "Deductions", "Unit", "Property", "Computed at"));
         for (int p = 0; ; p++) {
             Page<RenterRatingRowDTO> chunk = query(tenantId, grade, propertyId, q, ids, PageRequest.of(p, EXPORT_PAGE, s));
             for (RenterRatingRowDTO r : chunk.getContent()) {
@@ -135,7 +135,7 @@ public class RenterRatingController {
         return ResponseEntity.ok()
                 .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        ContentDisposition.attachment().filename("renter-ratings.csv").build().toString())
+                        ContentDisposition.attachment().filename("tenant-ratings.csv").build().toString())
                 .body(ReportCsv.encode(rows));
     }
 

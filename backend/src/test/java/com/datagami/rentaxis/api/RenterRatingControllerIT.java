@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -38,11 +40,14 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 
 /** Renter rating endpoints over HTTP: feature gate, roles, org isolation, CSV, recompute. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -50,6 +55,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RenterRatingControllerIT extends AbstractPostgresIT {
 
     @LocalServerPort int port;
+
+    /** No-op executor: run-on-enable and the recompute endpoint never race the test's own runNowForTenant. */
+    @MockitoBean(name = "renterRatingExecutor") Executor renterRatingExecutor;
+    @Autowired JdbcTemplate jdbc;
 
     @Autowired TenantFeatureService features;
     @Autowired RenterRatingJob job;
@@ -66,6 +75,7 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
 
+    private LeaseTestFixtures orgA;
     private UUID tenantId;
     private UUID renterId;
     private UUID otherOrgRenterId;
@@ -88,6 +98,7 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
         LeaseTestFixtures a = fixtures();
         a.postedLease(LocalDate.of(2026, 9, 16), LocalDate.of(2026, 10, 2), LocalDate.of(2027, 10, 1),
                 List.of(line("RENT", "51000")), 4, "100040");
+        orgA = a;
         tenantId = a.tenantId();
         renterId = a.renter().getId();
         features.setEnabled(tenantId, TenantFeature.RENTER_RATING, true);
@@ -174,7 +185,7 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
 
     @Test
     void nonStaffDenied() {
-        for (UserRole role : List.of(UserRole.RENTER, UserRole.SECURITY_GUARD, UserRole.TENANT_USER)) {
+        for (UserRole role : List.of(UserRole.RENTER, UserRole.SECURITY_GUARD, UserRole.TENANT_USER, UserRole.PROMOTER)) {
             UUID u = roleUser(role);
             assertThat(status(u, role, HttpMethod.GET, ratingPath(), null)).isEqualTo(HttpStatus.FORBIDDEN);
             assertThat(status(u, role, HttpMethod.GET, "/api/v1/renter-ratings", null)).isEqualTo(HttpStatus.FORBIDDEN);
@@ -200,6 +211,23 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
                 ratingPath() + "/adjustments/" + adjustmentId, null)).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(status(admin, UserRole.TENANT_ADMIN, HttpMethod.DELETE,
                 ratingPath() + "/adjustments/" + adjustmentId, null)).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void deleteAdjustmentViaAnotherRenterIs404AndKeepsRow() {
+        ResponseEntity<Map> created = request(admin, UserRole.TENANT_ADMIN, tenantId, HttpMethod.POST,
+                ratingPath() + "/adjustments", Map.of("points", 5, "reason", "Paid early")).toEntity(Map.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String adjustmentId = String.valueOf(created.getBody().get("adjustmentId"));
+        UUID otherRenterSameOrg = orgA.createRenter("Other Renter").getId();
+
+        assertThat(status(admin, UserRole.TENANT_ADMIN, HttpMethod.DELETE,
+                "/api/v1/renters/" + otherRenterSameOrg + "/rating/adjustments/" + adjustmentId, null))
+                .isEqualTo(HttpStatus.NOT_FOUND);
+
+        assertThat(jdbc.queryForObject(
+                "select count(*) from renter_rating_adjustments where id = ?::uuid and removed_at is null",
+                Integer.class, adjustmentId)).isEqualTo(1);
     }
 
     @Test
@@ -246,9 +274,9 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
                 "/api/v1/renter-ratings/export", null).toEntity(String.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(res.getHeaders().getContentType().toString()).startsWith("text/csv");
-        assertThat(res.getHeaders().getFirst("Content-Disposition")).contains("renter-ratings.csv");
+        assertThat(res.getHeaders().getFirst("Content-Disposition")).contains("tenant-ratings.csv");
         String body = res.getBody().replace("﻿", "");
-        assertThat(body).startsWith("Renter,Grade,Score");
+        assertThat(body).startsWith("Tenant,Grade,Score");
         assertThat(body.split("\r\n")).hasSize(2);
     }
 
@@ -259,6 +287,7 @@ class RenterRatingControllerIT extends AbstractPostgresIT {
                 .isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(request(superAdmin, UserRole.SUPER_ADMIN, null, HttpMethod.POST, path + tenantId, null)
                 .toBodilessEntity().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        verify(renterRatingExecutor).execute(any(Runnable.class));
         assertThat(request(superAdmin, UserRole.SUPER_ADMIN, null, HttpMethod.POST, path + UUID.randomUUID(), null)
                 .toBodilessEntity().getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         features.setEnabled(tenantId, TenantFeature.RENTER_RATING, false);
