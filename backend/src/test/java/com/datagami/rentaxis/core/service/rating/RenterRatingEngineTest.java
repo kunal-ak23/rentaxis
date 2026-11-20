@@ -504,6 +504,18 @@ class RenterRatingEngineTest {
         assertThat(of(h.run(), RatingEventType.RENEWAL)).isEmpty();
     }
 
+    /** Round 2 M1: a TRANSFERRED cheque is copied onto the new lease; only the copy counts toward NEW. */
+    @Test
+    void transferredChequesDontCountTowardNew() {
+        H h = history().lease(TODAY.minusDays(195), TODAY.plusMonths(6));
+        h.cheque(ChequeStatus.CLEARED, TODAY.minusDays(60), TODAY.minusDays(60), null, null, null);
+        h.cheque(ChequeStatus.CLEARED, TODAY.minusDays(30), TODAY.minusDays(30), null, null, null);
+        h.cheque(ChequeStatus.TRANSFERRED, TODAY.minusDays(90), null, null, null, null);
+        assertThat(h.run().grade()).isEqualTo(RatingGrade.NEW);
+        h.cheque(ChequeStatus.CLEARED, TODAY.minusDays(90), TODAY.minusDays(90), null, null, null);
+        assertThat(h.run().grade()).isNotEqualTo(RatingGrade.NEW);
+    }
+
     @Test
     void postDatedAndVoidChequesDontLeaveNew() {
         H h = history().lease(TODAY.minusDays(195), TODAY.plusMonths(6));

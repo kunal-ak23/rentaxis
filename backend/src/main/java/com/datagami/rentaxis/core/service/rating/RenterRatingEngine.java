@@ -49,8 +49,10 @@ public final class RenterRatingEngine {
 
         for (ChequeRow c : h.cheques()) {
             if (c.leaseId() != null && !leaseIds.contains(c.leaseId())) continue;
+            // TRANSFERRED: the paper was copied onto the new lease (LeaseTransferService); the copy counts.
             if (c.chequeDate() != null && inWindow(c.chequeDate(), today)
-                    && c.status() != ChequeStatus.DRAFT && c.status() != ChequeStatus.CANCELLED) windowCheques++;
+                    && c.status() != ChequeStatus.DRAFT && c.status() != ChequeStatus.CANCELLED
+                    && c.status() != ChequeStatus.TRANSFERRED) windowCheques++;
             LocalDate bounceDate = c.bouncedAt() != null ? c.bouncedAt() : c.importedBouncedOn();
             if (bounceDate != null && c.failureReason() != ChequeFailureReason.TECHNICAL_RETURN) {
                 add(raw, RatingEventType.BOUNCE, bounceDate, BOUNCE_POINTS, "CHEQUE", c.id(), c.leaseId(), null, null,
