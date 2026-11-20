@@ -1,0 +1,347 @@
+package com.datagami.rentaxis.core.service.rating;
+
+import com.datagami.rentaxis.api.dto.rating.RatingEventDTO;
+import com.datagami.rentaxis.api.dto.rating.RenterRatingDetailDTO;
+import com.datagami.rentaxis.api.dto.rating.RenterRatingRowDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.service.AccountService;
+import com.datagami.rentaxis.core.service.LeaseService;
+import com.datagami.rentaxis.core.service.PropertyService;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
+import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
+import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
+import com.datagami.rentaxis.core.service.lease.LeasePostingService;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.enums.RatingGrade;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
+import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.RenterRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
+import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
+import com.datagami.rentaxis.testsupport.TestIdentities;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+@SpringBootTest
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
+class RenterRatingServiceIT extends AbstractPostgresIT {
+
+    private static final LocalDate TODAY = LocalDate.of(2026, 11, 20);
+    private static final LocalDate BOUNCE_DAY = LocalDate.of(2026, 10, 20);
+
+    @Autowired RenterRatingService service;
+    @Autowired RenterRatingJob job;
+    @Autowired TenantFeatureService tenantFeatureService;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired LeaseService leaseService;
+    @Autowired ChequeGenerationService generation;
+    @Autowired LeasePostingService posting;
+    @Autowired LandlordOrgRepository orgRepo;
+    @Autowired UserRepository userRepo;
+    @Autowired RenterRepository renterRepo;
+    @Autowired UnitRepository unitRepo;
+    @Autowired PropertyService propertyService;
+    @Autowired AccountService accountService;
+    @Autowired PropertyAccountService propertyAccountService;
+    @Autowired ChargeTypeService chargeTypeService;
+
+    private int seq;
+
+    @AfterEach
+    void tearDown() {
+        TenantContextHolder.clear();
+        LeaseTestFixtures.clearAuth();
+    }
+
+    private LeaseTestFixtures newOrgFixtures() {
+        return new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
+                propertyService, accountService, propertyAccountService, chargeTypeService)
+                .bootstrap()
+                .withLeaseServices(leaseService, generation, posting);
+    }
+
+    private UUID postedLease(LeaseTestFixtures f) {
+        seq++;
+        return f.postedLease(LocalDate.of(2026, 9, 16), LocalDate.of(2026, 10, 2),
+                LocalDate.of(2027, 10, 1), List.of(line("RENT", "51000")), 4, "10" + (1000 + seq * 10))
+                .lease().getId();
+    }
+
+    private UUID postedLeaseFor(LeaseTestFixtures f, String name) {
+        seq++;
+        var renter = f.createRenter(name);
+        var unit = f.createUnit(f.property(), "U" + seq);
+        return f.postedLease(unit, renter, LocalDate.of(2026, 9, 16), LocalDate.of(2026, 10, 2),
+                LocalDate.of(2027, 10, 1), List.of(line("RENT", "51000")), 4, "30" + (1000 + seq * 10))
+                .lease().getId();
+    }
+
+    private List<UUID> chequeIds(UUID tenantId, UUID leaseId) {
+        return jdbc.queryForList("select id from cheques where tenant_id = ? and lease_id = ? order by seq_no",
+                UUID.class, tenantId, leaseId);
+    }
+
+    private UUID bounce(UUID tenantId, UUID leaseId, int index, LocalDate on) {
+        UUID chequeId = chequeIds(tenantId, leaseId).get(index);
+        jdbc.update("update cheques set status = 'BOUNCED', bounced_at = ? where id = ?", on, chequeId);
+        return chequeId;
+    }
+
+    private int storedRows(UUID tenantId, UUID renterId) {
+        return jdbc.queryForObject("select count(*) from renter_ratings where tenant_id = ? and renter_id = ?",
+                Integer.class, tenantId, renterId);
+    }
+
+    private int storedScore(UUID tenantId, UUID renterId) {
+        return jdbc.queryForObject("select score from renter_ratings where tenant_id = ? and renter_id = ?",
+                Integer.class, tenantId, renterId);
+    }
+
+    @Test
+    void liveMatchesEngine() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        UUID chequeId = bounce(f.tenantId(), leaseId, 0, BOUNCE_DAY);
+
+        RenterRatingDetailDTO d = service.live(f.tenantId(), f.renter().getId(), TODAY);
+
+        assertThat(d.score()).isEqualTo(55);
+        assertThat(d.grade()).isEqualTo(RatingGrade.C);
+        assertThat(d.base()).isEqualTo(70);
+        assertThat(d.deductionsCount()).isEqualTo(1);
+        assertThat(d.events()).anySatisfy(e -> {
+            assertThat(e.type()).isEqualTo(RatingEventType.BOUNCE);
+            assertThat(e.sourceId()).isEqualTo(chequeId);
+        });
+        assertThat(d.trend()).hasSize(1);
+        assertThat(d.trend().get(0).score()).isEqualTo(55);
+    }
+
+    @Test
+    void liveRefusesRenterOfAnotherOrg() {
+        LeaseTestFixtures a = newOrgFixtures();
+        postedLease(a);
+        LeaseTestFixtures b = newOrgFixtures();
+        postedLease(b);
+
+        assertThatThrownBy(() -> service.live(a.tenantId(), b.renter().getId(), TODAY))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void storeWritesOnceThenSkipsUnchanged() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        bounce(f.tenantId(), leaseId, 0, BOUNCE_DAY);
+        UUID renterId = f.renter().getId();
+
+        assertThat(service.recomputeAndStore(f.tenantId(), List.of(renterId), TODAY)).isEqualTo(1);
+        assertThat(service.recomputeAndStore(f.tenantId(), List.of(renterId), TODAY)).isEqualTo(0);
+        assertThat(storedScore(f.tenantId(), renterId)).isEqualTo(55);
+        String json = jdbc.queryForObject("select events_json from renter_ratings where renter_id = ?",
+                String.class, renterId);
+        assertThat(json).contains("BOUNCE");
+    }
+
+    @Test
+    void storeRewritesWhenAgeWeightChanges() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        bounce(f.tenantId(), leaseId, 0, BOUNCE_DAY);
+        UUID renterId = f.renter().getId();
+        LocalDate day365 = BOUNCE_DAY.plusDays(365);
+
+        assertThat(service.recomputeAndStore(f.tenantId(), List.of(renterId), day365)).isEqualTo(1);
+        assertThat(storedScore(f.tenantId(), renterId)).isEqualTo(55);
+        assertThat(service.recomputeAndStore(f.tenantId(), List.of(renterId), day365.plusDays(1))).isEqualTo(1);
+        assertThat(storedScore(f.tenantId(), renterId)).isEqualTo(63);
+    }
+
+    @Test
+    void storeDeletesRowsOfRentersNoLongerRated() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID leaseId = postedLease(f);
+        UUID renterId = f.renter().getId();
+        service.recomputeAndStore(f.tenantId(), List.of(renterId), TODAY);
+        assertThat(storedRows(f.tenantId(), renterId)).isEqualTo(1);
+
+        jdbc.update("update leases set status = 'DRAFT' where id = ?", leaseId);
+        service.recomputeAndStore(f.tenantId(), List.of(renterId), TODAY);
+
+        assertThat(storedRows(f.tenantId(), renterId)).isZero();
+    }
+
+    @Test
+    void snapshotOnFirstOfMonth() {
+        LeaseTestFixtures f = newOrgFixtures();
+        postedLease(f);
+        UUID renterId = f.renter().getId();
+        LocalDate first = LocalDate.of(2026, 12, 1);
+
+        job.runNowForTenant(f.tenantId(), first);
+        job.runNowForTenant(f.tenantId(), first);
+
+        assertThat(jdbc.queryForObject(
+                "select count(*) from renter_rating_snapshots where tenant_id = ? and renter_id = ? and month = ?",
+                Integer.class, f.tenantId(), renterId, first)).isEqualTo(1);
+        job.runNowForTenant(f.tenantId(), LocalDate.of(2026, 12, 2));
+        assertThat(jdbc.queryForObject("select count(*) from renter_rating_snapshots where renter_id = ?",
+                Integer.class, renterId)).isEqualTo(1);
+        assertThat(service.live(f.tenantId(), renterId, LocalDate.of(2026, 12, 2)).trend()).hasSize(2);
+    }
+
+    @Test
+    void jobSkipsOrgsWithFeatureOff() {
+        LeaseTestFixtures f = newOrgFixtures();
+        postedLease(f);
+
+        job.runNow(TODAY);
+
+        assertThat(storedRows(f.tenantId(), f.renter().getId())).isZero();
+    }
+
+    @Test
+    void enablingFeatureComputesOrg() throws Exception {
+        LeaseTestFixtures f = newOrgFixtures();
+        postedLease(f);
+        UUID renterId = f.renter().getId();
+        assertThat(storedRows(f.tenantId(), renterId)).isZero();
+
+        tenantFeatureService.setEnabled(f.tenantId(), TenantFeature.RENTER_RATING, true);
+
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (storedRows(f.tenantId(), renterId) == 0 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(100);
+        }
+        assertThat(storedRows(f.tenantId(), renterId)).isEqualTo(1);
+    }
+
+    @Test
+    void adjustmentValidation() {
+        LeaseTestFixtures f = newOrgFixtures();
+        postedLease(f);
+        UUID user = TestIdentities.user(userRepo, UserRole.TENANT_ADMIN, f.tenantId());
+        UUID renterId = f.renter().getId();
+
+        for (int bad : new int[]{0, 31, -31}) {
+            assertThatThrownBy(() -> service.addAdjustment(f.tenantId(), renterId, bad, "ok", user, TODAY))
+                    .isInstanceOf(BusinessRuleViolationException.class);
+        }
+        assertThatThrownBy(() -> service.addAdjustment(f.tenantId(), renterId, 5, "   ", user, TODAY))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> service.addAdjustment(f.tenantId(), renterId, 5, "x".repeat(501), user, TODAY))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void adjustmentAddAndRemove() {
+        LeaseTestFixtures f = newOrgFixtures();
+        postedLease(f);
+        UUID user = TestIdentities.user(userRepo, UserRole.TENANT_ADMIN, f.tenantId());
+        UUID renterId = f.renter().getId();
+
+        RatingEventDTO ev = service.addAdjustment(f.tenantId(), renterId, 10, "  Good reference  ", user, TODAY);
+
+        assertThat(ev.type()).isEqualTo(RatingEventType.ADJUSTMENT);
+        assertThat(ev.adjustmentId()).isNotNull();
+        assertThat(ev.note()).isEqualTo("Good reference");
+        assertThat(service.live(f.tenantId(), renterId, TODAY).score()).isEqualTo(80);
+        assertThat(storedScore(f.tenantId(), renterId)).isEqualTo(80);
+
+        service.removeAdjustment(f.tenantId(), renterId, ev.adjustmentId(), user, TODAY);
+
+        assertThat(service.live(f.tenantId(), renterId, TODAY).score()).isEqualTo(70);
+        assertThat(storedScore(f.tenantId(), renterId)).isEqualTo(70);
+        assertThat(jdbc.queryForObject(
+                "select removed_at is not null and removed_by = ? from renter_rating_adjustments where id = ?",
+                Boolean.class, user, ev.adjustmentId())).isTrue();
+    }
+
+    @Test
+    void removeAdjustmentOfAnotherRenterIsNotFound() {
+        LeaseTestFixtures f = newOrgFixtures();
+        postedLease(f);
+        UUID user = TestIdentities.user(userRepo, UserRole.TENANT_ADMIN, f.tenantId());
+        RatingEventDTO ev = service.addAdjustment(f.tenantId(), f.renter().getId(), 5, "r", user, TODAY);
+
+        assertThatThrownBy(() -> service.removeAdjustment(f.tenantId(), UUID.randomUUID(), ev.adjustmentId(), user, TODAY))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void listFiltersByGradeAndSearch() {
+        LeaseTestFixtures f = newOrgFixtures();
+        UUID user = TestIdentities.user(userRepo, UserRole.TENANT_ADMIN, f.tenantId());
+        UUID leaseD = postedLease(f);
+        bounce(f.tenantId(), leaseD, 0, BOUNCE_DAY);
+        bounce(f.tenantId(), leaseD, 1, BOUNCE_DAY);
+        UUID renterD = f.renter().getId();
+        postedLeaseFor(f, "Zed Alpha");
+        UUID renterA = jdbc.queryForObject(
+                "select id from renters where tenant_id = ? and name_en = 'Zed Alpha'", UUID.class, f.tenantId());
+        service.addAdjustment(f.tenantId(), renterA, 20, "great", user, TODAY);
+        service.recomputeAndStore(f.tenantId(), List.of(renterD, renterA), TODAY);
+
+        Page<RenterRatingRowDTO> all = service.list(f.tenantId(), null, null, null, null, PageRequest.of(0, 10));
+        assertThat(all.getTotalElements()).isEqualTo(2);
+
+        Page<RenterRatingRowDTO> d = service.list(f.tenantId(), RatingGrade.D, null, null, null, PageRequest.of(0, 10));
+        assertThat(d.getTotalElements()).isEqualTo(1);
+        RenterRatingRowDTO row = d.getContent().get(0);
+        assertThat(row.renterId()).isEqualTo(renterD);
+        assertThat(row.score()).isEqualTo(40);
+        assertThat(row.currentLeaseId()).isEqualTo(leaseD);
+        assertThat(row.propertyName()).isEqualTo(f.propertyName());
+        assertThat(row.unitLabel()).isNotBlank();
+
+        Page<RenterRatingRowDTO> q = service.list(f.tenantId(), null, null, "zed ALPHA", null, PageRequest.of(0, 10));
+        assertThat(q.getContent()).extracting(RenterRatingRowDTO::renterId).containsExactly(renterA);
+        assertThat(q.getContent().get(0).grade()).isEqualTo(RatingGrade.A);
+
+        assertThat(service.list(f.tenantId(), null, f.property().getId(), null, null, PageRequest.of(0, 10))
+                .getTotalElements()).isEqualTo(2);
+        assertThat(service.list(f.tenantId(), null, UUID.randomUUID(), null, null, PageRequest.of(0, 10))
+                .getTotalElements()).isZero();
+        assertThat(service.list(f.tenantId(), null, null, null, List.of(renterD), PageRequest.of(0, 10))
+                .getContent()).extracting(RenterRatingRowDTO::renterId).containsExactly(renterD);
+        assertThat(service.list(f.tenantId(), null, null, "%", null, PageRequest.of(0, 10))
+                .getTotalElements()).isZero();
+
+        Page<RenterRatingRowDTO> sorted = service.list(f.tenantId(), null, null, null, null,
+                PageRequest.of(0, 10, org.springframework.data.domain.Sort.by("score").descending()));
+        assertThat(sorted.getContent()).extracting(RenterRatingRowDTO::renterId).containsExactly(renterA, renterD);
+    }
+
+    @Test
+    void listNeverShowsAnotherOrg() {
+        LeaseTestFixtures a = newOrgFixtures();
+        postedLease(a);
+        LeaseTestFixtures b = newOrgFixtures();
+        postedLease(b);
+        service.recomputeAndStore(a.tenantId(), List.of(a.renter().getId()), TODAY);
+        service.recomputeAndStore(b.tenantId(), List.of(b.renter().getId()), TODAY);
+
+        Page<RenterRatingRowDTO> underA = service.list(a.tenantId(), null, null, null,
+                List.of(a.renter().getId(), b.renter().getId()), PageRequest.of(0, 10));
+
+        assertThat(underA.getContent()).extracting(RenterRatingRowDTO::renterId).containsExactly(a.renter().getId());
+    }
+}

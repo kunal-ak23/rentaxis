@@ -12,5 +12,8 @@ public interface RenterRatingSnapshotRepository extends JpaRepository<RenterRati
 
     List<RenterRatingSnapshot> findTop12ByTenantIdAndRenterIdOrderByMonthDesc(UUID tenantId, UUID renterId);
 
+    List<RenterRatingSnapshot> findByTenantIdAndMonthAndRenterIdIn(UUID tenantId, LocalDate month,
+                                                                   java.util.Collection<UUID> renterIds);
+
     Optional<RenterRatingSnapshot> findByTenantIdAndRenterIdAndMonth(UUID tenantId, UUID renterId, LocalDate month);
 }
