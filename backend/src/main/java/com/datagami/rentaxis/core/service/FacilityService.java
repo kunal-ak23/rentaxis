@@ -79,6 +79,21 @@ public class FacilityService {
         this.entityManager = entityManager;
     }
 
+    private com.datagami.rentaxis.domain.repository.AccountRepository accounts;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setAccounts(com.datagami.rentaxis.domain.repository.AccountRepository accounts) {
+        this.accounts = accounts;
+    }
+
+    /** The income leaf a bay or amenity names for its booking fee: the shared rule, tenant-scoped. */
+    private void requireIncomeAccount(UUID propertyId, UUID accountId) {
+        com.datagami.rentaxis.domain.entity.Account account = accounts.findByIdScopedToTenant(accountId)
+                .orElseThrow(() -> new BusinessRuleViolationException("Income account not found",
+                        com.datagami.rentaxis.core.service.ledger.IncomeLeafRule.CODE, Map.of()));
+        com.datagami.rentaxis.core.service.ledger.IncomeLeafRule.require(account, propertyId);
+    }
+
     /** Tests pin "today" (Asia/Dubai). */
     void setClock(java.time.Clock clock) {
         this.clock = clock;
@@ -140,6 +155,7 @@ public class FacilityService {
         if (req.nameEn() == null || req.nameEn().isBlank()) {
             throw new BusinessRuleViolationException("nameEn is required");
         }
+        if (req.incomeAccountId() != null) requireIncomeAccount(req.propertyId(), req.incomeAccountId());
         requirePropertyInTenant(tenantId, req.propertyId());
 
         PropertyAmenity amenity = new PropertyAmenity();
@@ -158,6 +174,7 @@ public class FacilityService {
         amenity.setFeeType(req.feeType() == null ? "FREE" : req.feeType());
         amenity.setFeeAmount("FREE".equals(amenity.getFeeType()) || req.feeAmount() == null
                 ? java.math.BigDecimal.ZERO : req.feeAmount());
+        amenity.setIncomeAccountId(req.incomeAccountId());
         PropertyAmenity saved = amenityRepository.save(amenity);
 
         // Freshly created — no existing scope rows to replace, so insert directly
@@ -184,6 +201,12 @@ public class FacilityService {
             BookingFeeService.validate(req.feeType(), req.feeAmount(), false);
             amenity.setFeeType(req.feeType());
             amenity.setFeeAmount("FREE".equals(req.feeType()) ? java.math.BigDecimal.ZERO : req.feeAmount());
+        }
+        if (req.incomeAccountId() != null) {
+            requireIncomeAccount(amenity.getPropertyId(), req.incomeAccountId());
+            amenity.setIncomeAccountId(req.incomeAccountId());
+        } else if (Boolean.TRUE.equals(req.clearIncomeAccount())) {
+            amenity.setIncomeAccountId(null);
         }
         PropertyAmenity saved = amenityRepository.save(amenity);
         if (req.buildingIds() != null) {
@@ -251,8 +274,10 @@ public class FacilityService {
         String spotNumber = requireSpotNumber(req.spotNumber());
         requireSpotNumberFree(tenantId, req.propertyId(), spotNumber);
 
-        ParkingSpot saved = saveSpot(
-                newSpot(tenantId, req.propertyId(), spotNumber, req.level(), req.covered()), spotNumber);
+        if (req.incomeAccountId() != null) requireIncomeAccount(req.propertyId(), req.incomeAccountId());
+        ParkingSpot newSpot = newSpot(tenantId, req.propertyId(), spotNumber, req.level(), req.covered());
+        newSpot.setIncomeAccountId(req.incomeAccountId());
+        ParkingSpot saved = saveSpot(newSpot, spotNumber);
 
         // Freshly created — no existing scope rows to replace, so insert directly
         // instead of routing through the delete+flush+insert replace path.
@@ -337,6 +362,12 @@ public class FacilityService {
             BookingFeeService.validate(req.feeType(), req.feeAmount(), true);
             spot.setFeeType(req.feeType());
             spot.setFeeAmount("FREE".equals(req.feeType()) ? java.math.BigDecimal.ZERO : req.feeAmount());
+        }
+        if (req.incomeAccountId() != null) {
+            requireIncomeAccount(spot.getPropertyId(), req.incomeAccountId());
+            spot.setIncomeAccountId(req.incomeAccountId());
+        } else if (Boolean.TRUE.equals(req.clearIncomeAccount())) {
+            spot.setIncomeAccountId(null);
         }
         if (req.buildingIds() != null && spot.getAttachedUnitId() != null && unitRepository != null) {
             // An attached bay keeps its unit inside its towers: re-scoping it away from

@@ -4,10 +4,12 @@
 export type BookingResourceType = 'AMENITY' | 'PARKING_SPOT'
 export type BookingRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'RELEASED'
 
-/** F14-50: how a booking is charged. Parking is FREE or PER_BOOKING. */
-export type BookingFeeType = "FREE" | "PER_BOOKING" | "PER_HOUR"
+/** F14-50: how a booking is charged. PER_HOUR is for amenities only, PER_MONTH for parking only. */
+export type BookingFeeType = "FREE" | "PER_BOOKING" | "PER_HOUR" | "PER_DAY" | "PER_MONTH"
 
 export interface AmenityDTO {
+  /** Income account booking fees are credited to; null = the property default. */
+  incomeAccountId?: string | null
   feeType?: BookingFeeType
   feeAmount?: number | null
   id: string
@@ -24,6 +26,8 @@ export interface AmenityDTO {
 }
 
 export interface ParkingSpotDTO {
+  /** Income account booking fees are credited to; null = the property default. */
+  incomeAccountId?: string | null
   feeType?: BookingFeeType
   feeAmount?: number | null
   id: string
@@ -139,6 +143,8 @@ export interface MyFacilitiesDTO {
 }
 
 export interface AmenityCreateRequest {
+  /** Income account booking fees are credited to; null = the property default. */
+  incomeAccountId?: string | null
   feeType?: BookingFeeType
   feeAmount?: number | null
   propertyId: string
@@ -151,6 +157,10 @@ export interface AmenityCreateRequest {
 
 /** null/omitted = unchanged; a non-null buildingIds replaces the scope set. */
 export interface AmenityUpdateRequest {
+  /** Income account booking fees are credited to; null = the property default. */
+  incomeAccountId?: string | null
+  /** true clears the income account; null/omitted leaves it unchanged. */
+  clearIncomeAccount?: boolean
   feeType?: BookingFeeType
   feeAmount?: number | null
   nameEn?: string
@@ -162,6 +172,7 @@ export interface AmenityUpdateRequest {
 }
 
 export interface ParkingSpotCreateRequest {
+  incomeAccountId?: string | null
   propertyId: string
   spotNumber: string
   level?: string
@@ -172,6 +183,10 @@ export interface ParkingSpotCreateRequest {
 }
 
 export interface ParkingSpotUpdateRequest {
+  /** Income account booking fees are credited to; null = the property default. */
+  incomeAccountId?: string | null
+  /** true clears the income account; null/omitted leaves it unchanged. */
+  clearIncomeAccount?: boolean
   feeType?: BookingFeeType
   feeAmount?: number | null
   spotNumber?: string
@@ -201,9 +216,21 @@ export interface BookingCreateRequest {
   preferredDate?: string
   /** Parking only: last day of the booking (inclusive); omitted = open-ended. */
   preferredEndDate?: string
+  /** Amenity only: the slot's times, HH:mm. */
+  preferredStartTime?: string
+  preferredEndTime?: string
   note?: string
 }
 
 export interface DecisionRequest {
   adminNote?: string
+}
+
+/** GET /bookings/quote: the server's fee for a resource and dates; VAT as the booking would be charged. */
+export interface BookingQuoteDTO {
+  feeType: BookingFeeType
+  unitAmount: number
+  net: number
+  vat: number
+  total: number
 }

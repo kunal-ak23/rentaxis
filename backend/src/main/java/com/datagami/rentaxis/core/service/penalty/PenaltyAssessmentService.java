@@ -26,7 +26,6 @@ import com.datagami.rentaxis.domain.entity.PenaltyAssessment;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
-import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
@@ -224,7 +223,9 @@ public class PenaltyAssessmentService {
         if (narration.isEmpty()) throw new BusinessRuleViolationException("Say what the journal voucher is for");
         Account account = accounts.findById(r.accountId())
                 .orElseThrow(() -> new NotFoundException("Account not found"));
-        requireIncomeLeafFor(account, lease);
+        com.datagami.rentaxis.core.service.ledger.IncomeLeafRule.require(account,
+                lease.getUnit() != null && lease.getUnit().getProperty() != null
+                        ? lease.getUnit().getProperty().getId() : null);
 
         LocalDate on = r.entryDate() != null ? r.entryDate() : manualDates.today();
         PenaltyAssessment a = save(lease, null, PenaltyReason.JOURNAL_VOUCHER, r.amount(), narration, on, byUser);
@@ -239,26 +240,6 @@ public class PenaltyAssessmentService {
     public static final String JOURNAL_SOURCE = "JOURNAL";
 
     /**
-     * The account a journal voucher may credit: an active income leaf of this
-     * tenant, either shared or belonging to this lease's property.
-     */
-    private static void requireIncomeLeafFor(Account account, Lease lease) {
-        String label = account.getCode() + " " + account.getName();
-        if (account.isGroup() || !account.isActive()) {
-            throw new BusinessRuleViolationException(label + " is not an active ledger account");
-        }
-        if (account.getAccountType() != AccountType.INCOME) {
-            throw new BusinessRuleViolationException(label + " is not an income account");
-        }
-        UUID own = account.getPropertyId();
-        UUID leaseProperty = lease.getUnit() != null && lease.getUnit().getProperty() != null
-                ? lease.getUnit().getProperty().getId() : null;
-        if (own != null && !own.equals(leaseProperty)) {
-            throw new BusinessRuleViolationException(label + " belongs to another property");
-        }
-    }
-
-    /**
      * F14-49 / F14-50: a charge raised by another document (a maintenance ticket, an
      * amenity booking) — the same proposal, remembering its source. {@code system}
      * skips the manage-the-lease check: the caller already authorised the act that
@@ -267,6 +248,17 @@ public class PenaltyAssessmentService {
     @Transactional
     public PenaltyAssessmentDTO proposeFromSource(ProposePenaltyRequest r, UUID byUser, String sourceType, UUID sourceId,
                                                  boolean system) {
+        return proposeFromSource(r, byUser, sourceType, sourceId, system, null);
+    }
+
+    /**
+     * Booking journal vouchers (spec 2026-11-19 §2): the same, crediting
+     * {@code incomeAccountId} on approval instead of the reason's role. The caller has
+     * already checked the account ({@code IncomeLeafRule}); null = the reason's role.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO proposeFromSource(ProposePenaltyRequest r, UUID byUser, String sourceType, UUID sourceId,
+                                                 boolean system, UUID incomeAccountId) {
         PenaltyAssessment a;
         if (system) {
             Lease lease = leaseRepository.findById(r.leaseId()).orElseThrow(() -> new NotFoundException("Lease not found"));
@@ -279,6 +271,7 @@ public class PenaltyAssessmentService {
         }
         a.setSourceType(sourceType);
         a.setSourceId(sourceId);
+        if (incomeAccountId != null) a.setIncomeAccountId(incomeAccountId);
         return dto(repository.save(a));
     }
 
@@ -486,7 +479,7 @@ public class PenaltyAssessmentService {
                             .withNarration(vatNarration)));
         }
         JournalEntry pen = postingService.post(PostingRequest.ofPairs(
-                a.getReason() == PenaltyReason.JOURNAL_VOUCHER ? JournalDocType.JV : JournalDocType.PEN,
+                a.getReason().requestedByRenter() ? JournalDocType.JV : JournalDocType.PEN,
                 on,
                 narration,
                 LeaseChequeRegistrar.dimensions(lease, chequeId),
@@ -511,7 +504,7 @@ public class PenaltyAssessmentService {
         // raised in the ledger a line above, and no user typed it.
         ChequeDTO row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(
                 null, null, on, null, on, null, null, null, owed,
-                a.getReason() == PenaltyReason.JOURNAL_VOUCHER ? narration : "Penalty - " + a.getReason().label(),
+                a.getReason().requestedByRenter() ? narration : "Penalty - " + a.getReason().label(),
                 ChequeMode.CASH));
 
         // Set on the entity rather than widened into ChequeRowInput: the link is a
@@ -538,11 +531,12 @@ public class PenaltyAssessmentService {
         // transaction rollback-only and surface as an UnexpectedRollbackException on
         // the approval — a fine nobody could charge because a notification failed.
         //
-        // Not for a journal voucher: the renter asked for what it charges (extra
-        // parking, a key), and "penalty incurred" would tell them they were fined.
-        // It reaches them as a payable row like any other.
+        // Not for a journal voucher or a booking fee: the renter asked for what it
+        // charges (extra parking, a key, a booking), and "penalty incurred" would tell
+        // them they were fined. It reaches them as a payable row like any other (a
+        // booking's approval notification names the fee).
         try {
-            if (approved.getReason() != PenaltyReason.JOURNAL_VOUCHER) {
+            if (!approved.getReason().requestedByRenter()) {
                 notificationService.sendPenaltyIncurred(approved);
             }
         } catch (Exception e) {
@@ -642,6 +636,100 @@ public class PenaltyAssessmentService {
         return repository.findById(id).map(PenaltyAssessment::getCollectionCheque).map(Cheque::getStatus).orElse(null);
     }
 
+    /**
+     * Spec 2026-11-19 §6: part of an approved charge credited back ({@code net}, before VAT),
+     * as for the unused days of a parking booking released early. One journal on {@code date},
+     * the approval mirrored for the credited part: Dr the income the charge credited, Dr output
+     * VAT on the credit (when the charge carried VAT, with a tax credit note), Cr the lease
+     * receivable. An unpaid (REGISTERED) collection row is lowered by the same total, so the
+     * renter owes only the rest; a paid one stays as it is and the total is left as a credit on
+     * the renter's account, as {@link #creditCollected} leaves it. The charge stays APPROVED and
+     * records what was credited. System door: the booking's own rules authorised the credit.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO creditPart(UUID id, BigDecimal net, LocalDate date, String reason) {
+        PenaltyAssessment a = lock(id);
+        if (a.getStatus() == PenaltyAssessmentStatus.WRITTEN_OFF) {
+            throw new BusinessRuleViolationException("This charge was written off as a bad debt; it cannot be credited.",
+                    "penalty.writtenOff", java.util.Map.of());
+        }
+        requireStatus(a, "credit", PenaltyAssessmentStatus.APPROVED);
+        if (a.getJournalId() == null) {
+            throw new BusinessRuleViolationException("This charge has no journal to credit against");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessRuleViolationException("A credit needs a reason");
+        }
+        BigDecimal already = a.getCreditedAmount() == null ? BigDecimal.ZERO : a.getCreditedAmount();
+        BigDecimal credit = net == null ? BigDecimal.ZERO : net.setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal open = a.getAmount().subtract(already);
+        if (credit.signum() <= 0 || credit.compareTo(open) > 0) {
+            throw new BusinessRuleViolationException("The credit must be more than zero and at most "
+                    + open.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + ", the part not credited yet");
+        }
+        Cheque collection = a.getCollectionCheque();
+        if (collection != null && collection.getStatus() == ChequeStatus.CANCELLED) {
+            throw new BusinessRuleViolationException("This charge's collection row is closed; it cannot be credited.",
+                    "penalty.collectionClosed", java.util.Map.of());
+        }
+        if (collection != null && (collection.getStatus() == ChequeStatus.DEPOSITED
+                || collection.getStatus() == ChequeStatus.ONLINE_PENDING)) {
+            throw new BusinessRuleViolationException("This charge's payment is still being collected; credit it once"
+                    + " the payment has cleared or bounced.");
+        }
+        LocalDate on = date != null ? date : manualDates.today();
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.PENALTY_CHARGE, on);
+        com.datagami.rentaxis.domain.entity.JournalEntry charged = journalEntries.findById(a.getJournalId())
+                .orElseThrow(() -> new IllegalStateException("Penalty journal " + a.getJournalId() + " not found"));
+        if (charged.getEntryDate() != null && on.isBefore(charged.getEntryDate())) {
+            java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            throw new BusinessRuleViolationException("A credit cannot be dated before the charge ("
+                    + charged.getEntryDate().format(dmy) + ")", "penalty.reverseBeforeCharge",
+                    java.util.Map.of("charged", charged.getEntryDate().format(dmy), "date", on.format(dmy)));
+        }
+
+        Lease lease = a.getLease();
+        String note = reason.trim();
+        String narration = "Credit - " + narrationFor(a);
+        BigDecimal vat = a.getVatAmount() != null && a.getVatAmount().signum() > 0 ? LeaseVat.vatOfNet(credit) : BigDecimal.ZERO;
+        List<PostingRequest.Pair> pairs = new java.util.ArrayList<>();
+        pairs.add(PostingRequest.pair(
+                (a.getIncomeAccountId() != null
+                        ? PostingRequest.dr(a.getIncomeAccountId(), credit)
+                        : PostingRequest.dr(a.getReason().incomeRole(), credit)).withNarration(narration),
+                LeaseChequeRegistrar.crReceivable(lease, credit).withNarration(narration)));
+        if (vat.signum() > 0) {
+            String vatNarration = "VAT on " + narration;
+            pairs.add(PostingRequest.pair(
+                    PostingRequest.dr(com.datagami.rentaxis.domain.entity.enums.AccountRole.OUTPUT_VAT, vat)
+                            .withNarration(vatNarration),
+                    LeaseChequeRegistrar.crReceivable(lease, vat).withNarration(vatNarration)));
+        }
+        UUID chequeId = a.getCheque() != null ? a.getCheque().getId() : null;
+        JournalEntry entry = postingService.post(PostingRequest.ofPairs(
+                a.getReason().requestedByRenter() ? JournalDocType.JV : JournalDocType.PEN,
+                on,
+                narration,
+                LeaseChequeRegistrar.dimensions(lease, chequeId),
+                JournalSourceType.PENALTY,
+                a.getId(),
+                null,
+                pairs));
+        // F14-30: the VAT given back goes on a tax credit note, as a reversal's does.
+        if (vat.signum() > 0 && vatTaxPoints != null) {
+            vatTaxPoints.recordChargeVat(lease, on, entry.getId(), credit.negate(), vat.negate());
+        }
+        if (collection != null && collection.getStatus() == ChequeStatus.REGISTERED) {
+            chequeService.reduceUnpaidBySystem(collection.getId(), credit.add(vat), on, note);
+        }
+
+        a.setCreditedAmount(already.add(credit));
+        String line = "Credited " + credit.toPlainString() + (vat.signum() > 0 ? " + VAT " + vat.toPlainString() : "")
+                + ": " + note;
+        a.setResolutionNote(a.getResolutionNote() == null ? line : a.getResolutionNote() + "\n" + line);
+        return dto(repository.save(a));
+    }
+
     private PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note, boolean checkAccess) {
         return reverse(id, date, note, checkAccess, false);
     }
@@ -659,6 +747,12 @@ public class PenaltyAssessmentService {
         requireStatus(a, "reverse", PenaltyAssessmentStatus.APPROVED);
         if (a.getJournalId() == null) {
             throw new BusinessRuleViolationException("This penalty has no journal to reverse");
+        }
+        // Spec 2026-11-19 §6: reversing the approval of a charge already partly credited
+        // would give the credited part back twice (the credit journal stays as it is).
+        if (a.getCreditedAmount() != null && a.getCreditedAmount().signum() > 0) {
+            throw new BusinessRuleViolationException("Part of this charge was already credited back; it cannot be"
+                    + " reversed.", "penalty.partlyCredited", java.util.Map.of());
         }
 
         Cheque collection = a.getCollectionCheque();
@@ -770,12 +864,29 @@ public class PenaltyAssessmentService {
      * has already run {@code LeaseAccessPolicy} on the lease before it builds a
      * preview; adding a second gate would mean a manager could be refused a figure
      * on a screen they were just allowed to open.</p>
+     *
+     * <p>Final review I3: a charge partly credited back ({@link #creditPart}) is owed net
+     * of the credit and its VAT, the same {@code LeaseVat.vatOfNet(credit)} the credit
+     * journal took off the receivable. That is what its lowered collection row asks for,
+     * so the settlement and the register agree.</p>
      */
     @Transactional(readOnly = true)
     public BigDecimal outstandingForLease(UUID leaseId) {
         if (leaseId == null) return BigDecimal.ZERO;
-        BigDecimal total = repository.sumOutstandingForLease(leaseId);
-        return total != null ? total : BigDecimal.ZERO;
+        BigDecimal total = BigDecimal.ZERO;
+        for (PenaltyAssessment a : repository.findOutstandingForLease(leaseId)) {
+            total = total.add(stillOwed(a));
+        }
+        return total;
+    }
+
+    /** Fee plus VAT, less what {@link #creditPart} gave back (net, plus its VAT when the charge carried VAT). */
+    static BigDecimal stillOwed(PenaltyAssessment a) {
+        BigDecimal amount = a.getAmount() == null ? BigDecimal.ZERO : a.getAmount();
+        BigDecimal vat = a.getVatAmount() == null ? BigDecimal.ZERO : a.getVatAmount();
+        BigDecimal credited = a.getCreditedAmount() == null ? BigDecimal.ZERO : a.getCreditedAmount();
+        BigDecimal creditVat = credited.signum() > 0 && vat.signum() > 0 ? LeaseVat.vatOfNet(credited) : BigDecimal.ZERO;
+        return amount.add(vat).subtract(credited).subtract(creditVat);
     }
 
     // ------------------------------------------------------------------
@@ -804,6 +915,15 @@ public class PenaltyAssessmentService {
         }
         if (!vatLease) return false;
         return requested != null ? requested : reason.vatableByDefault();
+    }
+
+    /**
+     * The VAT a booking fee of {@code net} carries on this lease, exactly as approval will charge it
+     * (see {@link #vatableFor}): 5% on a VAT-registered lease, none otherwise. For the booking quote.
+     */
+    public java.math.BigDecimal bookingFeeVat(Lease lease, java.math.BigDecimal net) {
+        return vatableFor(lease, PenaltyReason.BOOKING_FEE, null)
+                ? LeaseVat.vatOfNet(net) : java.math.BigDecimal.ZERO.setScale(2);
     }
 
     private com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
@@ -869,9 +989,13 @@ public class PenaltyAssessmentService {
         }
     }
 
-    /** "Penalty - Cheque return - cheque 100041", or without the tail where there is no instrument. */
+    /**
+     * "Penalty - Cheque return - cheque 100041", or without the tail where there is no
+     * instrument. A charge the renter asked for (a journal voucher, a booking fee) reads
+     * as its own description instead.
+     */
     private static String narrationFor(PenaltyAssessment a) {
-        if (a.getReason() == PenaltyReason.JOURNAL_VOUCHER) return a.getDescription();
+        if (a.getReason().requestedByRenter()) return a.getDescription();
         String head = "Penalty - " + a.getReason().label();
         Cheque c = a.getCheque();
         if (c == null) return head;

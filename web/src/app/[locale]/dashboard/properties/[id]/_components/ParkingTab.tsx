@@ -18,9 +18,10 @@ import {
     MAX_BULK_SPOT_NUMBERS,
 } from "@/lib/api/facilities";
 import { NumberInput } from "@/components/ui/NumberInput";
+import AccountPicker from "@/components/finance/AccountPicker";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import type { PropertyUnitRow } from "@/lib/api/facilities";
-import type { ParkingSpotDTO } from "@/types/facility";
+import type { BookingFeeType, ParkingSpotDTO } from "@/types/facility";
 import type { BuildingOption } from "./AmenitiesTab";
 
 interface ParkingTabProps {
@@ -54,9 +55,12 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
     const [bulkInput, setBulkInput] = useState("");
     const [level, setLevel] = useState("");
     const [covered, setCovered] = useState(true);
-    // F14-50: free or a fixed fee per booking (set when editing a spot).
-    const [feeType, setFeeType] = useState<"FREE" | "PER_BOOKING">("FREE");
+    // F14-50: free, a fixed fee per booking, per day or per month (set when editing a spot).
+    const [feeType, setFeeType] = useState<BookingFeeType>("FREE");
     const [feeAmount, setFeeAmount] = useState(0);
+    // Booking fees credit this income account; null = the property default. Unchanged unless touched.
+    const [incomeAccountId, setIncomeAccountId] = useState<string | null>(null);
+    const [incomeAccountTouched, setIncomeAccountTouched] = useState(false);
     const [active, setActive] = useState(true);
     const [buildingIds, setBuildingIds] = useState<string[]>([]);
     // The unit the bay is attached to ("" = not attached, i.e. bookable).
@@ -91,8 +95,10 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
             setSpotNumber(m.spot.spotNumber);
             setLevel(m.spot.level ?? "");
             setCovered(m.spot.covered);
-            setFeeType(m.spot.feeType === "PER_BOOKING" ? "PER_BOOKING" : "FREE");
+            setFeeType(m.spot.feeType && m.spot.feeType !== "PER_HOUR" ? m.spot.feeType : "FREE");
+            setIncomeAccountId(m.spot.incomeAccountId ?? null);
             setFeeAmount(m.spot.feeAmount ?? 0);
+            setIncomeAccountTouched(false);
             setActive(m.spot.active);
             setBuildingIds(m.spot.buildingIds);
             setAttachedUnitId(m.spot.attachedUnitId ?? "");
@@ -153,6 +159,7 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                     buildingIds,
                     feeType,
                     feeAmount: feeType === "FREE" ? null : feeAmount,
+                    ...(incomeAccountTouched ? (incomeAccountId ? { incomeAccountId } : { clearIncomeAccount: true }) : {}),
                     ...(changed ? { setAttachment: true, attachedUnitId: attachedUnitId || null } : {}),
                 });
                 setMode(null);
@@ -476,9 +483,11 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                         {t("feeType")}
                                         <select className="mt-1 w-full bg-input border border-border rounded-lg px-3 py-2 text-xs"
                                                 value={feeType} data-testid="spot-fee-type"
-                                                onChange={e => setFeeType(e.target.value as "FREE" | "PER_BOOKING")}>
+                                                onChange={e => setFeeType(e.target.value as BookingFeeType)}>
                                             <option value="FREE">{t("fee.FREE")}</option>
                                             <option value="PER_BOOKING">{t("fee.PER_BOOKING")}</option>
+                                            <option value="PER_DAY">{t("fee.PER_DAY")}</option>
+                                            <option value="PER_MONTH">{t("fee.PER_MONTH")}</option>
                                         </select>
                                     </label>
                                     {feeType !== "FREE" && (
@@ -489,6 +498,14 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                                    value={feeAmount} onChange={(v) => setFeeAmount(v)} />
                                         </label>
                                     )}
+                                    <div className="col-span-2 text-xs font-semibold text-foreground" data-testid="spot-income-account">
+                                        {t("incomeAccount")}
+                                        <div className="mt-1 font-normal">
+                                            <AccountPicker value={incomeAccountId} accountType="INCOME" propertyId={propertyId}
+                                                           onChange={(id) => { setIncomeAccountId(id || null); setIncomeAccountTouched(true); }} />
+                                        </div>
+                                        <p className="text-[10px] text-muted font-normal mt-1">{t("incomeAccountHint")}</p>
+                                    </div>
                                 </div>
                             )}
                             {mode.kind === "edit" && (

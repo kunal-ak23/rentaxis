@@ -12,6 +12,9 @@ import java.util.UUID;
  * unit to {@code attachedUnitId} (null = detach) in the same transaction as the rest
  * of the edit, so a refused part leaves the bay exactly as it was. Absent or false
  * leaves the attachment alone.</p>
+ *
+ * <p>Income account (changeset 192): null {@code incomeAccountId} = unchanged;
+ * {@code clearIncomeAccount = true} clears it.</p>
  */
 public record ParkingSpotUpdateRequest(
         @Size(max = 32) String spotNumber,
@@ -22,7 +25,20 @@ public record ParkingSpotUpdateRequest(
         /* F14-50 */ String feeType,
         @com.datagami.rentaxis.api.validation.Money java.math.BigDecimal feeAmount,
         Boolean setAttachment,
+        UUID attachedUnitId,
+        UUID incomeAccountId,
+        Boolean clearIncomeAccount) {
+    public ParkingSpotUpdateRequest(@Size(max = 32) String spotNumber,
+        @Size(max = 32) String level,
+        Boolean covered,
+        Boolean active,
+        List<UUID> buildingIds,
+        String feeType,
+        java.math.BigDecimal feeAmount,
+        Boolean setAttachment,
         UUID attachedUnitId) {
+        this(spotNumber, level, covered, active, buildingIds, feeType, feeAmount, setAttachment, attachedUnitId, null, null);
+    }
     public ParkingSpotUpdateRequest(@Size(max = 32) String spotNumber,
         @Size(max = 32) String level,
         Boolean covered,
@@ -30,14 +46,14 @@ public record ParkingSpotUpdateRequest(
         List<UUID> buildingIds,
         String feeType,
         java.math.BigDecimal feeAmount) {
-        this(spotNumber, level, covered, active, buildingIds, feeType, feeAmount, null, null);
+        this(spotNumber, level, covered, active, buildingIds, feeType, feeAmount, null, null, null, null);
     }
     public ParkingSpotUpdateRequest(@Size(max = 32) String spotNumber,
         @Size(max = 32) String level,
         Boolean covered,
         Boolean active,
         List<UUID> buildingIds) {
-        this(spotNumber, level, covered, active, buildingIds, null, null, null, null);
+        this(spotNumber, level, covered, active, buildingIds, null, null, null, null, null, null);
     }
 
 }

@@ -1,0 +1,22 @@
+# Pro-rata parking refunds (spec 2026-11-19 §6): a booking keeps the fee type and unit
+# amount it was quoted on, so a later change to the bay's price does not change the
+# credit on an early release; the charge records the net amount credited back.
+# All nullable: bookings and charges from before this change have no snapshot, and an
+# early release credits nothing for them.
+databaseChangeLog:
+  - changeSet:
+      id: 193-booking-fee-snapshot
+      author: claude
+      changes:
+        - sql:
+            comment: Fee snapshot on bookings, credited amount on charges
+            sql: |
+              ALTER TABLE booking_requests ADD COLUMN fee_type VARCHAR(16);
+              ALTER TABLE booking_requests ADD COLUMN fee_unit_amount NUMERIC(14,2);
+              ALTER TABLE penalty_assessments ADD COLUMN credited_amount NUMERIC(14,2);
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE penalty_assessments DROP COLUMN credited_amount;
+              ALTER TABLE booking_requests DROP COLUMN fee_unit_amount;
+              ALTER TABLE booking_requests DROP COLUMN fee_type;

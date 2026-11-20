@@ -210,7 +210,7 @@ public class ParkingSpotController {
                 held && s.getAttachedUnitId() == null, pendingCount,
                 s.getCreatedAt(), s.getUpdatedAt(), s.getFeeType(), s.getFeeAmount(),
                 s.getAttachedUnitId(), unit == null ? null : unit.unitNumber(),
-                unit == null ? null : unit.buildingName());
+                unit == null ? null : unit.buildingName(), s.getIncomeAccountId());
     }
 
     private List<String> photoUrls(String raw) {

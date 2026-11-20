@@ -3,13 +3,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useSession } from "next-auth/react";
-import { CalendarCheck, Loader2, Building2 } from "lucide-react";
+import { CalendarCheck, Loader2, Building2, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Pagination } from "@/components/ui/Pagination";
 import { fetchBookings, ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import type { BookingRequestDTO, BookingRequestStatus, BookingResourceType } from "@/types/facility";
 import { BookingDetailDrawer, BOOKING_STATUS_CLASSES } from "./_components/BookingDetailDrawer";
+import { NewBookingDialog } from "./_components/NewBookingDialog";
 
 const PAGE_SIZE = 10;
 const STATUSES: BookingRequestStatus[] = ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "RELEASED"];
@@ -51,6 +52,7 @@ export default function BookingsPage() {
     const [status, setStatus] = useState<"" | BookingRequestStatus>("PENDING");
     const [resourceType, setResourceType] = useState<"" | BookingResourceType>("");
     const [openId, setOpenId] = useState<string | null>(null);
+    const [creating, setCreating] = useState(false);
 
     // The backend 403s a PROPERTY_MANAGER's list request without a propertyId
     // (BookingController.checkPropertyManagerAccess) — the request must never
@@ -144,6 +146,15 @@ export default function BookingsPage() {
                     <CalendarCheck size={18} />
                 </div>
                 <h1 className="text-xl font-bold text-foreground tracking-tight">{t("title")}</h1>
+                <button
+                    type="button"
+                    onClick={() => setCreating(true)}
+                    data-testid="bookings-new"
+                    className="ms-auto inline-flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-2 text-xs font-bold cursor-pointer"
+                >
+                    <Plus size={14} />
+                    {t("onBehalfNew")}
+                </button>
             </div>
             <p className="text-xs text-muted font-medium mb-6">{t("subtitle")}</p>
 
@@ -294,6 +305,14 @@ export default function BookingsPage() {
                 )}
             </div>
             )}
+
+            <NewBookingDialog
+                open={creating}
+                properties={properties}
+                defaultPropertyId={propertyId || undefined}
+                onClose={() => setCreating(false)}
+                onCreated={() => load(0)}
+            />
 
             {openId && (
                 <BookingDetailDrawer

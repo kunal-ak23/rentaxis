@@ -669,6 +669,24 @@ class BookingServiceTest {
         assertThat(captor.getValue().tenantId()).isEqualTo(tenantId);
     }
 
+    /** Spec 2026-11-19 §5: before its start (Dubai, clock pinned to 1 Aug) a parking booking is cancelled, not released. */
+    @Test
+    void release_beforeTheStartDate_isRefusedAndOnTheStartDateAllowed() {
+        BookingRequest b = booking(BookingResourceType.PARKING_SPOT, BookingRequestStatus.APPROVED);
+        b.setPreferredDate(LocalDate.of(2026, 8, 2));
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+
+        assertThatThrownBy(() -> service.release(tenantId, b.getId(), UUID.randomUUID(), true))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                .isEqualTo("booking.releaseBeforeStart");
+        assertThat(b.getStatus()).isEqualTo(BookingRequestStatus.APPROVED);
+
+        b.setPreferredDate(LocalDate.of(2026, 8, 1));
+        assertThat(service.release(tenantId, b.getId(), UUID.randomUUID(), true).getStatus())
+                .isEqualTo(BookingRequestStatus.RELEASED);
+    }
+
     // ---- locked-load failure (review hardening) ----
 
     @Test
@@ -1105,5 +1123,57 @@ class BookingServiceTest {
         assertThat(service.create(tenantId, renterUserId, unit,
                 new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(), null, null)).getStatus())
                 .isEqualTo(BookingRequestStatus.PENDING);
+    }
+
+    // ---- final review I1: a bay charged by the day or the month needs an end date ----
+
+    private ParkingSpot feeSpot(String type, String amount) {
+        ParkingSpot s = spot(true);
+        s.setFeeType(type);
+        s.setFeeAmount(amount == null ? null : new java.math.BigDecimal(amount));
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        return s;
+    }
+
+    private static BookingCreateRequest parking(UUID spotId, UUID unitId, LocalDate from, LocalDate to) {
+        return new BookingCreateRequest(BookingResourceType.PARKING_SPOT, spotId, unitId, from, to, null, null, null);
+    }
+
+    @Test
+    void create_periodicParkingWithoutAnEndDate_isRefused() {
+        for (String type : java.util.List.of("PER_DAY", "PER_MONTH")) {
+            ParkingSpot s = feeSpot(type, "300");
+            // A start and no end, and no dates at all (older clients).
+            assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                    parking(s.getId(), unit.getId(), LocalDate.of(2026, 8, 3), null)))
+                    .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.endDateRequired"));
+            assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                    parking(s.getId(), unit.getId(), null, null)))
+                    .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.endDateRequired"));
+            // Staff booking for the renter goes through the same check.
+            assertThatThrownBy(() -> service.createOnBehalf(tenantId, UUID.randomUUID(), renterUserId, unit,
+                    parking(s.getId(), unit.getId(), LocalDate.of(2026, 8, 3), null)))
+                    .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.endDateRequired"));
+        }
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void create_flatFeeParkingWithoutAnEndDate_isStillAccepted() {
+        for (String type : java.util.List.of("FREE", "PER_BOOKING")) {
+            ParkingSpot s = feeSpot(type, "FREE".equals(type) ? null : "200");
+            assertThat(service.create(tenantId, renterUserId, unit,
+                    parking(s.getId(), unit.getId(), LocalDate.of(2026, 8, 3), null)).getStatus())
+                    .isEqualTo(BookingRequestStatus.PENDING);
+        }
+    }
+
+    @Test
+    void create_periodicParkingWithAnEndDate_isQuotedForTheRange() {
+        ParkingSpot s = feeSpot("PER_MONTH", "300");
+        BookingRequest b = service.create(tenantId, renterUserId, unit,
+                parking(s.getId(), unit.getId(), LocalDate.of(2026, 9, 1), LocalDate.of(2026, 10, 31)));
+        assertThat(b.getFeeAmount()).isEqualByComparingTo("600.00");
     }
 }

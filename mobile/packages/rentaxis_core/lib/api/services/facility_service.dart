@@ -204,6 +204,32 @@ class FacilityApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// GET /v1/bookings/quote — BookingQuoteDTO `{feeType, unitAmount, net, vat,
+  /// total}` for a bay or amenity and a date range (`start`/`end` are
+  /// `yyyy-MM-dd`, `from`/`to` are `HH:mm`; all optional). The server does the
+  /// day and month maths and the VAT, so clients never estimate a fee.
+  Future<Map<String, dynamic>> quote({
+    required String resourceType,
+    required String resourceId,
+    String? start,
+    String? end,
+    String? from,
+    String? to,
+  }) async {
+    final response = await _dio.get(
+      '/v1/bookings/quote',
+      queryParameters: {
+        'resourceType': resourceType,
+        'resourceId': resourceId,
+        'start': ?start,
+        'end': ?end,
+        'from': ?from,
+        'to': ?to,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   /// GET /v1/bookings/my — the caller's own requests, all statuses,
   /// createdAt ASC (server-ordered; do not re-sort).
   Future<List<dynamic>> myBookings() async {

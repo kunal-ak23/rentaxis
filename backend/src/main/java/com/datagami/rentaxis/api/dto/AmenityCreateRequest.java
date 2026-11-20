@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
 
-/** bookable null = true; buildingIds null/empty = visible to all towers. */
+/** bookable null = true; buildingIds null/empty = visible to all towers; incomeAccountId null = the role default. */
 public record AmenityCreateRequest(
         UUID propertyId,
         @NotBlank @Size(max = 160) String nameEn,
@@ -15,14 +15,26 @@ public record AmenityCreateRequest(
         Boolean bookable,
         List<UUID> buildingIds,
         /* F14-50 */ String feeType,
-        @com.datagami.rentaxis.api.validation.Money java.math.BigDecimal feeAmount) {
+        @com.datagami.rentaxis.api.validation.Money java.math.BigDecimal feeAmount,
+        UUID incomeAccountId) {
+    public AmenityCreateRequest(UUID propertyId,
+        @NotBlank @Size(max = 160) String nameEn,
+        @Size(max = 160) String nameAr,
+        String description,
+        Boolean bookable,
+        List<UUID> buildingIds,
+        String feeType,
+        java.math.BigDecimal feeAmount) {
+        this(propertyId, nameEn, nameAr, description, bookable, buildingIds, feeType, feeAmount, null);
+    }
+
     public AmenityCreateRequest(UUID propertyId,
         @NotBlank @Size(max = 160) String nameEn,
         @Size(max = 160) String nameAr,
         String description,
         Boolean bookable,
         List<UUID> buildingIds) {
-        this(propertyId, nameEn, nameAr, description, bookable, buildingIds, null, null);
+        this(propertyId, nameEn, nameAr, description, bookable, buildingIds, null, null, null);
     }
 
 }

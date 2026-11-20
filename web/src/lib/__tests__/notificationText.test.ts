@@ -77,6 +77,12 @@ describe("notificationText", () => {
         expect(bare(notificationText(penalty, enT, "en").body)).toContain("for instalment #3 (cheque return)");
     });
 
+    it("shows a booking fee in AED, in both languages (final review m9)", () => {
+        const fee = row("BOOKING_APPROVED_FEE", { resourceType: "PARKING", resourceName: "P1", amount: "630.00" });
+        expect(bare(notificationText(fee, enT, "en").body)).toContain("The fee is AED 630.00 including VAT.");
+        expect(bare(notificationText(fee, arT, "ar").body)).toContain("الرسوم 630.00 درهم شاملة");
+    });
+
     it("uses the shorter sentence when a value is missing", () => {
         const text = notificationText(row("LISTING_AVAILABLE", null), arT, "ar");
         expect(text.body).toBe(ar.Notifications.messages.LISTING_AVAILABLE.bodyShort);

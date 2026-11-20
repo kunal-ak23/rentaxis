@@ -46,7 +46,9 @@ public enum AccountRole {
      * after changeset 179; a segment posted before it keeps the B-01-08 leaf it
      * recorded, so nothing already on the books moves.
      */
-    UTILITIES_RECOVERABLE;
+    UTILITIES_RECOVERABLE,
+    /** Booking fees for amenities (C-01-02 "Amenity Income - {property}"); a bay or amenity may name another income leaf. */
+    AMENITY_INCOME;
 
     /** Roles that are normally per-property (template rows). The rest default to tenant-level mappings. */
     public boolean isPropertyScoped() {

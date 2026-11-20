@@ -22,7 +22,8 @@ public record ParkingSpotDTO(
         /* Attached parking (changeset 175): the unit this bay is allocated to; null = bookable. */
         UUID attachedUnitId,
         String attachedUnitNumber,
-        String attachedBuildingName) {
+        String attachedBuildingName,
+        /* changeset 192 */ UUID incomeAccountId) {
     public ParkingSpotDTO(UUID id,
         UUID propertyId,
         String spotNumber,
@@ -38,7 +39,7 @@ public record ParkingSpotDTO(
         String feeType,
         java.math.BigDecimal feeAmount) {
         this(id, propertyId, spotNumber, level, photoUrls, covered, active, buildingIds, held, pendingCount,
-                createdAt, updatedAt, feeType, feeAmount, null, null, null);
+                createdAt, updatedAt, feeType, feeAmount, null, null, null, null);
     }
 
     public ParkingSpotDTO(UUID id,

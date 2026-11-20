@@ -35,6 +35,7 @@ const api = vi.hoisted(() => ({
     createBooking: vi.fn(),
     cancelBooking: vi.fn(),
     releaseBooking: vi.fn(),
+    fetchBookingQuote: vi.fn(),
 }));
 
 // Keep the real ApiError/throwIfNotOk — the page branches on `instanceof ApiError`.
@@ -224,6 +225,81 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         render(<RenterFacilitiesPage />);
         await waitFor(() => expect(screen.getByTestId("amenity-fee-pool")).toHaveTextContent("feePerHour"));
         expect(screen.getByTestId("spot-fee-spot-1")).toHaveTextContent("feeFree");
+    });
+
+    /** Spec 2026-11-19 §1: the fee shown in the request dialog is the server's quote, not an on-device guess. */
+    it("shows the server's quote for the chosen dates, not the bay's fee amount", async () => {
+        api.fetchMyFacilities.mockResolvedValue({
+            ...facilitiesWithSpot(false),
+            parkingSpots: [{ ...facilitiesWithSpot(false).parkingSpots[0], feeType: "PER_MONTH", feeAmount: 300 }],
+        } as unknown as MyFacilitiesDTO);
+        api.fetchMyBookings.mockResolvedValue([]);
+        api.fetchBookingQuote.mockResolvedValue({ feeType: "PER_MONTH", unitAmount: 300, net: 600, vat: 30, total: 630 });
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByText("available")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        fireEvent.change(await screen.findByTestId("request-start-date"), { target: { value: "2099-12-01" } });
+        fireEvent.change(screen.getByTestId("request-end-date"), { target: { value: "2100-01-31" } });
+        await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("630.00"));
+        expect(api.fetchBookingQuote).toHaveBeenLastCalledWith(expect.objectContaining({
+            resourceType: "PARKING_SPOT", resourceId: "spot-1", start: "2099-12-01", end: "2100-01-31",
+        }));
+        expect(screen.getByTestId("request-quote-total")).not.toHaveTextContent("300");
+    });
+
+    it("shows no stale total while a new quote is pending, after a date change or reopening the dialog", async () => {
+        // A flat-fee bay: quoted with or without dates (a per-month bay waits for both, below).
+        api.fetchMyFacilities.mockResolvedValue({
+            ...facilitiesWithSpot(false),
+            parkingSpots: [{ ...facilitiesWithSpot(false).parkingSpots[0], feeType: "PER_BOOKING", feeAmount: 300 }],
+        } as unknown as MyFacilitiesDTO);
+        api.fetchMyBookings.mockResolvedValue([]);
+        let release: (q: unknown) => void = () => {};
+        api.fetchBookingQuote
+            .mockResolvedValueOnce({ feeType: "PER_MONTH", unitAmount: 300, net: 600, vat: 30, total: 630 })
+            .mockImplementationOnce(() => new Promise(res => { release = res; }))
+            .mockResolvedValue({ feeType: "PER_MONTH", unitAmount: 300, net: 300, vat: 15, total: 315 });
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByText("available")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("630.00"));
+        // A date change: the old figure goes at once, the loading line shows until the answer arrives.
+        fireEvent.change(screen.getByTestId("request-start-date"), { target: { value: "2099-12-01" } });
+        expect(screen.queryByTestId("request-quote-total")).not.toBeInTheDocument();
+        expect(screen.getByTestId("request-quote")).toHaveTextContent("quoteLoading");
+        await waitFor(() => expect(api.fetchBookingQuote).toHaveBeenCalledTimes(2));
+        release({ feeType: "PER_MONTH", unitAmount: 300, net: 500, vat: 25, total: 525 });
+        await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("525.00"));
+        // Close and reopen: the previous total is not carried into the new dialog.
+        fireEvent.click(screen.getByRole("button", { name: "cancel" }));
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        expect(screen.queryByTestId("request-quote-total")).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getByTestId("request-quote-total")).toHaveTextContent("315.00"));
+    });
+
+    /** Final review I1: a per-day or per-month bay needs both dates; no one-day figure is shown before. */
+    it("asks for both dates on a per-month bay before quoting, and refuses to send it without an end date", async () => {
+        api.fetchMyFacilities.mockResolvedValue({
+            ...facilitiesWithSpot(false),
+            parkingSpots: [{ ...facilitiesWithSpot(false).parkingSpots[0], feeType: "PER_MONTH", feeAmount: 300 }],
+        } as unknown as MyFacilitiesDTO);
+        api.fetchMyBookings.mockResolvedValue([]);
+        api.fetchBookingQuote.mockResolvedValue({ feeType: "PER_MONTH", unitAmount: 300, net: 10.16, vat: 0.51, total: 10.67 });
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByText("available")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        expect(await screen.findByTestId("request-quote-needs-dates")).toHaveTextContent("quoteNeedsDates");
+        expect(screen.getByTestId("request-end-date")).toBeRequired();
+        expect(screen.getByTestId("request-start-date")).toBeRequired();
+        fireEvent.change(screen.getByTestId("request-start-date"), { target: { value: "2099-12-01" } });
+        await new Promise(r => setTimeout(r, 400));
+        expect(api.fetchBookingQuote).not.toHaveBeenCalled();
+        expect(screen.queryByTestId("request-quote-total")).not.toBeInTheDocument();
+        expect(screen.getByTestId("request-quote-needs-dates")).toBeInTheDocument();
+
+        fireEvent.submit(screen.getByTestId("request-end-date").closest("form")!);
+        expect(await screen.findByText("periodicDatesRequired")).toBeInTheDocument();
+        expect(api.createBooking).not.toHaveBeenCalled();
     });
 });
 

@@ -10,6 +10,7 @@ import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
+import com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -71,6 +74,10 @@ public class BookingNotificationService {
     private final ParkingSpotRepository parkingSpotRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final PenaltyAssessmentRepository chargeRepository;
+
+    /** Message key of an approval that charged a fee: the fee incl. VAT and where to pay it. */
+    static final String APPROVED_WITH_FEE = "BOOKING_APPROVED_FEE";
 
     /** New request → in-app row for every TENANT_ADMIN and PROPERTY_MANAGER of the tenant. */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -79,6 +86,11 @@ public class BookingNotificationService {
         Optional<BookingRequest> bookingOpt = bookingRepository.findById(event.bookingId());
         if (bookingOpt.isEmpty()) {
             log.warn("BookingRequestedEvent for missing booking {}", event.bookingId());
+            return;
+        }
+        // Final review m5: a booking staff made for a renter is approved in the same transaction,
+        // so by now it is no request: nobody needs telling "New booking request".
+        if (bookingOpt.get().getStatus() != com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.PENDING) {
             return;
         }
         String resourceName = resourceName(bookingOpt.get());
@@ -124,11 +136,19 @@ public class BookingNotificationService {
         }
         Optional<BookingRequest> booking = bookingRepository.findById(event.bookingId());
         String resourceName = booking.map(this::resourceName).orElse("your booking");
+        // Booking journal vouchers (spec 2026-11-19 §3): an approval that charged a fee
+        // tells the renter what they owe and where to pay it; the charge itself sends no
+        // "penalty incurred" notice.
+        BigDecimal fee = event.status() == com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.APPROVED
+                ? booking.map(this::feeWithVat).orElse(null) : null;
+        String key = fee != null ? APPROVED_WITH_FEE : type;
         // No resource values when the booking is gone: the reader then says "your booking".
-        NotificationMessage structured = booking.map(b -> structured(type, b))
-                .orElseGet(() -> NotificationMessage.of(type));
+        NotificationMessage structured = booking.map(b -> structured(key, b, fee))
+                .orElseGet(() -> NotificationMessage.of(key));
         String message = switch (event.status()) {
-            case APPROVED -> "Your booking request for " + resourceName + " has been approved.";
+            case APPROVED -> "Your booking request for " + resourceName + " has been approved."
+                    + (fee == null ? "" : " The fee is AED " + fee.toPlainString()
+                    + " including VAT. Pay it in Payments.");
             case REJECTED -> "Your booking request for " + resourceName + " has been rejected.";
             default -> "Your parking booking for " + resourceName + " has been released.";
         };
@@ -148,14 +168,28 @@ public class BookingNotificationService {
      * English {@link #resourceName} stays the stored copy.
      */
     private NotificationMessage structured(String key, BookingRequest booking) {
+        return structured(key, booking, null);
+    }
+
+    /** As above, with the fee incl. VAT as {@code amount} when there is one (null is left out). */
+    private NotificationMessage structured(String key, BookingRequest booking, BigDecimal fee) {
         if (booking.getResourceType() == BookingResourceType.AMENITY) {
             return NotificationMessage.of(key, "resourceType", "AMENITY",
                     "resourceName", amenityRepository.findById(booking.getAmenityId())
-                            .map(PropertyAmenity::getNameEn).orElse(null));
+                            .map(PropertyAmenity::getNameEn).orElse(null), "amount", fee);
         }
         return NotificationMessage.of(key, "resourceType", "PARKING",
                 "resourceName", parkingSpotRepository.findById(booking.getParkingSpotId())
-                        .map(s -> s.getSpotNumber()).orElse(null));
+                        .map(s -> s.getSpotNumber()).orElse(null), "amount", fee);
+    }
+
+    /** The booking's charge, fee plus VAT, as its collection row asks for; null when it charged nothing. */
+    private BigDecimal feeWithVat(BookingRequest booking) {
+        if (booking.getChargeId() == null) return null;
+        return chargeRepository.findById(booking.getChargeId())
+                .map(c -> c.getAmount().add(c.getVatAmount() != null ? c.getVatAmount() : BigDecimal.ZERO)
+                        .setScale(2, RoundingMode.HALF_UP))
+                .orElse(null);
     }
 
     private String resourceName(BookingRequest booking) {

@@ -279,12 +279,14 @@ class OsivOffWriteSweepIT extends AbstractPostgresIT {
     void aRenterBooksAnAmenityAndAParkingBayWithOsivOff(CapturedOutput out) throws Exception {
         assertThat(env.getProperty("spring.jpa.open-in-view")).isEqualTo("false");
         LocalDate day = LocalDate.now().plusDays(3);
+        // release is refused before the start date, so the parking bay starts today (Asia/Dubai)
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Dubai"));
         JsonNode amenityBooking = expect(out, 201, renterUser, HttpMethod.POST, "/api/v1/bookings", Map.of(
                 "resourceType", "AMENITY", "resourceId", amenityId, "unitId", unitId,
                 "preferredDate", day.toString(), "preferredStartTime", "18:00", "preferredEndTime", "20:00"));
         JsonNode parkingBooking = expect(out, 201, renterUser, HttpMethod.POST, "/api/v1/bookings", Map.of(
                 "resourceType", "PARKING_SPOT", "resourceId", spotId, "unitId", unitId,
-                "preferredDate", day.toString(), "preferredEndDate", day.plusMonths(1).toString()));
+                "preferredDate", today.toString(), "preferredEndDate", today.plusMonths(1).toString()));
         assertNoFailures();
         assertThat(amenityBooking.get("status").asText()).isEqualTo("PENDING");
         assertThat(amenityBooking.get("unitNumber").asText()).isEqualTo(f.unit().getUnitNumber());

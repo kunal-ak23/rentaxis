@@ -3,15 +3,23 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO;
 import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.ledger.AccountResolver;
+import com.datagami.rentaxis.core.service.ledger.IncomeLeafRule;
 import com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService;
+import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.BookingRequest;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.ParkingSpot;
 import com.datagami.rentaxis.domain.entity.PropertyAmenity;
+import com.datagami.rentaxis.domain.entity.enums.AccountRole;
+import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
+import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,40 +29,55 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 /**
- * F14-50: booking fees. An amenity is free, a fixed fee per booking or a fee per
- * hour; a parking spot is free or a fixed fee per booking. The fee is quoted when
- * the renter asks (the portal shows it first) and becomes a BOOKING_FEE charge on
- * the renter's lease — income, VAT per F14-30 — when the booking is approved,
- * posted at once. A booking cancelled before its slot has the charge reversed.
+ * F14-50: booking fees. An amenity is free, a fixed fee per booking, a fee per hour
+ * or a fee per day; a parking spot is free, a fixed fee per booking, a fee per day
+ * or a fee per month. The fee is quoted when the renter asks (the portal shows it
+ * first) and becomes a BOOKING_FEE charge on the renter's lease when the booking is
+ * approved, posted at once as a journal voucher (spec 2026-11-19 §3): Dr the
+ * receivable, Cr the bay's or amenity's income leaf (see {@link #incomeAccountFor}),
+ * VAT per F14-30. A booking cancelled before its slot has the charge reversed.
  */
 @Service
 public class BookingFeeService {
 
     public static final String SOURCE = "BOOKING";
-    public static final Set<String> TYPES = Set.of("FREE", "PER_BOOKING", "PER_HOUR");
+    public static final Set<String> TYPES = Set.of("FREE", "PER_BOOKING", "PER_HOUR", "PER_DAY", "PER_MONTH");
 
     private static final EnumSet<LeaseStatus> LIVE = EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN,
             LeaseStatus.EXPIRED, LeaseStatus.ON_HOLD, LeaseStatus.RENEWED);
 
     private final PenaltyAssessmentService charges;
     private final LeaseRepository leases;
+    private final ParkingSpotRepository spots;
+    private final PropertyAmenityRepository amenities;
+    private final AccountRepository accounts;
+    private final AccountResolver accountResolver;
 
-    public BookingFeeService(PenaltyAssessmentService charges, LeaseRepository leases) {
+    public BookingFeeService(PenaltyAssessmentService charges, LeaseRepository leases, ParkingSpotRepository spots,
+                             PropertyAmenityRepository amenities, AccountRepository accounts,
+                             AccountResolver accountResolver) {
         this.charges = charges;
         this.leases = leases;
+        this.spots = spots;
+        this.amenities = amenities;
+        this.accounts = accounts;
+        this.accountResolver = accountResolver;
     }
 
-    /** Validates a fee setting; PER_HOUR is for amenities only. */
+    /** Validates a fee setting; PER_HOUR is for amenities only, PER_MONTH for parking spots only. */
     public static void validate(String type, BigDecimal amount, boolean parking) {
         String t = type == null ? "FREE" : type;
-        if (!TYPES.contains(t) || (parking && "PER_HOUR".equals(t))) {
+        if (!TYPES.contains(t) || (parking && "PER_HOUR".equals(t))
+                || (!parking && "PER_MONTH".equals(t))) {
             throw new BusinessRuleViolationException("Unknown fee type " + t, "booking.feeType", Map.of("type", t));
         }
         if (!"FREE".equals(t) && (amount == null || amount.signum() <= 0)) {
@@ -70,39 +93,157 @@ public class BookingFeeService {
         return quote(s.getFeeType(), s.getFeeAmount(), b);
     }
 
-    /** Per hour: the slot's hours on each day it covers (a slot without times counts one hour a day). */
+    /**
+     * Quotes the booking and keeps what it was quoted on (spec 2026-11-19 §6): the fee
+     * amount, and the fee type and unit amount as a snapshot, so a later change to the
+     * price does not change the credit on an early release.
+     */
+    public static void applyQuote(PropertyAmenity a, BookingRequest b) {
+        applyQuote(a.getFeeType(), a.getFeeAmount(), b);
+    }
+
+    public static void applyQuote(ParkingSpot s, BookingRequest b) {
+        applyQuote(s.getFeeType(), s.getFeeAmount(), b);
+    }
+
+    private static void applyQuote(String type, BigDecimal amount, BookingRequest b) {
+        b.setFeeAmount(quote(type, amount, b));
+        b.setFeeType(type == null ? "FREE" : type);
+        b.setFeeUnitAmount(amount == null ? null : amount.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /** The fee types an early release credits pro rata (spec 2026-11-19 §5): parking by the day or the month. */
+    private static final Set<String> PRO_RATA = Set.of("PER_DAY", "PER_MONTH");
+
+    /**
+     * Spec 2026-11-19 §6: the net credit for the unused part of a parking booking released
+     * on {@code releaseDay} (that day counts as used). The used part is the same
+     * {@link #quote} as at approval, from the start to the release day; the credit is the
+     * fee charged less that, kept within [0, feeAmount]. Nothing is credited for a
+     * PER_BOOKING (or any other) fee, for a booking without a snapshot, or for a release
+     * on or after the end date; a release before the start uses nothing.
+     */
+    public static BigDecimal creditForRelease(String feeType, BigDecimal unitAmount, BigDecimal feeAmount,
+                                              LocalDate start, LocalDate end, LocalDate releaseDay) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(2);
+        if (feeType == null || !PRO_RATA.contains(feeType) || unitAmount == null || unitAmount.signum() <= 0
+                || feeAmount == null || feeAmount.signum() <= 0 || start == null || end == null || releaseDay == null
+                || !releaseDay.isBefore(end)) {
+            return zero;
+        }
+        BigDecimal fee = feeAmount.setScale(2, RoundingMode.HALF_UP);
+        if (releaseDay.isBefore(start)) return fee;
+        BigDecimal used = quote(feeType, unitAmount, start, releaseDay, null, null);
+        BigDecimal credit = fee.subtract(used);
+        if (credit.signum() < 0) return zero;
+        return credit.min(fee);
+    }
+
+    /** The request's dates and times, quoted by fee type as the overload below describes. */
     static BigDecimal quote(String type, BigDecimal amount, BookingRequest b) {
+        return quote(type, amount, b.getPreferredDate(), b.getPreferredEndDate(), b.getPreferredStartTime(), b.getPreferredEndTime());
+    }
+
+    /**
+     * PER_HOUR: the slot's hours on each day it covers (no times counts one hour a day). PER_DAY: amount
+     * times the days covered, both ends counted. PER_MONTH: whole months from the start date, then the
+     * leftover days at the day rate of the month they fall in. A null end means a single day.
+     */
+    public static BigDecimal quote(String type, BigDecimal amount, LocalDate start, LocalDate end, LocalTime from, LocalTime to) {
         if (type == null || "FREE".equals(type) || amount == null) return BigDecimal.ZERO.setScale(2);
         if ("PER_BOOKING".equals(type)) return amount.setScale(2, RoundingMode.HALF_UP);
-        long days = b.getPreferredDate() == null ? 1
-                : ChronoUnit.DAYS.between(b.getPreferredDate(),
-                        b.getPreferredEndDate() != null ? b.getPreferredEndDate() : b.getPreferredDate()) + 1;
+        LocalDate last = end != null ? end : start;
+        if ("PER_MONTH".equals(type)) {
+            if (start == null) return amount.setScale(2, RoundingMode.HALF_UP);
+            int n = 0;
+            while (!start.plusMonths(n + 1).minusDays(1).isAfter(last)) n++;
+            LocalDate rest = start.plusMonths(n);
+            BigDecimal total = amount.multiply(BigDecimal.valueOf(n));
+            if (!rest.isAfter(last)) {
+                long days = ChronoUnit.DAYS.between(rest, last) + 1;
+                total = total.add(amount.multiply(BigDecimal.valueOf(days))
+                        .divide(BigDecimal.valueOf(rest.lengthOfMonth()), 10, RoundingMode.HALF_UP));
+            }
+            return total.setScale(2, RoundingMode.HALF_UP);
+        }
+        long days = start == null ? 1 : ChronoUnit.DAYS.between(start, last) + 1;
+        if ("PER_DAY".equals(type)) {
+            return amount.multiply(BigDecimal.valueOf(Math.max(1, days))).setScale(2, RoundingMode.HALF_UP);
+        }
         BigDecimal hours = BigDecimal.ONE;
-        if (b.getPreferredStartTime() != null && b.getPreferredEndTime() != null
-                && b.getPreferredEndTime().isAfter(b.getPreferredStartTime())) {
-            long minutes = Duration.between(b.getPreferredStartTime(), b.getPreferredEndTime()).toMinutes();
+        if (from != null && to != null && to.isAfter(from)) {
+            long minutes = Duration.between(from, to).toMinutes();
             hours = BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
         }
         return amount.multiply(hours).multiply(BigDecimal.valueOf(Math.max(1, days))).setScale(2, RoundingMode.HALF_UP);
     }
 
     /**
+     * Spec 2026-11-19 §2: the income account a booking's fee credits. The bay's or
+     * amenity's own leaf when it names one (checked again here: it may have been
+     * deactivated or moved since it was picked, and then the approval is refused with
+     * {@link IncomeLeafRule#CODE}); otherwise the property's PARKING_INCOME for a bay,
+     * and for an amenity the property's AMENITY_INCOME, falling back to OTHER_INCOME
+     * while the property has no amenity leaf yet ("Generate missing accounts" not run).
+     *
+     * <p>{@code resolveOrNull}, never {@code resolve} inside a try/catch: a resolver
+     * exception would mark the approval's transaction rollback-only (see
+     * {@link AccountResolver#resolveOrNull}).</p>
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public UUID incomeAccountFor(BookingRequest b, UUID propertyId) {
+        UUID own = null;
+        if (b.getParkingSpotId() != null) {
+            own = spots.findById(b.getParkingSpotId()).map(ParkingSpot::getIncomeAccountId).orElse(null);
+        } else if (b.getAmenityId() != null) {
+            own = amenities.findById(b.getAmenityId()).map(PropertyAmenity::getIncomeAccountId).orElse(null);
+        }
+        if (own != null) {
+            Account account = accounts.findByIdScopedToTenant(own)
+                    .orElseThrow(() -> new BusinessRuleViolationException("The booking's income account was not found",
+                            IncomeLeafRule.CODE, Map.of()));
+            IncomeLeafRule.require(account, propertyId);
+            return account.getId();
+        }
+        if (b.getResourceType() == BookingResourceType.PARKING_SPOT) {
+            return accountResolver.resolve(AccountRole.PARKING_INCOME, propertyId).getId();
+        }
+        Account amenityIncome = accountResolver.resolveOrNull(AccountRole.AMENITY_INCOME, propertyId);
+        if (amenityIncome != null) return amenityIncome.getId();
+        return accountResolver.resolve(AccountRole.OTHER_INCOME, propertyId).getId();
+    }
+
+    /**
+     * The renter's live lease on the unit, in the tenant; {@code booking.noLease} when there is none.
+     * Shared by the charge on approval and the staff pre-check before a booking is created for a renter.
+     */
+    public Lease requireLiveLease(UUID tenantId, UUID unitId, UUID renterUserId) {
+        return leases.findByUnitIdAndStatusIn(unitId, LIVE).stream()
+                .filter(l -> Objects.equals(l.getTenantId(), tenantId))
+                .filter(l -> l.getRenter() != null && Objects.equals(l.getRenter().getUserId(), renterUserId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessRuleViolationException(
+                        "The renter has no live lease on this unit to charge the booking fee to.", "booking.noLease", Map.of()));
+    }
+
+    /**
      * On approval: the quoted fee becomes a BOOKING_FEE charge on the renter's live
-     * lease of the booked-from unit, approved (posted) at once. No live lease with a
-     * fee to charge refuses the approval.
+     * lease of the booked-from unit, approved (posted) at once as a journal voucher to
+     * {@link #incomeAccountFor}. No live lease with a fee to charge refuses the approval.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void chargeOnApproval(BookingRequest b, String what, LocalDate on) {
         if (b.getFeeAmount() == null || b.getFeeAmount().signum() <= 0 || b.getChargeId() != null) return;
-        Lease lease = leases.findByUnitIdAndStatusIn(b.getUnitId(), LIVE).stream()
-                .filter(l -> Objects.equals(l.getTenantId(), b.getTenantId()))
-                .filter(l -> l.getRenter() != null && Objects.equals(l.getRenter().getUserId(), b.getRenterUserId()))
-                .findFirst()
-                .orElseThrow(() -> new BusinessRuleViolationException(
-                        "The renter has no live lease on this unit to charge the booking fee to.", "booking.noLease", Map.of()));
-        String description = "Booking fee – " + what + (b.getPreferredDate() == null ? "" : " on " + b.getPreferredDate());
+        Lease lease = requireLiveLease(b.getTenantId(), b.getUnitId(), b.getRenterUserId());
+        // Before anything is saved: a refused income account leaves no charge behind.
+        UUID incomeAccountId = incomeAccountFor(b, b.getPropertyId());
+        LocalDate start = b.getPreferredDate();
+        LocalDate end = b.getPreferredEndDate();
+        String description = "Booking fee - " + what + (start == null ? ""
+                : " " + start + (end != null && !end.equals(start) ? " to " + end : ""));
         PenaltyAssessmentDTO c = charges.proposeFromSource(new ProposePenaltyRequest(lease.getId(), null,
-                PenaltyReason.BOOKING_FEE, b.getFeeAmount(), description, on, null), null, SOURCE, b.getId(), true);
+                PenaltyReason.BOOKING_FEE, b.getFeeAmount(), description, on, null), null, SOURCE, b.getId(), true,
+                incomeAccountId);
         charges.approveBySystem(c.id(), on);
         b.setChargeId(c.id());
     }
@@ -173,6 +314,42 @@ public class BookingFeeService {
         } else {
             charges.reverse(b.getChargeId(), on, reason);
         }
+    }
+
+    /**
+     * Spec 2026-11-19 §6: a parking booking released early has the unused part of its fee
+     * credited ({@link #creditForRelease}), on {@code on}, through
+     * {@link PenaltyAssessmentService#creditPart}. The credit is posted only while the fee's
+     * collection row is settled one way or the other: no row, unpaid (REGISTERED) or paid
+     * (CLEARED), so the receivable still equals the row (ledger rule 3). A payment in flight
+     * refuses the release ({@code booking.feeInFlight}, as for staff cancel); any other row
+     * (bounced, replaced, returned, transferred, draft) refuses it with
+     * {@code booking.feeRowNotSettled}: the row, or its replacement, would still ask for the
+     * full fee after the receivable was credited (final review I2). A fee written off or
+     * reversed, or whose collection row was cancelled elsewhere, stands, and the release goes
+     * ahead with no credit.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void creditOnRelease(BookingRequest b, LocalDate on) {
+        if (b.getChargeId() == null) return;
+        if (charges.statusOf(b.getChargeId()) != PenaltyAssessmentStatus.APPROVED) return;
+        BigDecimal credit = creditForRelease(b.getFeeType(), b.getFeeUnitAmount(), b.getFeeAmount(),
+                b.getPreferredDate(), b.getPreferredEndDate(), on);
+        if (credit.signum() <= 0) return;
+        com.datagami.rentaxis.domain.entity.enums.ChequeStatus row = charges.collectionStatusOf(b.getChargeId());
+        if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED
+                || row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING) {
+            throw new BusinessRuleViolationException("The fee's payment is still being collected; release the booking"
+                    + " once it has cleared.", "booking.feeInFlight", Map.of());
+        }
+        if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED) return;
+        if (row != null && row != com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED
+                && row != com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED) {
+            throw new BusinessRuleViolationException("The fee's payment is " + row.name().toLowerCase()
+                    + "; settle or replace it before the booking is released.", "booking.feeRowNotSettled",
+                    Map.of());
+        }
+        charges.creditPart(b.getChargeId(), credit, on, "Parking released early on " + on + ": unused days credited");
     }
 
     /** Whether the slot has not started yet. */

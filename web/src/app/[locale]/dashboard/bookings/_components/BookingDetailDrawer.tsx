@@ -7,6 +7,7 @@ import { chequeApi } from "@/lib/api/leasing";
 import { cn } from "@/lib/utils";
 import { fetchBooking, approveBooking, rejectBooking, releaseBooking, staffCancelBooking, ApiError } from "@/lib/api/facilities";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
+import { isAfterBusinessToday } from "@/lib/businessDate";
 import type { BookingDetailDTO, BookingRequestDTO, BookingRequestStatus } from "@/types/facility";
 
 /** Locale tag for toLocaleDateString — mirrors gatepass/page.tsx's ar-AE/en-GB split. */
@@ -137,9 +138,14 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
   };
 
   const req = detail?.request;
-  // Follow-up ruling R12: the office cancels an approved amenity booking (a paid fee is credited back).
-  const cancellable = req?.status === "APPROVED" && req.resourceType === "AMENITY";
-  const hasActions = !!req && (req.status === "PENDING" || (req.status === "APPROVED" && req.resourceType === "PARKING_SPOT") || cancellable);
+  // Follow-up ruling R12: the office cancels an approved amenity booking (a paid fee is credited back);
+  // spec 2026-11-19 §6: and an approved parking booking whose start date is after today (Dubai).
+  // From its start date on, a parking booking is released instead (the unused days are credited).
+  const cancellable = req?.status === "APPROVED"
+    && (req.resourceType === "AMENITY" || (req.resourceType === "PARKING_SPOT" && isAfterBusinessToday(req.preferredDate)));
+  // The server refuses a release before the start date (booking.releaseBeforeStart): it is cancelled then.
+  const releasable = req?.status === "APPROVED" && req.resourceType === "PARKING_SPOT" && !isAfterBusinessToday(req.preferredDate);
+  const hasActions = !!req && (req.status === "PENDING" || releasable || cancellable);
   const statusLabel = (s: BookingRequestStatus) => t(`status${s}`);
 
   return (
@@ -339,7 +345,7 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
                 </div>
               </>
             )}
-            {req.status === "APPROVED" && req.resourceType === "PARKING_SPOT" && (
+            {releasable && (
               <button
                 onClick={() => act("release")}
                 disabled={working}
