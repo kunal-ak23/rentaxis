@@ -2963,6 +2963,8 @@
     "combinedReceipt": "إيصال مجمع ({count})",
     "combinedReceiptHint": "حدد الصفوف المحصلة لتنزيل إيصالاتها في ملف PDF واحد.",
     "combinedReceiptFailed": "تعذر إنشاء الإيصال المجمع.",
+    "selectYear": "اختر السنة",
+    "combinedReceiptLimit": "يمكن تنزيل {max} إيصال كحد أقصى في المرة الواحدة. ألغِ تحديد بعض الصفوف.",
     "selectReceipt": "تحديد إيصال الصف {row}",
     "depositNotCleared": "لم يُحصَّل الإيداع — راجِع البنك",
     "depositedDaysAgo": "{n, plural, =0 {أودع اليوم} one {أودع منذ يوم واحد} two {أودع منذ يومين} few {أودع منذ # أيام} many {أودع منذ # يومًا} other {أودع منذ # يوم}}",

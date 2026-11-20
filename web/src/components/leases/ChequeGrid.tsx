@@ -23,6 +23,7 @@ import type {
 import { registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
 import { TYPEABLE_MODES, chequeRowsAreValid, chequeRowsErrors } from "@/components/cheques/chequeRowRules";
 import { fmtIsoDate, round2 } from "./leaseMath";
+import { idsInYear, MAX_COMBINED_RECEIPTS, receiptYears } from "@/lib/receipts/receiptYears";
 
 /**
  * The cheque grid of a tenancy contract, in PACT's layout:
@@ -291,6 +292,7 @@ export default function ChequeGrid({
     const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
     // Combined receipt: the cleared rows picked, kept to rows that still offer a receipt.
     const [receiptPicked, setReceiptPicked] = useState<ReadonlySet<string>>(new Set());
+    const [receiptYear, setReceiptYear] = useState("");
     const [combining, setCombining] = useState(false);
     const mergeable = (c: Cheque) => c.status === "DRAFT";
     const ticked = cheques.filter(c => selected.has(c.id) && mergeable(c));
@@ -358,7 +360,17 @@ export default function ChequeGrid({
     const showActions = !editable && !!onRowAction && cheques.some(c => actionsOf(c).length > 0);
     const receiptable = (c: Cheque) => !editable && !!onCombinedReceipt && actionsOf(c).includes("receipt");
     const pickedIds = cheques.filter(c => receiptable(c) && receiptPicked.has(c.id)).map(c => c.id);
+    const receiptRows = cheques
+        .filter(c => receiptable(c) && (c.clearedAt || c.chequeDate))
+        .map(c => ({ id: c.id, clearedAt: c.clearedAt, date: c.chequeDate ?? "" }));
+    const yearOptions = receiptYears(receiptRows);
+    const overLimit = pickedIds.length > MAX_COMBINED_RECEIPTS;
+    const pickYear = (value: string) => {
+        setReceiptYear(value);
+        setReceiptPicked(new Set(value ? idsInYear(receiptRows, Number(value)) : []));
+    };
     const togglePicked = (id: string) => setReceiptPicked(prev => {
+        setReceiptYear("");
         const next = new Set(prev);
         if (next.has(id)) next.delete(id); else next.add(id);
         return next;
@@ -369,6 +381,7 @@ export default function ChequeGrid({
         try {
             await onCombinedReceipt(pickedIds);
             setReceiptPicked(new Set());
+            setReceiptYear("");
         } finally {
             setCombining(false);
         }
@@ -572,10 +585,25 @@ export default function ChequeGrid({
             {!editable && onCombinedReceipt && cheques.some(receiptable) && (
                 <div className="px-4 py-2 border-b border-border flex flex-wrap items-center gap-3 text-[11px]" data-testid="combined-receipt-bar">
                     <span className="text-muted">{tc("combinedReceiptHint")}</span>
+                    <select
+                        data-testid="combined-receipt-year"
+                        aria-label={tc("selectYear")}
+                        value={receiptYear}
+                        onChange={e => pickYear(e.target.value)}
+                        className="px-2 py-1.5 rounded-lg border border-border bg-surface text-[11px]"
+                    >
+                        <option value="">{tc("selectYear")}</option>
+                        {yearOptions.map(y => <option key={y} value={String(y)}>{y}</option>)}
+                    </select>
+                    {overLimit && (
+                        <span className="text-danger" data-testid="combined-receipt-limit">
+                            {tc("combinedReceiptLimit", { max: MAX_COMBINED_RECEIPTS })}
+                        </span>
+                    )}
                     <button
                         type="button"
                         data-testid="combined-receipt-download"
-                        disabled={pickedIds.length === 0 || combining}
+                        disabled={pickedIds.length === 0 || overLimit || combining}
                         onClick={() => { void combine(); }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer disabled:opacity-50"
                     >

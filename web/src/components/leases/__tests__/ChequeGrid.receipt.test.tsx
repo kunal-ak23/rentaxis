@@ -68,4 +68,53 @@ describe("ChequeGrid combined receipt", () => {
         renderGrid({ cheques: rows, editable: true, onCombinedReceipt: vi.fn() });
         expect(screen.queryByTestId("combined-receipt-bar")).not.toBeInTheDocument();
     });
+
+    describe("select year", () => {
+        const yearRows = [
+            cheque({ id: "y1", seqNo: 1, status: "CLEARED", clearedAt: "2025-11-05T09:00:00Z", chequeDate: "2025-11-01" }),
+            cheque({ id: "y2", seqNo: 2, status: "CLEARED", clearedAt: "2026-02-05T09:00:00Z", chequeDate: "2026-02-01" }),
+            cheque({ id: "y3", seqNo: 3, status: "CLEARED", clearedAt: "2026-03-05T09:00:00Z", chequeDate: "2026-03-01" }),
+            cheque({ id: "y4", seqNo: 4, status: "REGISTERED", chequeDate: "2026-04-01" }),
+        ];
+
+        it("selecting a year ticks that year's receiptable rows only", () => {
+            renderGrid({ cheques: yearRows, onRowAction: vi.fn(), onCombinedReceipt: vi.fn() });
+            fireEvent.change(screen.getByTestId("combined-receipt-year"), { target: { value: "2026" } });
+            expect(screen.getByTestId("cheque-receipt-select-0")).not.toBeChecked();
+            expect(screen.getByTestId("cheque-receipt-select-1")).toBeChecked();
+            expect(screen.getByTestId("cheque-receipt-select-2")).toBeChecked();
+            expect(screen.queryByTestId("cheque-receipt-select-3")).not.toBeInTheDocument();
+            expect(screen.getByTestId("combined-receipt-download")).toHaveTextContent("Combined receipt (2)");
+        });
+
+        it("choosing a year replaces earlier ticks", () => {
+            renderGrid({ cheques: yearRows, onRowAction: vi.fn(), onCombinedReceipt: vi.fn() });
+            fireEvent.click(screen.getByTestId("cheque-receipt-select-0"));
+            fireEvent.change(screen.getByTestId("combined-receipt-year"), { target: { value: "2026" } });
+            expect(screen.getByTestId("cheque-receipt-select-0")).not.toBeChecked();
+            fireEvent.change(screen.getByTestId("combined-receipt-year"), { target: { value: "2025" } });
+            expect(screen.getByTestId("cheque-receipt-select-0")).toBeChecked();
+            expect(screen.getByTestId("cheque-receipt-select-1")).not.toBeChecked();
+            expect(screen.getByTestId("combined-receipt-download")).toHaveTextContent("Combined receipt (1)");
+        });
+
+        it("no year control when no row offers a receipt", () => {
+            renderGrid({
+                cheques: [cheque({ id: "n1", seqNo: 1, status: "REGISTERED" })],
+                onRowAction: vi.fn(), onCombinedReceipt: vi.fn(),
+            });
+            expect(screen.queryByTestId("combined-receipt-bar")).not.toBeInTheDocument();
+            expect(screen.queryByTestId("combined-receipt-year")).not.toBeInTheDocument();
+        });
+
+        it("over 100 picked disables download and shows the limit hint", () => {
+            const many = Array.from({ length: 101 }, (_, i) =>
+                cheque({ id: `m${i}`, seqNo: i + 1, status: "CLEARED", clearedAt: "2026-02-05T09:00:00Z" }));
+            renderGrid({ cheques: many, onRowAction: vi.fn(), onCombinedReceipt: vi.fn() });
+            expect(screen.queryByTestId("combined-receipt-limit")).not.toBeInTheDocument();
+            fireEvent.change(screen.getByTestId("combined-receipt-year"), { target: { value: "2026" } });
+            expect(screen.getByTestId("combined-receipt-download")).toBeDisabled();
+            expect(screen.getByTestId("combined-receipt-limit")).toHaveTextContent("100");
+        });
+    });
 });
