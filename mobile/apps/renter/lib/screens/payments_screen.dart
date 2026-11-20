@@ -185,16 +185,14 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                           },
                         )
                         .toList();
-                    final leaseCount = leases.valueOrNull?.length ?? 0;
-                    final needsPick = _leaseId == null && leaseCount > 1;
-                    final selectable =
-                        !needsPick &&
-                        rows
-                                .where(isReceiptable)
-                                .map((r) => r['leaseId'])
-                                .toSet()
-                                .length <=
-                            1;
+                    // One download is one contract: decided from the rows
+                    // themselves, so it holds while the leases list loads or fails.
+                    final receiptLeases = rows
+                        .where(isReceiptable)
+                        .map((r) => r['leaseId'])
+                        .toSet();
+                    final needsPick = receiptLeases.length > 1;
+                    final selectable = !needsPick;
                     final years = receiptYears(rows);
                     final shown = filtered
                         .where(isReceiptable)
@@ -258,7 +256,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        if (needsPick && rows.any(isReceiptable)) ...[
+                        if (needsPick) ...[
                           Text(
                             ar
                                 ? 'اختر عقداً لتحديد عدة إيصالات وتحميلها معاً.'
@@ -271,6 +269,11 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                             selected: effective.length,
                             busy: _downloading,
                             onYear: (y) => setState(() {
+                              // A due/upcoming view hides the cleared rows just ticked.
+                              if (_filter == _Filter.due ||
+                                  _filter == _Filter.upcoming) {
+                                _filter = _Filter.all;
+                              }
                               _ticked
                                 ..clear()
                                 ..addAll(idsInYear(rows, y));

@@ -219,6 +219,41 @@ void main() {
     );
   });
 
+  testWidgets('picking a year while Upcoming is active switches to All', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      [row('a', 'L1'), row('b', 'L1', status: 'REGISTERED')],
+      [
+        {'id': 'L1'},
+      ],
+    );
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Upcoming'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('receipt-year')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2025').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Download receipts (1)'), findsOneWidget);
+    expect(ticked(tester, 'a'), isTrue);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'All'))
+          .selected,
+      isTrue,
+    );
+  });
+
+  testWidgets(
+    'rows of two leases still ask for a contract while the leases list is empty',
+    (tester) async {
+      await pump(tester, [row('a', 'L1'), row('b', 'L2')], []);
+      expect(find.byKey(const Key('receipt-download')), findsNothing);
+      expect(find.textContaining('Pick a contract'), findsOneWidget);
+    },
+  );
+
   testWidgets('ticks hidden by the filter are neither counted nor sent', (
     tester,
   ) async {
@@ -235,7 +270,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, 'Upcoming'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Download selected (0)'), findsOneWidget);
+    expect(find.textContaining('Download receipts (0)'), findsOneWidget);
     final btn = tester.widget<ButtonStyleButton>(
       find.byKey(const Key('receipt-download')),
     );

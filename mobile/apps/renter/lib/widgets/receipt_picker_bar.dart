@@ -66,8 +66,8 @@ class ReceiptPickerBar extends StatelessWidget {
                     : const Icon(Icons.download_outlined),
                 label: Text(
                   ar
-                      ? 'تحميل الإيصالات المحددة ($selected)'
-                      : 'Download selected ($selected)',
+                      ? 'تحميل الإيصالات ($selected)'
+                      : 'Download receipts ($selected)',
                 ),
               ),
             ),

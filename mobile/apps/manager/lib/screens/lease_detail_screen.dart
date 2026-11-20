@@ -1195,10 +1195,8 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                   if (i > 0) Divider(height: 1, color: m.divider),
                   _DocumentRow(
                     doc: _documents[i],
-                    unsigned: const [
-                      'DRAFT',
-                      'PENDING_SIGNATURE',
-                    ].contains(_lease?['status']),
+                    unsigned: const ['DRAFT', 'PENDING_SIGNATURE']
+                        .contains(_lease?['status']),
                     m: m,
                     l: l,
                     onDownload: () => _downloadDocument(_documents[i]),
@@ -1518,10 +1516,7 @@ class _ChequeTimelineRow extends StatelessWidget {
                     ),
                     Text(
                       amount,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        color: m.danger,
-                      ),
+                      style: GoogleFonts.plusJakartaSans(fontSize: 14, color: m.danger),
                     ),
                   ],
                 ),
