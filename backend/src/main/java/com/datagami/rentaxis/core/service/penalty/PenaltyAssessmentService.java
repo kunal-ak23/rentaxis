@@ -864,12 +864,29 @@ public class PenaltyAssessmentService {
      * has already run {@code LeaseAccessPolicy} on the lease before it builds a
      * preview; adding a second gate would mean a manager could be refused a figure
      * on a screen they were just allowed to open.</p>
+     *
+     * <p>Final review I3: a charge partly credited back ({@link #creditPart}) is owed net
+     * of the credit and its VAT, the same {@code LeaseVat.vatOfNet(credit)} the credit
+     * journal took off the receivable. That is what its lowered collection row asks for,
+     * so the settlement and the register agree.</p>
      */
     @Transactional(readOnly = true)
     public BigDecimal outstandingForLease(UUID leaseId) {
         if (leaseId == null) return BigDecimal.ZERO;
-        BigDecimal total = repository.sumOutstandingForLease(leaseId);
-        return total != null ? total : BigDecimal.ZERO;
+        BigDecimal total = BigDecimal.ZERO;
+        for (PenaltyAssessment a : repository.findOutstandingForLease(leaseId)) {
+            total = total.add(stillOwed(a));
+        }
+        return total;
+    }
+
+    /** Fee plus VAT, less what {@link #creditPart} gave back (net, plus its VAT when the charge carried VAT). */
+    static BigDecimal stillOwed(PenaltyAssessment a) {
+        BigDecimal amount = a.getAmount() == null ? BigDecimal.ZERO : a.getAmount();
+        BigDecimal vat = a.getVatAmount() == null ? BigDecimal.ZERO : a.getVatAmount();
+        BigDecimal credited = a.getCreditedAmount() == null ? BigDecimal.ZERO : a.getCreditedAmount();
+        BigDecimal creditVat = credited.signum() > 0 && vat.signum() > 0 ? LeaseVat.vatOfNet(credited) : BigDecimal.ZERO;
+        return amount.add(vat).subtract(credited).subtract(creditVat);
     }
 
     // ------------------------------------------------------------------

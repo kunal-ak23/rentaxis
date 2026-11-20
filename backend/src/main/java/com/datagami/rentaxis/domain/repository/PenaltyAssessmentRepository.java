@@ -122,16 +122,22 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
      * the paragraph before this one was describing behaviour the query did not
      * have. The same trap {@code ChequeRepository.search}'s javadoc warns about on
      * {@code c.unit}.</p>
+     *
+     * <p><b>The charges, not a sum.</b> A charge partly credited back (an early parking
+     * release, spec 2026-11-19 §6) is owed net of the credit and the VAT given back on it,
+     * which is computed per charge with {@code LeaseVat.vatOfNet} exactly as the credit
+     * journal computed it; {@code PenaltyAssessmentService.outstandingForLease} does the sum
+     * (final review I3).</p>
      */
     @Query("""
-        select coalesce(sum(p.amount + p.vatAmount), 0) from PenaltyAssessment p
+        select p from PenaltyAssessment p
         left join p.collectionCheque collection
         where p.lease.id = :leaseId
           and p.status = com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.APPROVED
           and (collection is null
                or collection.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED)
         """)
-    BigDecimal sumOutstandingForLease(@Param("leaseId") UUID leaseId);
+    java.util.List<PenaltyAssessment> findOutstandingForLease(@Param("leaseId") UUID leaseId);
 
     /** F14-49 / F14-50: the charges raised by a ticket or a booking. */
     java.util.List<PenaltyAssessment> findBySourceTypeAndSourceIdOrderByProposedAtAsc(String sourceType, UUID sourceId);
