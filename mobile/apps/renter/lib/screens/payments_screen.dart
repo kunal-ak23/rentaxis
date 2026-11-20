@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import '../demo/demo_flags.dart';
+import '../demo/wallet_demo.dart';
 import '../providers/renter_data.dart';
 import '../utils/renter_rules.dart';
 import '../widgets/renter_document_button.dart';
 import 'next_payment.dart';
+import 'wallet/wallet_card.dart';
 
 enum _Filter { all, due, cleared, upcoming }
 
@@ -31,7 +34,15 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   @override
   Widget build(BuildContext context) {
     final ar = context.isAr;
-    final payments = ref.watch(renterPaymentsProvider);
+    final demo = ref.watch(demoPaymentsEnabledProvider);
+    // Demo only: an instalment paid through the pseudo checkout this session
+    // reads as CLEARED / ONLINE here without a server round trip.
+    final wallet = demo ? ref.watch(walletDemoProvider) : null;
+    final payments = ref
+        .watch(renterPaymentsProvider)
+        .whenData(
+          (rows) => wallet == null ? rows : applyDemoPayments(rows, wallet),
+        );
     final leases = ref.watch(renterLeasesProvider);
     return Column(
       children: [
@@ -59,6 +70,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               children: [
+                if (demo) ...[
+                  const WalletDemoCard(),
+                  const SizedBox(height: MiftahSpacing.gap),
+                ],
                 if (leases.hasError)
                   ErrorState(
                     message: ar
@@ -181,9 +196,13 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          ar
-                              ? 'تُسجّل الدفعات لدى الإدارة بشيك أو نقداً أو تحويل بنكي. الشيك المودع لم تتم تسويته بعد.'
-                              : 'Payments are recorded by management by cheque, cash or bank transfer. Deposited cheques are still awaiting clearance.',
+                          demo
+                              ? (ar
+                                    ? 'ادفع الأقساط المستحقة إلكترونياً بالبطاقة أو Apple Pay أو رصيد المحفظة واربح كاش باك. الشيكات والنقد والتحويلات تسجلها الإدارة.'
+                                    : 'Pay due instalments online by card, Apple Pay or wallet balance and earn cashback. Cheques, cash and transfers are still recorded by management.')
+                              : (ar
+                                    ? 'تُسجّل الدفعات لدى الإدارة بشيك أو نقداً أو تحويل بنكي. الشيك المودع لم تتم تسويته بعد.'
+                                    : 'Payments are recorded by management by cheque, cash or bank transfer. Deposited cheques are still awaiting clearance.'),
                         ),
                         const SizedBox(height: 12),
                         Wrap(
@@ -276,7 +295,10 @@ class _PaymentCard extends ConsumerWidget {
           const SizedBox(height: 10),
           Text(
             Formatters.currency((row['amount'] as num?) ?? 0),
-            style: MiftahType.amount(size: 25, color: context.miftah.textPrimary),
+            style: MiftahType.amount(
+              size: 25,
+              color: context.miftah.textPrimary,
+            ),
           ),
           Text('$mode · ${Formatters.date(row['dueDate'] as String?, ar: ar)}'),
           if (isOwedNow(row))
@@ -294,6 +316,12 @@ class _PaymentCard extends ConsumerWidget {
             ),
           if (row['bankName'] != null) Text('${row['bankName']}'),
           if (row['narration'] != null) Text('${row['narration']}'),
+          if (row['demoPaidReference'] != null)
+            Text(
+              '${ar ? 'دُفع إلكترونياً' : 'Paid online'} · ${row['demoPaidReference']}',
+              key: ValueKey('paid-online-${row['id']}'),
+              style: MiftahType.mono(size: 12, color: context.miftah.success),
+            ),
           if (row['depositedAt'] != null)
             Text(
               '${ar ? 'أودع في' : 'Deposited on'} ${Formatters.date(row['depositedAt'] as String?, ar: ar)}',
@@ -305,6 +333,17 @@ class _PaymentCard extends ConsumerWidget {
           if (raw == 'BOUNCED' && row['failureReason'] != null)
             Text(
               '${ar ? 'سبب الإرجاع' : 'Return reason'}: ${chequeFailureReasonLabel('${row['failureReason']}', ar)}',
+            ),
+          if (ref.watch(demoPaymentsEnabledProvider) && isOwedNow(row))
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: MiftahGoldButton(
+                key: ValueKey('pay-online-${row['id']}'),
+                label: ar ? 'ادفع إلكترونياً' : 'Pay online',
+                icon: const Icon(Icons.bolt_rounded, size: 18),
+                height: 46,
+                onPressed: () => context.push('/pay/${row['id']}'),
+              ),
             ),
           Wrap(
             spacing: 8,
@@ -405,7 +444,9 @@ class _TaxInvoices extends ConsumerWidget {
                   ar
                       ? 'الفواتير الضريبية والإشعارات الدائنة'
                       : 'Tax invoices & credit notes',
-                  style: MiftahType.cardTitle(color: context.miftah.textPrimary),
+                  style: MiftahType.cardTitle(
+                    color: context.miftah.textPrimary,
+                  ),
                 ),
                 for (final row in rows)
                   ListTile(
