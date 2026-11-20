@@ -199,21 +199,33 @@ public final class RenterRatingEngine {
 
     private static void add(List<RatingEvent> out, RatingEventType type, LocalDate date, int base, String sourceType,
                             UUID sourceId, UUID leaseId, String note, UUID createdBy, LocalDate today) {
-        double w = weight(date, today);
+        // An adjustment is dated the moment it was recorded, so it is never a scheduled future event; one
+        // recorded after the caller's "today" (a batch that captured its date before midnight) still counts.
+        double w = weight(type == RatingEventType.ADJUSTMENT && date.isAfter(today) ? today : date, today);
         if (w == 0) return;
         out.add(new RatingEvent(type, date, base, w, base * w, sourceType, sourceId, leaseId, note, createdBy));
     }
 
+    /**
+     * 1.0 from 12 months ago to today, 0.5 back to 24 months, 0 before that. Calendar months (spec 5.1),
+     * so a leap year does not move the boundary. An event dated after today (a renewal that starts next
+     * month, a post-dated clear) has not happened yet and weighs 0.
+     */
     static double weight(LocalDate date, LocalDate today) {
-        long age = ChronoUnit.DAYS.between(date, today);
-        if (age <= FULL_WEIGHT_DAYS) return FULL_WEIGHT;
-        if (age <= HALF_WEIGHT_DAYS) return HALF_WEIGHT;
+        if (date.isAfter(today)) return 0;
+        if (!date.isBefore(today.minusMonths(FULL_WEIGHT_MONTHS))) return FULL_WEIGHT;
+        if (!date.isBefore(today.minusMonths(HALF_WEIGHT_MONTHS))) return HALF_WEIGHT;
         return 0;
     }
 
+    /** Inside the 24-month look-back and not in the future. */
     private static boolean inWindow(LocalDate date, LocalDate today) {
-        long age = ChronoUnit.DAYS.between(date, today);
-        return age >= 0 && age <= HALF_WEIGHT_DAYS;
+        return !date.isAfter(today) && !date.isBefore(today.minusMonths(HALF_WEIGHT_MONTHS));
+    }
+
+    /** First day of the look-back: the loader's {@code since}. */
+    static LocalDate windowStart(LocalDate today) {
+        return today.minusMonths(HALF_WEIGHT_MONTHS);
     }
 
     private static RatingGrade gradeFor(int score) {

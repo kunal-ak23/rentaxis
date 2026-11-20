@@ -78,8 +78,11 @@ class RenterRatingEngineTest {
             return this;
         }
         RenterRatingResult run() {
+            return run(TODAY);
+        }
+        RenterRatingResult run(LocalDate today) {
             return RenterRatingEngine.score(new RenterHistory(RENTER, leases, cheques, penalties, writeOffs,
-                    leaseEvents, opportunities, meetings, adjustments), TODAY);
+                    leaseEvents, opportunities, meetings, adjustments), today);
         }
     }
 
@@ -179,6 +182,7 @@ class RenterRatingEngineTest {
 
     @Test
     void weightBoundaryAt12Months() {
+        // TODAY.minusMonths(12) is exactly 365 days back for this TODAY; see the leap-year test for months vs days.
         RenterRatingResult a = history().lease13()
                 .cheque(ChequeStatus.BOUNCED, TODAY.minusDays(400), null, TODAY.minusDays(365), null, null).run();
         assertThat(of(a, RatingEventType.BOUNCE)).singleElement().extracting(RatingEvent::appliedPoints)
@@ -198,6 +202,58 @@ class RenterRatingEngineTest {
         RenterRatingResult b = history().lease13()
                 .cheque(ChequeStatus.BOUNCED, TODAY.minusDays(800), null, TODAY.minusDays(731), null, null).run();
         assertThat(of(b, RatingEventType.BOUNCE)).isEmpty();
+    }
+
+    /** Spec 5.1 counts calendar months: across a leap day, 12 months is 366 days and 24 months is 731. */
+    @Test
+    void weightBoundariesAreCalendarMonthsNotDays() {
+        LocalDate today = LocalDate.of(2024, 3, 1);
+        assertThat(today.minusMonths(12)).isEqualTo(LocalDate.of(2023, 3, 1));
+        assertThat(java.time.temporal.ChronoUnit.DAYS.between(LocalDate.of(2023, 3, 1), today)).isEqualTo(366);
+        assertThat(RenterRatingEngine.weight(LocalDate.of(2023, 3, 1), today)).isEqualTo(1.0);
+        assertThat(RenterRatingEngine.weight(LocalDate.of(2023, 2, 28), today)).isEqualTo(0.5);
+        assertThat(java.time.temporal.ChronoUnit.DAYS.between(LocalDate.of(2022, 3, 1), today)).isEqualTo(731);
+        assertThat(RenterRatingEngine.weight(LocalDate.of(2022, 3, 1), today)).isEqualTo(0.5);
+        assertThat(RenterRatingEngine.weight(LocalDate.of(2022, 2, 28), today)).isEqualTo(0.0);
+
+        H h = history().lease(today.minusMonths(30), today.plusMonths(2));
+        h.cheque(ChequeStatus.BOUNCED, LocalDate.of(2023, 2, 1), null, LocalDate.of(2023, 3, 1), null, null);
+        h.cheque(ChequeStatus.BOUNCED, LocalDate.of(2022, 2, 1), null, LocalDate.of(2022, 3, 1), null, null);
+        RenterRatingResult r = h.run(today);
+        assertThat(of(r, RatingEventType.BOUNCE)).extracting(RatingEvent::appliedPoints)
+                .containsExactlyInAnyOrder(-15.0, -7.5);
+        assertThat(RenterRatingEngine.windowStart(today)).isEqualTo(LocalDate.of(2022, 3, 1));
+    }
+
+    /** M6: an event dated after today has not happened yet and is not scored. */
+    @Test
+    void eventsDatedAfterTodayAreSkipped() {
+        assertThat(RenterRatingEngine.weight(TODAY.plusDays(1), TODAY)).isEqualTo(0.0);
+        assertThat(RenterRatingEngine.weight(TODAY, TODAY)).isEqualTo(1.0);
+
+        // a posted renewal that starts next month: no credit yet
+        H h = history().lease13();
+        h.leases.add(new LeaseRow(UUID.randomUUID(), LeaseStatus.ACTIVE, TODAY.plusMonths(1), TODAY.plusMonths(13),
+                h.lease));
+        RenterRatingResult r = h.run();
+        assertThat(of(r, RatingEventType.RENEWAL)).isEmpty();
+        assertThat(r.score()).isEqualTo(70);
+
+        // the same renewal once it has started is credited
+        H started = history().lease13();
+        started.leases.add(new LeaseRow(UUID.randomUUID(), LeaseStatus.ACTIVE, TODAY, TODAY.plusMonths(12),
+                started.lease));
+        assertThat(of(started.run(), RatingEventType.RENEWAL)).singleElement()
+                .extracting(RatingEvent::appliedPoints).isEqualTo(5.0);
+    }
+
+    /** An adjustment is dated when it was recorded; one recorded after the batch's "today" still counts. */
+    @Test
+    void adjustmentRecordedAfterTodayStillCounts() {
+        RenterRatingResult r = history().lease13().adj(5, "Recorded after midnight", TODAY.plusDays(1)).run();
+        assertThat(of(r, RatingEventType.ADJUSTMENT)).singleElement()
+                .extracting(RatingEvent::appliedPoints).isEqualTo(5.0);
+        assertThat(r.score()).isEqualTo(75);
     }
 
     @Test

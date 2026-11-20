@@ -48,7 +48,6 @@ import java.util.stream.Collectors;
 @Service
 public class RenterRatingService {
 
-    static final int WINDOW_DAYS = 730;
     private static final int MAX_ADJUSTMENT = 30;
     private static final int MAX_REASON = 500;
 
@@ -79,7 +78,8 @@ public class RenterRatingService {
     @Transactional(readOnly = true)
     public RenterRatingDetailDTO live(UUID tenantId, UUID renterId, LocalDate today) {
         requireRenter(tenantId, renterId);
-        RenterHistory history = loader.load(tenantId, List.of(renterId), today.minusDays(WINDOW_DAYS)).get(renterId);
+        RenterHistory history = loader.load(tenantId, List.of(renterId), RenterRatingEngine.windowStart(today))
+                .get(renterId);
         RenterRatingResult r = RenterRatingEngine.score(history, today);
         boolean started = isRated(history);
         List<RenterRatingSnapshot> last = new ArrayList<>(
@@ -100,7 +100,7 @@ public class RenterRatingService {
     public int recomputeAndStore(UUID tenantId, Collection<UUID> renterIds, LocalDate today) {
         if (renterIds == null || renterIds.isEmpty()) return 0;
         Collection<UUID> ids = new LinkedHashSet<>(renterIds);
-        Map<UUID, RenterHistory> histories = loader.load(tenantId, ids, today.minusDays(WINDOW_DAYS));
+        Map<UUID, RenterHistory> histories = loader.load(tenantId, ids, RenterRatingEngine.windowStart(today));
         Map<UUID, RenterRating> stored = new HashMap<>();
         ratings.findByTenantIdAndRenterIdIn(tenantId, ids).forEach(x -> stored.put(x.getRenterId(), x));
         Instant now = Instant.now();
@@ -237,7 +237,8 @@ public class RenterRatingService {
             throw new BusinessRuleViolationException("Reason is required (1-500 characters)");
         }
         requireRenter(tenantId, renterId);
-        RenterHistory history = loader.load(tenantId, List.of(renterId), today.minusDays(WINDOW_DAYS)).get(renterId);
+        RenterHistory history = loader.load(tenantId, List.of(renterId), RenterRatingEngine.windowStart(today))
+                .get(renterId);
         if (history == null || !isRated(history)) {
             throw new BusinessRuleViolationException("Tenant has no started contract");
         }
@@ -286,7 +287,7 @@ public class RenterRatingService {
     }
 
     private RenterRatingResult scoreOne(UUID tenantId, UUID renterId, LocalDate today) {
-        RenterHistory h = loader.load(tenantId, List.of(renterId), today.minusDays(WINDOW_DAYS)).get(renterId);
+        RenterHistory h = loader.load(tenantId, List.of(renterId), RenterRatingEngine.windowStart(today)).get(renterId);
         return RenterRatingEngine.score(h, today);
     }
 

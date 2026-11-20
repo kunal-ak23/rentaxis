@@ -28,9 +28,9 @@ public final class RenterRatingPolicy {
     public static final int NO_RESPONSE_POINTS = -5;
     public static final int NO_SHOW_POINTS = -5;
 
-    // age weights
-    public static final int FULL_WEIGHT_DAYS = 365;
-    public static final int HALF_WEIGHT_DAYS = 730;
+    // age weights (calendar months back from today, spec 5.1: 0-12 months full, 12-24 half, older excluded)
+    public static final int FULL_WEIGHT_MONTHS = 12;
+    public static final int HALF_WEIGHT_MONTHS = 24;
     public static final double FULL_WEIGHT = 1.0;
     public static final double HALF_WEIGHT = 0.5;
 
