@@ -93,6 +93,52 @@ public class BookingFeeService {
         return quote(s.getFeeType(), s.getFeeAmount(), b);
     }
 
+    /**
+     * Quotes the booking and keeps what it was quoted on (spec 2026-11-19 §6): the fee
+     * amount, and the fee type and unit amount as a snapshot, so a later change to the
+     * price does not change the credit on an early release.
+     */
+    public static void applyQuote(PropertyAmenity a, BookingRequest b) {
+        applyQuote(a.getFeeType(), a.getFeeAmount(), b);
+    }
+
+    public static void applyQuote(ParkingSpot s, BookingRequest b) {
+        applyQuote(s.getFeeType(), s.getFeeAmount(), b);
+    }
+
+    private static void applyQuote(String type, BigDecimal amount, BookingRequest b) {
+        b.setFeeAmount(quote(type, amount, b));
+        b.setFeeType(type == null ? "FREE" : type);
+        b.setFeeUnitAmount(amount == null ? null : amount.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /** The fee types an early release credits pro rata (spec 2026-11-19 §5): parking by the day or the month. */
+    private static final Set<String> PRO_RATA = Set.of("PER_DAY", "PER_MONTH");
+
+    /**
+     * Spec 2026-11-19 §6: the net credit for the unused part of a parking booking released
+     * on {@code releaseDay} (that day counts as used). The used part is the same
+     * {@link #quote} as at approval, from the start to the release day; the credit is the
+     * fee charged less that, kept within [0, feeAmount]. Nothing is credited for a
+     * PER_BOOKING (or any other) fee, for a booking without a snapshot, or for a release
+     * on or after the end date; a release before the start uses nothing.
+     */
+    public static BigDecimal creditForRelease(String feeType, BigDecimal unitAmount, BigDecimal feeAmount,
+                                              LocalDate start, LocalDate end, LocalDate releaseDay) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(2);
+        if (feeType == null || !PRO_RATA.contains(feeType) || unitAmount == null || unitAmount.signum() <= 0
+                || feeAmount == null || feeAmount.signum() <= 0 || start == null || end == null || releaseDay == null
+                || !releaseDay.isBefore(end)) {
+            return zero;
+        }
+        BigDecimal fee = feeAmount.setScale(2, RoundingMode.HALF_UP);
+        if (releaseDay.isBefore(start)) return fee;
+        BigDecimal used = quote(feeType, unitAmount, start, releaseDay, null, null);
+        BigDecimal credit = fee.subtract(used);
+        if (credit.signum() < 0) return zero;
+        return credit.min(fee);
+    }
+
     /** The request's dates and times, quoted by fee type as the overload below describes. */
     static BigDecimal quote(String type, BigDecimal amount, BookingRequest b) {
         return quote(type, amount, b.getPreferredDate(), b.getPreferredEndDate(), b.getPreferredStartTime(), b.getPreferredEndTime());
@@ -268,6 +314,30 @@ public class BookingFeeService {
         } else {
             charges.reverse(b.getChargeId(), on, reason);
         }
+    }
+
+    /**
+     * Spec 2026-11-19 §6: a parking booking released early has the unused part of its fee
+     * credited ({@link #creditForRelease}), on {@code on}, through
+     * {@link PenaltyAssessmentService#creditPart}. A payment in flight refuses the release
+     * ({@code booking.feeInFlight}, as for staff cancel); a fee written off, reversed or
+     * whose collection row was closed elsewhere stands, and the release goes ahead.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void creditOnRelease(BookingRequest b, LocalDate on) {
+        if (b.getChargeId() == null) return;
+        if (charges.statusOf(b.getChargeId()) != PenaltyAssessmentStatus.APPROVED) return;
+        BigDecimal credit = creditForRelease(b.getFeeType(), b.getFeeUnitAmount(), b.getFeeAmount(),
+                b.getPreferredDate(), b.getPreferredEndDate(), on);
+        if (credit.signum() <= 0) return;
+        com.datagami.rentaxis.domain.entity.enums.ChequeStatus row = charges.collectionStatusOf(b.getChargeId());
+        if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED
+                || row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING) {
+            throw new BusinessRuleViolationException("The fee's payment is still being collected; release the booking"
+                    + " once it has cleared or bounced.", "booking.feeInFlight", Map.of());
+        }
+        if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED) return;
+        charges.creditPart(b.getChargeId(), credit, on, "Parking released early on " + on + ": unused days credited");
     }
 
     /** Whether the slot has not started yet. */

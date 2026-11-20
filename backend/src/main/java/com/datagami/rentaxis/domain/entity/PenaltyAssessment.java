@@ -145,4 +145,11 @@ public class PenaltyAssessment extends BaseTenantEntity {
      */
     @Column(name = "income_account_id")
     private UUID incomeAccountId;
+
+    /**
+     * Spec 2026-11-19 §6: the net amount credited back by an early parking release (its VAT
+     * goes back on a credit note too). Null when nothing was credited.
+     */
+    @Column(name = "credited_amount", precision = 14, scale = 2)
+    private BigDecimal creditedAmount;
 }

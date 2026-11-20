@@ -636,6 +636,100 @@ public class PenaltyAssessmentService {
         return repository.findById(id).map(PenaltyAssessment::getCollectionCheque).map(Cheque::getStatus).orElse(null);
     }
 
+    /**
+     * Spec 2026-11-19 §6: part of an approved charge credited back ({@code net}, before VAT),
+     * as for the unused days of a parking booking released early. One journal on {@code date},
+     * the approval mirrored for the credited part: Dr the income the charge credited, Dr output
+     * VAT on the credit (when the charge carried VAT, with a tax credit note), Cr the lease
+     * receivable. An unpaid (REGISTERED) collection row is lowered by the same total, so the
+     * renter owes only the rest; a paid one stays as it is and the total is left as a credit on
+     * the renter's account, as {@link #creditCollected} leaves it. The charge stays APPROVED and
+     * records what was credited. System door: the booking's own rules authorised the credit.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO creditPart(UUID id, BigDecimal net, LocalDate date, String reason) {
+        PenaltyAssessment a = lock(id);
+        if (a.getStatus() == PenaltyAssessmentStatus.WRITTEN_OFF) {
+            throw new BusinessRuleViolationException("This charge was written off as a bad debt; it cannot be credited.",
+                    "penalty.writtenOff", java.util.Map.of());
+        }
+        requireStatus(a, "credit", PenaltyAssessmentStatus.APPROVED);
+        if (a.getJournalId() == null) {
+            throw new BusinessRuleViolationException("This charge has no journal to credit against");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessRuleViolationException("A credit needs a reason");
+        }
+        BigDecimal already = a.getCreditedAmount() == null ? BigDecimal.ZERO : a.getCreditedAmount();
+        BigDecimal credit = net == null ? BigDecimal.ZERO : net.setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal open = a.getAmount().subtract(already);
+        if (credit.signum() <= 0 || credit.compareTo(open) > 0) {
+            throw new BusinessRuleViolationException("The credit must be more than zero and at most "
+                    + open.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + ", the part not credited yet");
+        }
+        Cheque collection = a.getCollectionCheque();
+        if (collection != null && collection.getStatus() == ChequeStatus.CANCELLED) {
+            throw new BusinessRuleViolationException("This charge's collection row is closed; it cannot be credited.",
+                    "penalty.collectionClosed", java.util.Map.of());
+        }
+        if (collection != null && (collection.getStatus() == ChequeStatus.DEPOSITED
+                || collection.getStatus() == ChequeStatus.ONLINE_PENDING)) {
+            throw new BusinessRuleViolationException("This charge's payment is still being collected; credit it once"
+                    + " the payment has cleared or bounced.");
+        }
+        LocalDate on = date != null ? date : manualDates.today();
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.PENALTY_CHARGE, on);
+        com.datagami.rentaxis.domain.entity.JournalEntry charged = journalEntries.findById(a.getJournalId())
+                .orElseThrow(() -> new IllegalStateException("Penalty journal " + a.getJournalId() + " not found"));
+        if (charged.getEntryDate() != null && on.isBefore(charged.getEntryDate())) {
+            java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            throw new BusinessRuleViolationException("A credit cannot be dated before the charge ("
+                    + charged.getEntryDate().format(dmy) + ")", "penalty.reverseBeforeCharge",
+                    java.util.Map.of("charged", charged.getEntryDate().format(dmy), "date", on.format(dmy)));
+        }
+
+        Lease lease = a.getLease();
+        String note = reason.trim();
+        String narration = "Credit - " + narrationFor(a);
+        BigDecimal vat = a.getVatAmount() != null && a.getVatAmount().signum() > 0 ? LeaseVat.vatOfNet(credit) : BigDecimal.ZERO;
+        List<PostingRequest.Pair> pairs = new java.util.ArrayList<>();
+        pairs.add(PostingRequest.pair(
+                (a.getIncomeAccountId() != null
+                        ? PostingRequest.dr(a.getIncomeAccountId(), credit)
+                        : PostingRequest.dr(a.getReason().incomeRole(), credit)).withNarration(narration),
+                LeaseChequeRegistrar.crReceivable(lease, credit).withNarration(narration)));
+        if (vat.signum() > 0) {
+            String vatNarration = "VAT on " + narration;
+            pairs.add(PostingRequest.pair(
+                    PostingRequest.dr(com.datagami.rentaxis.domain.entity.enums.AccountRole.OUTPUT_VAT, vat)
+                            .withNarration(vatNarration),
+                    LeaseChequeRegistrar.crReceivable(lease, vat).withNarration(vatNarration)));
+        }
+        UUID chequeId = a.getCheque() != null ? a.getCheque().getId() : null;
+        JournalEntry entry = postingService.post(PostingRequest.ofPairs(
+                a.getReason().requestedByRenter() ? JournalDocType.JV : JournalDocType.PEN,
+                on,
+                narration,
+                LeaseChequeRegistrar.dimensions(lease, chequeId),
+                JournalSourceType.PENALTY,
+                a.getId(),
+                null,
+                pairs));
+        // F14-30: the VAT given back goes on a tax credit note, as a reversal's does.
+        if (vat.signum() > 0 && vatTaxPoints != null) {
+            vatTaxPoints.recordChargeVat(lease, on, entry.getId(), credit.negate(), vat.negate());
+        }
+        if (collection != null && collection.getStatus() == ChequeStatus.REGISTERED) {
+            chequeService.reduceUnpaidBySystem(collection.getId(), credit.add(vat), on, note);
+        }
+
+        a.setCreditedAmount(already.add(credit));
+        String line = "Credited " + credit.toPlainString() + (vat.signum() > 0 ? " + VAT " + vat.toPlainString() : "")
+                + ": " + note;
+        a.setResolutionNote(a.getResolutionNote() == null ? line : a.getResolutionNote() + "\n" + line);
+        return dto(repository.save(a));
+    }
+
     private PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note, boolean checkAccess) {
         return reverse(id, date, note, checkAccess, false);
     }
@@ -653,6 +747,12 @@ public class PenaltyAssessmentService {
         requireStatus(a, "reverse", PenaltyAssessmentStatus.APPROVED);
         if (a.getJournalId() == null) {
             throw new BusinessRuleViolationException("This penalty has no journal to reverse");
+        }
+        // Spec 2026-11-19 §6: reversing the approval of a charge already partly credited
+        // would give the credited part back twice (the credit journal stays as it is).
+        if (a.getCreditedAmount() != null && a.getCreditedAmount().signum() > 0) {
+            throw new BusinessRuleViolationException("Part of this charge was already credited back; it cannot be"
+                    + " reversed.", "penalty.partlyCredited", java.util.Map.of());
         }
 
         Cheque collection = a.getCollectionCheque();

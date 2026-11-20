@@ -192,7 +192,7 @@ public class BookingService {
             // propertyId always derives from the resource, never from the client.
             booking.setPropertyId(amenity.getPropertyId());
             // F14-50: the fee the renter was shown, fixed now.
-            booking.setFeeAmount(BookingFeeService.quote(amenity, booking));
+            BookingFeeService.applyQuote(amenity, booking);
         } else {
             // Locked first load of the bay: an attach or approval racing this request
             // waits for it, and this one sees theirs once they commit.
@@ -227,7 +227,7 @@ public class BookingService {
             }
             booking.setParkingSpotId(spot.getId());
             booking.setPropertyId(spot.getPropertyId());
-            booking.setFeeAmount(BookingFeeService.quote(spot, booking));
+            BookingFeeService.applyQuote(spot, booking);
         }
 
         return saveNewBooking(tenantId, booking);
@@ -561,7 +561,7 @@ public class BookingService {
             // Booking journal vouchers (review focus 2): the request's quote was made
             // without the dates filled in above, so it is quoted again for them. A dated
             // request keeps the fee the renter was shown, even if the bay's fee changed.
-            if (datesFilledIn) booking.setFeeAmount(BookingFeeService.quote(spot, booking));
+            if (datesFilledIn) BookingFeeService.applyQuote(spot, booking);
         }
         if (booking.getResourceType() == BookingResourceType.AMENITY) {
             // Break-it R3 ops3 F7: under the amenity's row lock, so two approvals for the
@@ -636,19 +636,29 @@ public class BookingService {
      * has not started, with a reason. Its fee is reversed; when the renter already paid
      * it, the payment stays on their account as a credit (a credit note), so every money
      * movement is the office's. A pending request is rejected, not cancelled.
+     *
+     * <p>Spec 2026-11-19 §6: an approved parking booking too, while its start date is after
+     * today (Dubai); on or after its start date staff release it instead, which credits the
+     * unused days.</p>
      */
     public BookingRequest cancelByStaff(UUID tenantId, UUID id, UUID staffUserId, String reason) {
         BookingRequest booking = getForUpdate(tenantId, id);
-        if (booking.getStatus() != BookingRequestStatus.APPROVED
-                || booking.getResourceType() != BookingResourceType.AMENITY) {
-            throw new BusinessRuleViolationException("Only an approved amenity booking can be cancelled by the office;"
-                    + " reject a pending request, release a parking booking.", "booking.notCancellable", java.util.Map.of());
+        if (booking.getStatus() != BookingRequestStatus.APPROVED) {
+            throw new BusinessRuleViolationException("Only an approved booking can be cancelled by the office, and a"
+                    + " parking booking only before its start date; reject a pending request.", "booking.notCancellable",
+                    java.util.Map.of());
         }
         if (reason == null || reason.isBlank()) {
             throw new BusinessRuleViolationException("Give a reason for cancelling the booking.",
                     "booking.cancelReason", java.util.Map.of());
         }
-        if (!BookingFeeService.beforeSlot(booking, java.time.LocalDateTime.now(clock.withZone(DUBAI)))) {
+        if (booking.getResourceType() == BookingResourceType.PARKING_SPOT) {
+            LocalDate start = booking.getPreferredDate();
+            if (start == null || !start.isAfter(LocalDate.now(clock.withZone(DUBAI)))) {
+                throw new BusinessRuleViolationException("The parking booking has started; release it instead of"
+                        + " cancelling it.", "booking.slotStarted", java.util.Map.of());
+            }
+        } else if (!BookingFeeService.beforeSlot(booking, java.time.LocalDateTime.now(clock.withZone(DUBAI)))) {
             throw new BusinessRuleViolationException("The booking's slot has started; it can no longer be cancelled.",
                     "booking.slotStarted", java.util.Map.of());
         }
@@ -710,6 +720,9 @@ public class BookingService {
         if (booking.getStatus() != BookingRequestStatus.APPROVED) {
             throw new BusinessRuleViolationException("Only approved bookings can be released");
         }
+        // Spec 2026-11-19 §6: the unused days of a PER_DAY / PER_MONTH fee are credited, the
+        // release day counted as used. A payment in flight refuses the release (booking.feeInFlight).
+        if (bookingFees != null) bookingFees.creditOnRelease(booking, LocalDate.now(clock.withZone(DUBAI)));
         booking.setStatus(BookingRequestStatus.RELEASED);
         booking.setDecidedByUserId(actorUserId);
         booking.setDecidedAt(Instant.now());

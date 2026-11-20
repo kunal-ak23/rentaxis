@@ -42,4 +42,45 @@ class BookingFeeQuoteTest {
         BookingFeeService.validate("PER_DAY", BigDecimal.TEN, true);
         BookingFeeService.validate("PER_DAY", BigDecimal.TEN, false);
     }
+
+    // ---- spec 2026-11-19 §6: the credit for the unused part on an early parking release
+
+    private static BigDecimal credit(String type, String unit, String fee, String start, String end, String release) {
+        return BookingFeeService.creditForRelease(type, unit == null ? null : new BigDecimal(unit), new BigDecimal(fee),
+                LocalDate.parse(start), LocalDate.parse(end), LocalDate.parse(release));
+    }
+
+    @Test void releaseAfterTheFirstWholeMonthCreditsTheSecond() {
+        assertThat(credit("PER_MONTH", "300", "600", "2026-12-01", "2027-01-31", "2026-12-31")).isEqualByComparingTo("300.00");
+    }
+
+    @Test void releaseOnTheDayAfterAWholeMonthUsesOneDayOfTheNext() {
+        // used 300 + 300/31 = 309.68
+        assertThat(credit("PER_MONTH", "300", "600", "2026-12-01", "2027-01-31", "2027-01-01")).isEqualByComparingTo("290.32");
+    }
+
+    @Test void releaseOnOrAfterTheLastDayCreditsNothing() {
+        assertThat(credit("PER_MONTH", "300", "600", "2026-12-01", "2027-01-31", "2027-01-31")).isEqualByComparingTo("0.00");
+        assertThat(credit("PER_MONTH", "300", "600", "2026-12-01", "2027-01-31", "2027-02-15")).isEqualByComparingTo("0.00");
+    }
+
+    @Test void aPerBookingFeeOrAMissingSnapshotStands() {
+        assertThat(credit("PER_BOOKING", "600", "600", "2026-12-01", "2027-01-31", "2026-12-05")).isEqualByComparingTo("0.00");
+        assertThat(credit(null, null, "600", "2026-12-01", "2027-01-31", "2026-12-05")).isEqualByComparingTo("0.00");
+        assertThat(credit("PER_MONTH", null, "600", "2026-12-01", "2027-01-31", "2026-12-05")).isEqualByComparingTo("0.00");
+    }
+
+    @Test void perDayCreditsTheDaysAfterTheRelease() {
+        assertThat(credit("PER_DAY", "40", "400", "2026-12-01", "2026-12-10", "2026-12-03")).isEqualByComparingTo("280.00");
+    }
+
+    @Test void releaseBeforeTheStartUsesNothing() {
+        assertThat(credit("PER_DAY", "40", "400", "2026-12-01", "2026-12-10", "2026-11-30")).isEqualByComparingTo("400.00");
+        assertThat(credit("PER_MONTH", "300", "600", "2026-12-01", "2027-01-31", "2026-11-30")).isEqualByComparingTo("600.00");
+    }
+
+    @Test void theCreditStaysBetweenZeroAndTheFeeCharged() {
+        assertThat(credit("PER_DAY", "40", "100", "2026-12-01", "2026-12-10", "2026-12-03")).isEqualByComparingTo("0.00");
+        assertThat(credit("PER_DAY", "40", "500", "2026-12-01", "2026-12-10", "2026-11-30")).isEqualByComparingTo("500.00");
+    }
 }
