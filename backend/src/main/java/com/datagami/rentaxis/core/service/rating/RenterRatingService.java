@@ -155,6 +155,15 @@ public class RenterRatingService {
     @Transactional(readOnly = true)
     public Page<RenterRatingRowDTO> list(UUID tenantId, RatingGrade grade, UUID propertyId, String q,
                                          Collection<UUID> renterIds, Pageable p) {
+        return list(tenantId, grade, propertyId, null, q, renterIds, p);
+    }
+
+    /** As above, additionally limited to rows whose current property is in propertyIds (null = no limit). */
+    @Transactional(readOnly = true)
+    public Page<RenterRatingRowDTO> list(UUID tenantId, RatingGrade grade, UUID propertyId,
+                                         Collection<UUID> propertyIds, String q,
+                                         Collection<UUID> renterIds, Pageable p) {
+        if (propertyIds != null && propertyIds.isEmpty()) return new PageImpl<>(List.of(), p, 0);
         if (renterIds != null && renterIds.isEmpty()) return new PageImpl<>(List.of(), p, 0);
         StringBuilder from = new StringBuilder(
                 " from renter_ratings r"
@@ -174,6 +183,10 @@ public class RenterRatingService {
         if (propertyId != null) {
             from.append(" and pr.id = :propertyId");
             params.put("propertyId", propertyId);
+        }
+        if (propertyIds != null) {
+            from.append(" and pr.id in (:propertyIds)");
+            params.put("propertyIds", propertyIds);
         }
         if (renterIds != null) {
             from.append(" and r.renter_id in (:renterIds)");

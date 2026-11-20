@@ -81,6 +81,7 @@ public class RenterRatingJob {
 
     /** Recomputes one org (no feature check: callers decide). A failure is logged, never thrown. */
     public void runNowForTenant(UUID tenantId, LocalDate today) {
+        UUID previous = TenantContextHolder.getTenantId();
         TenantContextHolder.setTenantId(tenantId);
         try {
             boolean monthStart = today.getDayOfMonth() == 1;
@@ -103,7 +104,7 @@ public class RenterRatingJob {
         } catch (Exception e) {
             log.error("Renter rating tenant {} failed: {}", tenantId, e.getMessage(), e);
         } finally {
-            TenantContextHolder.clear();
+            if (previous == null) TenantContextHolder.clear(); else TenantContextHolder.setTenantId(previous);
         }
     }
 
