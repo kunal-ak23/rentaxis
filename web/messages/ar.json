@@ -534,6 +534,13 @@
     "viewProperties": "عرض العقارات"
   },
   "OnlinePayments": {
+    "combinedReceipt": "تنزيل الإيصالات ({count})",
+    "combinedReceiptHint": "حدد الدفعات المحصلة، أو اختر سنة، لتنزيل إيصالاتها في ملف PDF واحد.",
+    "combinedReceiptFailed": "تعذر إنشاء الإيصال المجمع.",
+    "combinedReceiptLimit": "يمكن تنزيل {max} إيصال كحد أقصى في المرة الواحدة. ألغِ تحديد بعض الدفعات.",
+    "selectYear": "اختر السنة",
+    "selectContract": "العقد",
+    "selectReceipt": "تحديد إيصال الدفعة {n}",
     "title": "مدفوعاتي",
     "description": "عرض جدول الدفعات ودفع الإيجار عبر الإنترنت.",
     "descriptionOffline": "اطّلع على جدول دفعاتك وسجلّ مدفوعاتك.",
