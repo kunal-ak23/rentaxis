@@ -31,5 +31,6 @@ List<int> receiptYears(Iterable<Map<String, dynamic>> rows) {
 /// Ids of receiptable rows whose year is [year].
 List<String> idsInYear(Iterable<Map<String, dynamic>> rows, int year) => [
       for (final r in rows)
-        if (isReceiptable(r) && receivedYear(r) == year) r['id'].toString(),
+        if (isReceiptable(r) && r['id'] != null && receivedYear(r) == year)
+          r['id'].toString(),
     ];

@@ -59,6 +59,11 @@ void main() {
     expect(receiptYears(rows), [2025, 2024]);
   });
 
+  test('idsInYear skips null ids', () {
+    final r = row('x', 'CLEARED', clearedAt: '2025-01-01')..['id'] = null;
+    expect(idsInYear([r], 2025), isEmpty);
+  });
+
   test('idsInYear receiptable only', () {
     expect(idsInYear(rows, 2025), ['2', '3']);
     expect(idsInYear(rows, 2026), isEmpty);
@@ -73,6 +78,12 @@ void main() {
       expect(
           combinedReceiptFileName('attachment; filename="receipts-L1.pdf"'),
           'receipts-L1.pdf');
+    });
+    test('strips path separators', () {
+      expect(combinedReceiptFileName('attachment; filename=../../evil.pdf'),
+          'evil.pdf');
+      expect(combinedReceiptFileName('attachment; filename="a\\b\\c.pdf"'),
+          'c.pdf');
     });
     test('falls back', () {
       expect(combinedReceiptFileName(null), 'receipts.pdf');
