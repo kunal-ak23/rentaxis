@@ -74,6 +74,23 @@ final _paymentServiceProvider = Provider<PaymentService>((ref) {
   return PaymentService(client.dio);
 });
 
+/// One combined PDF for the given cheque ids (all of this lease). Overridable in tests.
+final leaseCombinedReceiptProvider =
+    Provider<Future<CombinedReceipt> Function(List<String>)>((ref) {
+      return ReceiptService(ref.watch(apiClientProvider).dio).combined;
+    });
+
+/// Writes the combined PDF to the temp dir and opens it. Overridable in tests.
+final leaseReceiptOpenerProvider =
+    Provider<Future<void> Function(CombinedReceipt)>((ref) {
+      return (pdf) async {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/${pdf.fileName}');
+        await file.writeAsBytes(pdf.bytes);
+        await OpenFilex.open(file.path);
+      };
+    });
+
 class LeaseDetailScreen extends ConsumerStatefulWidget {
   final String leaseId;
   const LeaseDetailScreen({super.key, required this.leaseId});
@@ -93,6 +110,8 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
 
   bool _isExtending = false;
   bool _isGeneratingContract = false;
+  final Set<String> _ticked = {};
+  bool _downloadingReceipts = false;
 
   _L get _l => _L(context.isAr);
 
@@ -109,38 +128,35 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     });
     try {
       final leaseService = ref.read(_leaseServiceProvider);
-      final paymentService = ref.read(_paymentServiceProvider);
       final results = await Future.wait([
         leaseService.getLeaseById(widget.leaseId),
-        // Lease-scoped endpoint: the tenant-wide paged list only holds one
-        // page, so filtering it client-side silently dropped installments
-        // of this lease that fell outside the fetched page.
-        paymentService.getPaymentsForLease(widget.leaseId),
+        // The same cheque rows the web lease grid shows.
+        leaseService.getLeaseCheques(widget.leaseId),
         leaseService.getLeaseDocuments(widget.leaseId),
         leaseService.getAttachments(widget.leaseId),
       ]);
       if (!mounted) return;
-      // The lease endpoint has no defined ordering — sort like the web
-      // schedule editor: rent installments first (by installment number),
-      // deposits/charges last, so the timeline reads chronologically.
-      final payments = List<dynamic>.from(results[1] as List<dynamic>);
-      int kind(dynamic p) =>
-          p is Map &&
-              (p['isBookingDeposit'] == true ||
-                  p['isSecurityDeposit'] == true ||
-                  p['isCharge'] == true)
+      // Order by sequence number; deposit rows (if flagged) last. The
+      // timeline reads `dueDate`, the cheques endpoint calls it `chequeDate`.
+      final payments = <dynamic>[
+        for (final r in results[1] as List<dynamic>)
+          r is Map ? <String, dynamic>{...r, 'dueDate': r['chequeDate']} : r,
+      ];
+      int deposit(dynamic p) =>
+          p is Map && '${p['rowKind'] ?? ''}'.toUpperCase().contains('DEPOSIT')
           ? 1
           : 0;
-      int installment(dynamic p) =>
-          (p is Map ? (p['installmentNumber'] as num?)?.toInt() : null) ?? 0;
+      int seq(dynamic p) =>
+          (p is Map ? (p['seqNo'] as num?)?.toInt() : null) ?? 0;
       payments.sort((a, b) {
-        final byKind = kind(a).compareTo(kind(b));
-        if (byKind != 0) return byKind;
-        return installment(a).compareTo(installment(b));
+        final byKind = deposit(a).compareTo(deposit(b));
+        return byKind != 0 ? byKind : seq(a).compareTo(seq(b));
       });
       setState(() {
         _lease = results[0] as Map<String, dynamic>;
         _payments = payments;
+        // Drop ticks whose row is gone or no longer receiptable.
+        _ticked.retainAll(_receiptableIds(payments));
         _documents = results[2] as List<dynamic>;
         _attachments = results[3] as List<dynamic>;
         _isLoading = false;
@@ -303,6 +319,34 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(_l.failedToDownload)));
       }
+    }
+  }
+
+  List<Map<String, dynamic>> get _rows =>
+      _payments.whereType<Map<String, dynamic>>().toList();
+
+  Set<String> _receiptableIds(List<dynamic> rows) => {
+    for (final r in rows)
+      if (r is Map<String, dynamic> && isReceiptable(r)) '${r['id']}',
+  };
+
+  Future<void> _downloadReceipts(List<String> ids) async {
+    final l = _l;
+    final fetch = ref.read(leaseCombinedReceiptProvider);
+    final open = ref.read(leaseReceiptOpenerProvider);
+    setState(() => _downloadingReceipts = true);
+    try {
+      final pdf = await fetch(ids);
+      await open(pdf);
+      if (mounted) setState(() => _ticked.removeAll(ids));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage(e, l.failedToDownloadReceipts))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingReceipts = false);
     }
   }
 
@@ -945,6 +989,10 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     final cleared = _payments
         .where((p) => (p is Map ? p['status'] : null) == 'CLEARED')
         .length;
+    final receiptable = _receiptableIds(_payments);
+    final effective = _ticked.intersection(receiptable).toList();
+    final years = receiptYears(_rows);
+    final over = effective.length > maxCombinedReceipts;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -975,6 +1023,10 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           ],
         ),
         const SizedBox(height: 12),
+        if (receiptable.isNotEmpty) ...[
+          _buildReceiptBar(l, years, effective.length, over, effective),
+          const SizedBox(height: 12),
+        ],
         if (_payments.isEmpty)
           Container(
             width: double.infinity,
@@ -1012,6 +1064,13 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                 isLast: isLast,
                 m: m,
                 l: l,
+                selectable: receiptable.isNotEmpty,
+                ticked: _ticked.contains('${payment['id']}'),
+                onTick: (v) => setState(() {
+                  v
+                      ? _ticked.add('${payment['id']}')
+                      : _ticked.remove('${payment['id']}');
+                }),
                 onTap: (payment['status'] ?? 'PENDING') == 'DEPOSITED'
                     ? () async {
                         final paymentId = payment['id'] as String? ?? '';
@@ -1033,6 +1092,74 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                     : null,
               );
             }).toList(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildReceiptBar(
+    _L l,
+    List<int> years,
+    int selected,
+    bool over,
+    List<String> ids,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            PopupMenuButton<int>(
+              key: const Key('receipt-year'),
+              onSelected: (y) => setState(() {
+                _ticked
+                  ..clear()
+                  ..addAll(idsInYear(_rows, y));
+              }),
+              itemBuilder: (_) => [
+                for (final y in years)
+                  PopupMenuItem(value: y, child: Text('$y')),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(l.ar ? 'تحديد سنة' : 'Select year'),
+                    const Icon(Icons.arrow_drop_down),
+                  ],
+                ),
+              ),
+            ),
+            FilledButton.icon(
+              key: const Key('receipt-download'),
+              onPressed: selected == 0 || over || _downloadingReceipts
+                  ? null
+                  : () => _downloadReceipts(ids),
+              icon: _downloadingReceipts
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.download_outlined),
+              label: Text(
+                l.ar
+                    ? 'تحميل الإيصالات ($selected)'
+                    : 'Download receipts ($selected)',
+              ),
+            ),
+          ],
+        ),
+        if (over)
+          Text(
+            l.ar
+                ? 'الحد الأقصى $maxCombinedReceipts إيصال في الملف الواحد. ألغِ تحديد بعضها.'
+                : 'At most $maxCombinedReceipts receipts per file. Untick some to continue.',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
       ],
     );
@@ -1068,8 +1195,10 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                   if (i > 0) Divider(height: 1, color: m.divider),
                   _DocumentRow(
                     doc: _documents[i],
-                    unsigned: const ['DRAFT', 'PENDING_SIGNATURE']
-                        .contains(_lease?['status']),
+                    unsigned: const [
+                      'DRAFT',
+                      'PENDING_SIGNATURE',
+                    ].contains(_lease?['status']),
                     m: m,
                     l: l,
                     onDownload: () => _downloadDocument(_documents[i]),
@@ -1344,6 +1473,9 @@ class _ChequeTimelineRow extends StatelessWidget {
   final LegacyMiftahColors m;
   final _L l;
   final VoidCallback? onTap;
+  final bool selectable;
+  final bool ticked;
+  final ValueChanged<bool>? onTick;
 
   const _ChequeTimelineRow({
     required this.index,
@@ -1352,6 +1484,9 @@ class _ChequeTimelineRow extends StatelessWidget {
     required this.m,
     required this.l,
     this.onTap,
+    this.selectable = false,
+    this.ticked = false,
+    this.onTick,
   });
 
   @override
@@ -1383,7 +1518,10 @@ class _ChequeTimelineRow extends StatelessWidget {
                     ),
                     Text(
                       amount,
-                      style: GoogleFonts.plusJakartaSans(fontSize: 14, color: m.danger),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        color: m.danger,
+                      ),
                     ),
                   ],
                 ),
@@ -1469,6 +1607,17 @@ class _ChequeTimelineRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (selectable)
+              SizedBox(
+                width: 40,
+                child: isReceiptable(payment)
+                    ? Checkbox(
+                        key: ValueKey('receipt-pick-${payment['id']}'),
+                        value: ticked,
+                        onChanged: (v) => onTick?.call(v == true),
+                      )
+                    : null,
+              ),
             const SizedBox(width: 12),
             Expanded(
               child: isBounced
@@ -1656,6 +1805,9 @@ class _L {
   String get attachmentUploaded => ar ? 'تم رفع المرفق' : 'Attachment uploaded';
   String get failedToUpload =>
       ar ? 'فشل رفع المرفق' : 'Failed to upload attachment';
+  String get failedToDownloadReceipts => ar
+      ? 'تعذر تحميل الإيصالات. حاول مجدداً.'
+      : 'Could not download the receipts. Please retry.';
   String get failedToDownload =>
       ar ? 'فشل تحميل المستند' : 'Failed to download document';
 
