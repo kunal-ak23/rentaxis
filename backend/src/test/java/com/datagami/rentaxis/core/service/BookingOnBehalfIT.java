@@ -163,4 +163,34 @@ class BookingOnBehalfIT extends AbstractPostgresIT {
         assertThat(bookingRows()).as("only the first booking").isOne();
         assertThat(bookingCharges()).isOne();
     }
+    /**
+     * PR #468 review m6: staff booking the dates the renter already asked for get the renter's
+     * pending request back from create; it is approved at the bay's price now (what staff were
+     * quoted), with the fee snapshot taken again, not at the price frozen on the old request.
+     */
+    @Test
+    void onBehalfOfAPendingRequestChargesTheCurrentPrice() {
+        ParkingSpot s0 = facilities.createParkingSpot(fixtures.tenantId(), new ParkingSpotCreateRequest(
+                fixtures.property().getId(), "P-78", "B1", null, null, null, null));
+        ParkingSpot bay = facilities.updateParkingSpot(fixtures.tenantId(), s0.getId(),
+                new ParkingSpotUpdateRequest(null, null, null, null, null, "PER_DAY", new BigDecimal("50")));
+        LocalDate from = LocalDate.now(ZoneId.of("Asia/Dubai")).plusDays(5);
+        BookingCreateRequest req = new BookingCreateRequest(BookingResourceType.PARKING_SPOT, bay.getId(),
+                fixtures.unit().getId(), from, from.plusDays(2), null, null, null);
+        BookingRequest pending = tx.execute(s -> bookings.create(fixtures.tenantId(), renterUser, fixtures.unit(), req));
+        assertThat(pending.getFeeAmount()).isEqualByComparingTo("150.00");
+
+        facilities.updateParkingSpot(fixtures.tenantId(), bay.getId(),
+                new ParkingSpotUpdateRequest(null, null, null, null, null, "PER_DAY", new BigDecimal("80")));
+        BookingRequest b = onBehalf(renterUser, req);
+
+        assertThat(b.getId()).as("the renter's own request, approved").isEqualTo(pending.getId());
+        assertThat(b.getStatus()).isEqualTo(BookingRequestStatus.APPROVED);
+        assertThat(b.getFeeAmount()).isEqualByComparingTo("240.00");
+        assertThat(b.getFeeType()).isEqualTo("PER_DAY");
+        assertThat(b.getFeeUnitAmount()).isEqualByComparingTo("80.00");
+        assertThat(jdbc.queryForObject("select amount from penalty_assessments where id = ?", BigDecimal.class,
+                b.getChargeId())).isEqualByComparingTo("240.00");
+        assertThat(bookingRows()).isOne();
+    }
 }

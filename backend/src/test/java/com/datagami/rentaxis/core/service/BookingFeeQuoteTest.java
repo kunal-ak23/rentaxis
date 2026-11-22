@@ -107,4 +107,67 @@ class BookingFeeQuoteTest {
                     .isPositive().isLessThan(unit);
         }
     }
+    // ---- PR #468 review I1: whole months worked out, never counted; quote dates bounded
+
+    /** The month count the quote used before the fix, one month at a time (for comparison only). */
+    private static long legacyWholeMonths(LocalDate start, LocalDate last) {
+        int n = 0;
+        while (!start.plusMonths(n + 1).minusDays(1).isAfter(last)) n++;
+        return n;
+    }
+
+    @Test void wholeMonthsMatchesTheMonthByMonthCountOnEveryStartDay() {
+        for (LocalDate d = LocalDate.of(2026, 1, 1); d.isBefore(LocalDate.of(2029, 1, 1)); d = d.plusDays(1)) {
+            for (int len = -3; len <= 800; len += (len < 70 ? 1 : 7)) {
+                LocalDate last = d.plusDays(len);
+                assertThat(BookingFeeService.wholeMonths(d, last)).as(d + " to " + last)
+                        .isEqualTo(len < 0 ? 0 : legacyWholeMonths(d, last));
+            }
+        }
+    }
+
+    /** A 31 Jan start: plusMonths clamps, so the first whole month ends 27 Feb (28 Feb in a leap year). */
+    @Test void perMonthFromJanuaryThirtyFirstAcrossAShortFebruary() {
+        assertThat(BookingFeeService.wholeMonths(LocalDate.parse("2027-01-31"), LocalDate.parse("2027-02-26"))).isZero();
+        assertThat(BookingFeeService.wholeMonths(LocalDate.parse("2027-01-31"), LocalDate.parse("2027-02-27"))).isOne();
+        assertThat(BookingFeeService.wholeMonths(LocalDate.parse("2028-01-31"), LocalDate.parse("2028-02-28"))).isOne();
+        assertThat(q("PER_MONTH", "300", "2027-01-31", "2027-02-27")).isEqualByComparingTo("300.00");
+        // One whole month to 27 Feb, then 28 Feb at 300/28.
+        assertThat(q("PER_MONTH", "280", "2027-01-31", "2027-02-28")).isEqualByComparingTo("290.00");
+        // 26 days of January at 300/31.
+        assertThat(q("PER_MONTH", "310", "2027-01-31", "2027-02-26")).isEqualByComparingTo(
+                new BigDecimal("310").multiply(BigDecimal.valueOf(27)).divide(BigDecimal.valueOf(31), 2, java.math.RoundingMode.HALF_UP));
+    }
+
+    @Test void perMonthSameDayIsOneDayAtThatMonthsRate() {
+        assertThat(BookingFeeService.wholeMonths(LocalDate.parse("2026-12-05"), LocalDate.parse("2026-12-05"))).isZero();
+        assertThat(q("PER_MONTH", "310", "2026-12-05", "2026-12-05")).isEqualByComparingTo("10.00");
+    }
+
+    @Test void aFarOffEndIsPricedAtOnce() {
+        LocalDate start = LocalDate.parse("2026-12-01");
+        LocalDate far = LocalDate.of(999_999, 12, 31);
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), () -> {
+            assertThat(BookingFeeService.wholeMonths(start, far)).isEqualTo((999_999L - 2026) * 12 + 1);
+            assertThat(BookingFeeService.quote("PER_MONTH", new BigDecimal("300"), start, far, null, null)).isPositive();
+        });
+    }
+
+    @Test void quoteDatesAreBoundedAsARequestsAre() {
+        LocalDate start = LocalDate.parse("2026-12-01");
+        BookingService.validateQuoteDates(start, start.plusYears(BookingService.MAX_PARKING_YEARS));
+        BookingService.validateQuoteDates(start, null);
+        BookingService.validateQuoteDates(null, null);
+        assertThatThrownBy(() -> BookingService.validateQuoteDates(start, start.plusYears(BookingService.MAX_PARKING_YEARS).plusDays(1)))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .extracting(e -> ((com.datagami.rentaxis.api.exception.BusinessRuleViolationException) e).getCode())
+                .isEqualTo("booking.rangeTooLong");
+        assertThatThrownBy(() -> BookingService.validateQuoteDates(start, LocalDate.MAX))
+                .extracting(e -> ((com.datagami.rentaxis.api.exception.BusinessRuleViolationException) e).getCode())
+                .isEqualTo("booking.rangeTooLong");
+        assertThatThrownBy(() -> BookingService.validateQuoteDates(start, start.minusDays(1)))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> BookingService.validateQuoteDates(null, start))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class);
+    }
 }

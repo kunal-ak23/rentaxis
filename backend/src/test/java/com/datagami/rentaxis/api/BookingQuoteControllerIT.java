@@ -177,4 +177,52 @@ class BookingQuoteControllerIT extends AbstractPostgresIT {
         // Staff of the tenant still can.
         assertThat(http.call(admin, HttpMethod.GET, path(far), null).getStatusCode().value()).isEqualTo(200);
     }
+    // ---- PR #468 review I1: the quote's dates are bounded before anything is priced
+
+    private String quoteFor(ParkingSpot spot, String start, String end) {
+        return "/api/v1/bookings/quote?resourceType=PARKING_SPOT&resourceId=" + spot.getId()
+                + "&start=" + start + "&end=" + end;
+    }
+
+    @Test
+    void aFarOffOrTooLongRangeIsRefused() {
+        for (User caller : List.of(admin, renterUser)) {
+            ResponseEntity<Map> far = http.call(caller, HttpMethod.GET, quoteFor(bay, "2026-12-01", "9999-12-31"), null);
+            assertThat(far.getStatusCode().value()).isEqualTo(400);
+            assertThat(far.getBody().get("code")).isEqualTo("booking.rangeTooLong");
+            ResponseEntity<Map> tooLong = http.call(caller, HttpMethod.GET, quoteFor(bay, "2026-12-01", "2028-12-02"), null);
+            assertThat(tooLong.getStatusCode().value()).isEqualTo(400);
+            assertThat(tooLong.getBody().get("code")).isEqualTo("booking.rangeTooLong");
+        }
+        assertThat(http.call(admin, HttpMethod.GET, quoteFor(bay, "2026-12-01", "2028-12-01"), null)
+                .getStatusCode().value()).as("exactly the cap").isEqualTo(200);
+    }
+
+    @Test
+    void anEndBeforeTheStartIsRefused() {
+        assertThat(http.call(admin, HttpMethod.GET, quoteFor(bay, "2026-12-10", "2026-12-01"), null)
+                .getStatusCode().value()).isEqualTo(400);
+    }
+
+    // ---- PR #468 review m8: who may book on behalf of a renter
+
+    private Map<String, Object> onBehalfBody() {
+        return Map.of("renterUserId", renterUser.getId().toString(),
+                "booking", Map.of("resourceType", "PARKING_SPOT", "resourceId", bay.getId().toString(),
+                        "unitId", fx.unit().getId().toString(),
+                        "preferredDate", today.plusDays(3).toString(), "preferredEndDate", today.plusDays(40).toString()));
+    }
+
+    @Test
+    void aRenterCannotBookOnBehalf() {
+        assertThat(http.call(renterUser, HttpMethod.POST, "/api/v1/bookings/on-behalf", onBehalfBody())
+                .getStatusCode().value()).isEqualTo(403);
+    }
+
+    @Test
+    void aManagerOfAnotherPropertyCannotBookOnBehalf() {
+        User pm = http.user(fx.tenantId(), com.datagami.rentaxis.domain.entity.enums.UserRole.PROPERTY_MANAGER);
+        assertThat(http.call(pm, HttpMethod.POST, "/api/v1/bookings/on-behalf", onBehalfBody())
+                .getStatusCode().value()).isEqualTo(404);
+    }
 }

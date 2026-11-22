@@ -54,8 +54,10 @@ renter sees the payable row in Payments.
 
 `PER_MONTH` quote, for a booking from `start` to `end` inclusive:
 
-1. Count the whole calendar months from `start`: step a month at a time while
-   `start + n months - 1 day <= end`.
+1. Count the whole calendar months from `start`: the largest `n` with
+   `start + n months - 1 day <= end`. It is worked out from the calendar-month
+   difference, not counted a month at a time (PR #468 review I1), so a far-off
+   end date costs nothing.
 2. The days left over are charged at `amount / days in the month they start
    in`, per day.
 3. Round the total to 2 places, half up.
@@ -89,6 +91,11 @@ Web and mobile estimate the fee on the device today (renter portal facilities
 page, `facilities_screen.dart`). They switch to a server quote,
 `GET /api/v1/bookings/quote`, so the month maths lives in one place.
 
+The quote endpoint bounds its dates before pricing (PR #468 review I1): an end
+date needs a start date and is not before it, and the range covers at most
+`MAX_PARKING_YEARS` (2) years, refused with `booking.rangeTooLong` as on a
+request. A date before today is not refused for a quote.
+
 ### 2. Income account
 
 New nullable column `income_account_id` on `parking_spots` and
@@ -101,6 +108,10 @@ At approval, the income account is chosen in this order:
 2. Parking: the `PARKING_INCOME` account of the property ("Additional Parking -
    {property}").
 3. Amenity: the `AMENITY_INCOME` account of the property (new role, below).
+4. Either: `OTHER_INCOME` of the property, while it has no parking or amenity
+   leaf mapped (PR #468 review m5). This is where every booking fee posted
+   before this change, so approval never fails for a missing parking or
+   amenity leaf while `OTHER_INCOME` is mapped.
 
 The chosen account id is stored on the charge (`PenaltyAssessment.incomeAccountId`,
 which already exists and which `approve` already honours).
@@ -161,6 +172,10 @@ For walk-in banquet or court bookings:
   bay not attached), then approves at once through the same approve path, so
   the same JV posts.
 - Web: a "New booking" button on `/dashboard/bookings`.
+- When the renter already has a pending request for the same slot, `create`
+  hands it back and that request is approved. Its fee, `fee_type` and
+  `fee_unit_amount` are taken again from the bay or amenity first, so it is
+  charged at the price staff were quoted (PR #468 review m6).
 
 ### 5. Cancel and release (unchanged rules, now written down)
 
@@ -221,6 +236,12 @@ changes:
     receivable was credited (ledger rule 3). Settle or replace the payment
     first. A row cancelled elsewhere stands like a write-off: no credit.
   - Written off: the release goes ahead with no credit, as the fee stands.
+- **Settled contract.** When a credit would post but the lease is `CLOSED`
+  or its settlement is finalised, the release is refused with
+  `booking.leaseSettled` (PR #468 review m2/m3): the settlement counted the
+  full fee. `ChequeService.reduceUnpaidBySystem` refuses a finalised
+  settlement too (`cheque.settlementFinalized`). A release with nothing to
+  credit goes ahead.
 - **Who.** Both the renter's release and the staff release credit
   automatically. No cash leaves: the credit sits on the renter's account
   until the existing refund or settlement flows use it.

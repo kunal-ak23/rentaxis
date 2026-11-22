@@ -318,12 +318,32 @@ public class BookingService {
             throw new BusinessRuleViolationException("The booking date cannot be before today.",
                     "booking.dateInPast", Map.of("today", today.format(DMY)));
         }
-        if (type == BookingResourceType.PARKING_SPOT && from != null && to != null
-                && to.isAfter(from.plusYears(MAX_PARKING_YEARS))) {
+        if (type == BookingResourceType.PARKING_SPOT) requireWithinMaxRange(from, to);
+    }
+
+    private static void requireWithinMaxRange(LocalDate from, LocalDate to) {
+        if (from != null && to != null && to.isAfter(from.plusYears(MAX_PARKING_YEARS))) {
             throw new BusinessRuleViolationException(
                     "A parking booking can cover at most " + MAX_PARKING_YEARS + " years.",
                     "booking.rangeTooLong", Map.of("years", MAX_PARKING_YEARS));
         }
+    }
+
+    /**
+     * PR #468 review I1: the dates of a fee quote ({@code GET /bookings/quote}) are bounded as a
+     * request's are, before anything is priced: an end needs a start and is not before it, and
+     * the range covers at most {@link #MAX_PARKING_YEARS} years ({@code booking.rangeTooLong}),
+     * whatever the resource. A date before today is not refused here: quoting it harms nothing,
+     * and the request itself is still refused ({@code booking.dateInPast}).
+     */
+    public static void validateQuoteDates(LocalDate from, LocalDate to) {
+        if (to != null && from == null) {
+            throw new BusinessRuleViolationException("An end date requires a start date");
+        }
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new BusinessRuleViolationException("The end date must be on or after the start date");
+        }
+        requireWithinMaxRange(from, to);
     }
 
     /**
@@ -612,7 +632,23 @@ public class BookingService {
                                          BookingCreateRequest req) {
         if (bookingFees != null) bookingFees.requireLiveLease(tenantId, unit.getId(), renterUserId);
         BookingRequest created = create(tenantId, renterUserId, unit, req);
+        // PR #468 review m6: create hands back the renter's own pending request for the same
+        // slot (a double submit), quoted when the renter asked. Staff approve at the price they
+        // were just quoted, so the fee and its snapshot are taken again from the resource now;
+        // for a request created just above this changes nothing.
+        requote(tenantId, created);
         return approve(tenantId, created.getId(), staffUserId, null);
+    }
+
+    private void requote(UUID tenantId, BookingRequest booking) {
+        if (booking.getParkingSpotId() != null) {
+            facilityService.findParkingSpot(tenantId, booking.getParkingSpotId())
+                    .ifPresent(spot -> BookingFeeService.applyQuote(spot, booking));
+        } else if (booking.getAmenityId() != null) {
+            facilityService.findAmenity(tenantId, booking.getAmenityId())
+                    .ifPresent(amenity -> BookingFeeService.applyQuote(amenity, booking));
+        }
+        bookingRepository.saveAndFlush(booking);
     }
 
     public BookingRequest reject(UUID tenantId, UUID id, UUID adminUserId, String adminNote) {

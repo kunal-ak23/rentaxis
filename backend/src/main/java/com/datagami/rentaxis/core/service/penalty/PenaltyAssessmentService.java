@@ -436,6 +436,12 @@ public class PenaltyAssessmentService {
         return repository.findById(id).map(PenaltyAssessment::getStatus).orElse(null);
     }
 
+    /** The lease the charge is raised on (null when the charge is not found). */
+    @Transactional(readOnly = true)
+    public Lease leaseOf(UUID id) {
+        return repository.findById(id).map(PenaltyAssessment::getLease).orElse(null);
+    }
+
     private PenaltyAssessmentDTO approve(UUID id, LocalDate date, boolean checkAccess, BigDecimal expectedAmount) {
         PenaltyAssessment a = lock(id);
         Lease lease = a.getLease();

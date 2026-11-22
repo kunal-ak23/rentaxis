@@ -364,6 +364,8 @@ public class BookingController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime to,
             @RequestParam(required = false) UUID unitId,
             @RequestParam(required = false) UUID renterUserId) {
+        // PR #468 review I1: bounded before anything is looked up or priced.
+        BookingService.validateQuoteDates(start, end);
         UUID tenantId = tenantId();
         boolean parking = resourceType == BookingResourceType.PARKING_SPOT;
         ParkingSpot spot = null;

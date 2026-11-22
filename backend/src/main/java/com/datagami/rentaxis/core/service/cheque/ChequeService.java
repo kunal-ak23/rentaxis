@@ -1013,6 +1013,12 @@ public class ChequeService {
         Cheque cheque = lock(chequeId);
         Lease lease = requireCollectable(cheque.getLease());
         requireStatus(cheque, "reduce", ChequeStatus.REGISTERED);
+        // PR #468 review m2: a finalised settlement counted this row at its full amount;
+        // lowering it (and the credit behind it) would move the contract off that figure.
+        if (closure.isSettlementFinalized(lease.getId())) {
+            throw new BusinessRuleViolationException("The lease settlement is finalised; " + label(cheque)
+                    + " can no longer be lowered.", "cheque.settlementFinalized", java.util.Map.of());
+        }
         if (by == null || by.signum() <= 0 || by.compareTo(cheque.getAmount()) > 0) {
             throw new BusinessRuleViolationException(label(cheque) + " can be lowered by more than zero and at most "
                     + cheque.getAmount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
@@ -1026,7 +1032,8 @@ public class ChequeService {
         }
         manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_ROW, date);
         // No requireSettlementUndisturbed: the reversal and the new registration together
-        // leave the receivable as the caller's credit left it (the row only shrinks).
+        // leave the receivable as the caller's credit left it (the row only shrinks). A
+        // finalised settlement is refused outright above.
         reversePdr(cheque, date, reason);
         BigDecimal was = cheque.getAmount();
         cheque.setAmount(left);

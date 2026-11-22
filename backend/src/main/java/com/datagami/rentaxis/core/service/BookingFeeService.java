@@ -17,7 +17,9 @@ import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus;
 import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.LeaseSettlementRepository;
 import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
 import org.springframework.stereotype.Service;
@@ -61,16 +63,18 @@ public class BookingFeeService {
     private final PropertyAmenityRepository amenities;
     private final AccountRepository accounts;
     private final AccountResolver accountResolver;
+    private final LeaseSettlementRepository settlements;
 
     public BookingFeeService(PenaltyAssessmentService charges, LeaseRepository leases, ParkingSpotRepository spots,
                              PropertyAmenityRepository amenities, AccountRepository accounts,
-                             AccountResolver accountResolver) {
+                             AccountResolver accountResolver, LeaseSettlementRepository settlements) {
         this.charges = charges;
         this.leases = leases;
         this.spots = spots;
         this.amenities = amenities;
         this.accounts = accounts;
         this.accountResolver = accountResolver;
+        this.settlements = settlements;
     }
 
     /** Validates a fee setting; PER_HOUR is for amenities only, PER_MONTH for parking spots only. */
@@ -155,8 +159,7 @@ public class BookingFeeService {
         LocalDate last = end != null ? end : start;
         if ("PER_MONTH".equals(type)) {
             if (start == null) return amount.setScale(2, RoundingMode.HALF_UP);
-            int n = 0;
-            while (!start.plusMonths(n + 1).minusDays(1).isAfter(last)) n++;
+            long n = wholeMonths(start, last);
             LocalDate rest = start.plusMonths(n);
             BigDecimal total = amount.multiply(BigDecimal.valueOf(n));
             if (!rest.isAfter(last)) {
@@ -179,12 +182,35 @@ public class BookingFeeService {
     }
 
     /**
+     * PR #468 review I1: the whole months from {@code start} that end on or before {@code last}.
+     * Whole month k ends the day before {@code start.plusMonths(k)} (so a 31 Jan start has its
+     * first month end on 27 Feb, as before). Worked out from the calendar-month difference and
+     * nudged by a step or two, never counted one month at a time, so a far-off end date costs
+     * nothing. Zero when {@code last} is before the first whole month ends.
+     */
+    static long wholeMonths(LocalDate start, LocalDate last) {
+        if (last.isBefore(start)) return 0;
+        long n = Math.max(0, ChronoUnit.MONTHS.between(start, last));
+        // plusMonths clamps to the month end, so MONTHS.between can be a month off either way.
+        while (n > 0 && monthEnd(start, n).isAfter(last)) n--;
+        while (!monthEnd(start, n + 1).isAfter(last)) n++;
+        return n;
+    }
+
+    /** The last day of whole month {@code k} counted from {@code start}. */
+    private static LocalDate monthEnd(LocalDate start, long k) {
+        return start.plusMonths(k).minusDays(1);
+    }
+
+    /**
      * Spec 2026-11-19 §2: the income account a booking's fee credits. The bay's or
      * amenity's own leaf when it names one (checked again here: it may have been
      * deactivated or moved since it was picked, and then the approval is refused with
      * {@link IncomeLeafRule#CODE}); otherwise the property's PARKING_INCOME for a bay,
-     * and for an amenity the property's AMENITY_INCOME, falling back to OTHER_INCOME
-     * while the property has no amenity leaf yet ("Generate missing accounts" not run).
+     * and for an amenity the property's AMENITY_INCOME. Either falls back to OTHER_INCOME
+     * while the property has no such leaf yet ("Generate missing accounts" not run), as
+     * every booking fee posted before this feature (PR #468 review m5): approval never
+     * fails for a missing parking or amenity leaf while OTHER_INCOME is mapped.
      *
      * <p>{@code resolveOrNull}, never {@code resolve} inside a try/catch: a resolver
      * exception would mark the approval's transaction rollback-only (see
@@ -205,11 +231,10 @@ public class BookingFeeService {
             IncomeLeafRule.require(account, propertyId);
             return account.getId();
         }
-        if (b.getResourceType() == BookingResourceType.PARKING_SPOT) {
-            return accountResolver.resolve(AccountRole.PARKING_INCOME, propertyId).getId();
-        }
-        Account amenityIncome = accountResolver.resolveOrNull(AccountRole.AMENITY_INCOME, propertyId);
-        if (amenityIncome != null) return amenityIncome.getId();
+        AccountRole role = b.getResourceType() == BookingResourceType.PARKING_SPOT
+                ? AccountRole.PARKING_INCOME : AccountRole.AMENITY_INCOME;
+        Account leaf = accountResolver.resolveOrNull(role, propertyId);
+        if (leaf != null) return leaf.getId();
         return accountResolver.resolve(AccountRole.OTHER_INCOME, propertyId).getId();
     }
 
@@ -336,6 +361,7 @@ public class BookingFeeService {
         BigDecimal credit = creditForRelease(b.getFeeType(), b.getFeeUnitAmount(), b.getFeeAmount(),
                 b.getPreferredDate(), b.getPreferredEndDate(), on);
         if (credit.signum() <= 0) return;
+        requireLeaseNotSettled(charges.leaseOf(b.getChargeId()));
         com.datagami.rentaxis.domain.entity.enums.ChequeStatus row = charges.collectionStatusOf(b.getChargeId());
         if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED
                 || row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING) {
@@ -350,6 +376,24 @@ public class BookingFeeService {
                     Map.of());
         }
         charges.creditPart(b.getChargeId(), credit, on, "Parking released early on " + on + ": unused days credited");
+    }
+
+    /**
+     * PR #468 review m2/m3: no early-release credit once the renter's contract is CLOSED or
+     * its settlement finalised. The settlement counted the fee in full; a credit now would
+     * leave a renter credit (or a lowered row) behind a figure that was paid out on, with no
+     * door left to refund it. Refused with {@code booking.leaseSettled}, so the office settles
+     * the difference by hand rather than the bay being released with a silent credit.
+     */
+    private void requireLeaseNotSettled(Lease lease) {
+        if (lease == null) return;
+        boolean finalised = settlements.findByLeaseId(lease.getId())
+                .map(s -> s.getStatus() == SettlementStatus.FINALIZED).orElse(false);
+        if (lease.getStatus() == LeaseStatus.CLOSED || finalised) {
+            throw new BusinessRuleViolationException("The renter's contract is settled, so the unused part of the"
+                    + " fee cannot be credited on release. Adjust it with the settlement.", "booking.leaseSettled",
+                    Map.of());
+        }
     }
 
     /** Whether the slot has not started yet. */
