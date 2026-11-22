@@ -644,6 +644,49 @@ class ChequeControllerIT extends AbstractPostgresIT {
                 Map.of("chequeIds", tooMany))).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
+    /** An absurd list is rejected by validation, before the service dedupes or loads anything. */
+    @Test
+    void aCombinedReceiptRejectsAnAbsurdlyLongListBeforeProcessing() {
+        List<UUID> huge = java.util.stream.IntStream.range(0, 501).mapToObj(i -> UUID.randomUUID()).toList();
+
+        ResponseEntity<Map> res = map(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", huge));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(String.valueOf(res.getBody().get("message"))).contains("Validation failed").contains("chequeIds");
+    }
+
+    /** A row the previous owner banked is not ours to receipt: it refuses the whole request. */
+    @Test
+    void aCombinedReceiptRefusesARowTheFormerOwnerBanked() {
+        UUID ours = register.get(0).getId();
+        LocalDate on = reread(ours).getChequeDate();
+        chequeService.deposit(ours, ChequeActionRequest.on(on));
+        chequeService.clear(ours, ChequeActionRequest.on(on.plusDays(2)));
+        UUID theirs = register.get(1).getId();
+        tx.executeWithoutResult(s -> chequeService.markSettledBeforeAcquisition(
+                chequeRepo.findById(theirs).orElseThrow(), on.minusDays(20), on.minusDays(15)));
+
+        assertThat(status(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of(ours, theirs)))).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(status(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of(ours)))).isEqualTo(HttpStatus.OK);
+    }
+
+    /** Another organisation's renter cannot reach our cleared rows through the combined endpoint. */
+    @Test
+    void aRenterOfAnotherOrganisationCannotCombineOurRows() {
+        List<UUID> ids = clearFirstTwo();
+        var http = new com.datagami.rentaxis.testsupport.CrossTenantHttp(
+                port, orgRepo, userRepo, accountService, propertyAccountService, propertyService);
+        UUID tenantB = http.tenant("Rcpt-XT-");
+        User outsider = http.user(tenantB, UserRole.RENTER);
+        TenantContextHolder.clear();
+
+        assertThat(http.call(outsider, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", ids)).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
     /** Clear the first two rows of the fixture lease, each on its own date; returns their ids. */
     private List<UUID> clearFirstTwo() {
         List<UUID> ids = List.of(register.get(0).getId(), register.get(1).getId());

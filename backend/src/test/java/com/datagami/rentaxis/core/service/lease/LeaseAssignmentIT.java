@@ -423,6 +423,27 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
                 .isInstanceOf(NotFoundException.class);
     }
 
+    /**
+     * The renter who cleared rows before the assignment keeps their own receipts
+     * afterwards; only mixing in the new owner's rows is refused.
+     */
+    @Test
+    void aRenterCanStillCombineTheirOwnRowsAfterAnAssignment() {
+        UUID leaseId = lease(true);
+        Renter a = fixtures.renter();
+        Renter b = fixtures.createRenter("Estate");
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Death of the tenant", null));
+        assignments.post(leaseId, draft.id(), null);
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        Cheque october = chequeOn(leaseId, RENT_1);
+        Cheque january = chequeOn(leaseId, RENT_2);
+
+        asRenter(a);
+        var receipt = tx.execute(s -> receipts.combined(List.of(october.getId(), january.getId())));
+
+        assertThat(receipt.pdf()).isNotEmpty();
+    }
+
     private void asRenter(Renter r) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 r.getUserId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));
