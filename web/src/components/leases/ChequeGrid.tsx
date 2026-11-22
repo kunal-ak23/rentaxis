@@ -369,12 +369,14 @@ export default function ChequeGrid({
         setReceiptYear(value);
         setReceiptPicked(new Set(value ? idsInYear(receiptRows, Number(value)) : []));
     };
-    const togglePicked = (id: string) => setReceiptPicked(prev => {
+    const togglePicked = (id: string) => {
         setReceiptYear("");
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id); else next.add(id);
-        return next;
-    });
+        setReceiptPicked(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
     const combine = async () => {
         if (!onCombinedReceipt || pickedIds.length === 0) return;
         setCombining(true);
