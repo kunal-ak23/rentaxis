@@ -361,7 +361,6 @@ public class BookingFeeService {
         BigDecimal credit = creditForRelease(b.getFeeType(), b.getFeeUnitAmount(), b.getFeeAmount(),
                 b.getPreferredDate(), b.getPreferredEndDate(), on);
         if (credit.signum() <= 0) return;
-        requireLeaseNotSettled(charges.leaseOf(b.getChargeId()));
         com.datagami.rentaxis.domain.entity.enums.ChequeStatus row = charges.collectionStatusOf(b.getChargeId());
         if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED
                 || row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING) {
@@ -375,6 +374,7 @@ public class BookingFeeService {
                     + "; settle or replace it before the booking is released.", "booking.feeRowNotSettled",
                     Map.of());
         }
+        requireLeaseNotSettled(charges.leaseOf(b.getChargeId()));
         charges.creditPart(b.getChargeId(), credit, on, "Parking released early on " + on + ": unused days credited");
     }
 

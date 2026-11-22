@@ -222,6 +222,21 @@ class BookingReleaseGuardsIT extends AbstractPostgresIT {
                 .isEqualTo("APPROVED");
     }
 
+    /** Re-review N1: on a CLOSED contract, a release that would credit nothing (row cancelled) still goes ahead. */
+    @Test
+    void releaseOnAClosedLeaseWithACancelledRowGoesAheadWithoutCredit() {
+        BookingRequest b = approvedAMonthAgo("P-95");
+        UUID row = collectionRowOf(b.getChargeId());
+        assertThat(jdbc.update("update cheques set status = 'CANCELLED' where id = ?", row)).isOne();
+        assertThat(jdbc.update("update leases set status = 'CLOSED' where id = ?", leaseId)).isOne();
+
+        release(b);
+
+        assertThat(journalsOf(b.getChargeId())).hasSize(1);
+        assertThat(jdbc.queryForObject("select status from booking_requests where id = ?", String.class, b.getId()))
+                .isNotEqualTo("APPROVED");
+    }
+
     /** Review m2/m3: a finalised settlement refuses the credit, and the row is not lowered behind it. */
     @Test
     void releaseAfterTheSettlementIsFinalisedIsRefused() {
