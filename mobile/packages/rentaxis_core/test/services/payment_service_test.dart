@@ -94,6 +94,25 @@ void main() {
     });
   });
 
+  group('PaymentService.markPaymentFailed', () {
+    test('bounces through the cheque register endpoint', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
+      final adapter = _StubAdapter(responseBody: {'id': 'c1', 'status': 'BOUNCED'});
+      dio.httpClientAdapter = adapter;
+
+      final res = await PaymentService(dio).markPaymentFailed(
+        'c1',
+        failureReason: 'BOUNCE',
+        notes: 'x',
+      );
+
+      expect(adapter.lastRequest?.method, 'PUT');
+      expect(adapter.lastRequest?.path, '/v1/cheques/c1/bounce');
+      expect(adapter.lastRequest?.data, {'failureReason': 'BOUNCE', 'notes': 'x'});
+      expect(res['status'], 'BOUNCED');
+    });
+  });
+
   group('PaymentService.getPaymentsForLease', () {
     test('fetches the unpaginated lease-scoped endpoint', () async {
       final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));

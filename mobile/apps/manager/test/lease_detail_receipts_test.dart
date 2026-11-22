@@ -159,7 +159,7 @@ void main() {
       isTrue,
     );
     expect(find.textContaining('CHQ 1'), findsOneWidget);
-    expect(find.textContaining('CHQ 2'), findsOneWidget);
+    expect(find.textContaining('CHQ 4'), findsOneWidget);
   });
 
   testWidgets('ticking cleared rows and tapping download calls combined', (
@@ -235,15 +235,15 @@ void main() {
         _row('c1', 1, 'REGISTERED'),
       ],
     );
-    // Labels carry position + date: position 1 = seq 1, 2 = seq 3, 3 = deposit.
+    // Labels carry seqNo + date; order is seq 1, seq 3, then the deposit (seq 2).
     double top(int pos, String date) => tester
         .getTopLeft(
           find.text('CHQ $pos · ${Formatters.date(date, ar: false)}'),
         )
         .dy;
-    expect(top(1, '2026-01-01'), lessThan(top(2, '2026-03-01')));
+    expect(top(1, '2026-01-01'), lessThan(top(3, '2026-03-01')));
     // The deposit row carries seq 2 yet sorts after seq 3.
-    expect(top(2, '2026-03-01'), lessThan(top(3, '2026-02-01')));
+    expect(top(3, '2026-03-01'), lessThan(top(2, '2026-02-01')));
   });
 
   testWidgets('ticks are pruned after reload', (tester) async {
@@ -312,5 +312,31 @@ void main() {
       find.text('At most 100 receipts per file. Untick some to continue.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('dead rows are dropped, rows numbered by seqNo, count is live', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      calls: [],
+      cheques: [
+        {..._row('c2', 2, 'CLEARED', clearedAt: '2026-02-05T10:00:00Z'),
+          'payeeBank': 'Emirates NBD'},
+        _row('c2old', 2, 'REPLACED'),
+        _row('c3x', 3, 'CANCELLED'),
+        _row('c4d', 4, 'DRAFT'),
+        _row('c5', 5, 'REGISTERED'),
+      ],
+    );
+    // Only the live rows render, numbered by seqNo (2 and 5, not 1 and 2).
+    expect(find.textContaining('CHQ 2'), findsOneWidget);
+    expect(find.textContaining('CHQ 5'), findsOneWidget);
+    expect(find.textContaining('CHQ 3'), findsNothing);
+    expect(find.textContaining('CHQ 4'), findsNothing);
+    expect(find.textContaining('Held'), findsOneWidget);
+    expect(find.text('1 of 2 cleared'), findsOneWidget);
+    // The cleared line carries the bank (`payeeBank` on the cheque row).
+    expect(find.text('Cleared · Emirates NBD'), findsOneWidget);
   });
 }

@@ -29,6 +29,10 @@ Color _chequeStatusColor(LegacyMiftahColors m, String status) {
   }
 }
 
+/// Instalment number shown for a schedule row: its `seqNo`, else list position.
+int chequeNumber(Map<String, dynamic> row, int index) =>
+    (row['seqNo'] as num?)?.toInt() ?? index + 1;
+
 /// Text style helper — Arabic uses Noto Naskh instead of Cinzel/Josefin
 /// Sans, and never carries the EN tracked-uppercase letterSpacing (breaks
 /// glyph joining). See arabic-brief.
@@ -138,9 +142,25 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       if (!mounted) return;
       // Order by sequence number; deposit rows (if flagged) last. The
       // timeline reads `dueDate`, the cheques endpoint calls it `chequeDate`.
+      // Dead rows (replaced/cancelled/draft/returned/transferred) are not
+      // part of the live schedule: they would read as "Held" and skew counts.
+      const deadStatuses = {
+        'DRAFT',
+        'CANCELLED',
+        'REPLACED',
+        'RETURNED',
+        'TRANSFERRED',
+      };
       final payments = <dynamic>[
         for (final r in results[1] as List<dynamic>)
-          r is Map ? <String, dynamic>{...r, 'dueDate': r['chequeDate']} : r,
+          if (!(r is Map && deadStatuses.contains(r['status'])))
+            r is Map
+                ? <String, dynamic>{
+                    ...r,
+                    'dueDate': r['chequeDate'],
+                    'bankName': r['payeeBank'],
+                  }
+                : r,
       ];
       int deposit(dynamic p) =>
           p is Map && '${p['rowKind'] ?? ''}'.toUpperCase().contains('DEPOSIT')
@@ -1078,7 +1098,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                         final result = await showMarkChequeFailedDialog(
                           context,
                           paymentId: paymentId,
-                          installmentNumber: index + 1,
+                          installmentNumber: chequeNumber(payment, index),
                           amount: amount,
                           paymentService: ref.read(_paymentServiceProvider),
                         );
@@ -1511,7 +1531,7 @@ class _ChequeTimelineRow extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      l.chequeLabel(index + 1, dueDate),
+                      l.chequeLabel(chequeNumber(payment, index), dueDate),
                       style: _body(l.ar, size: 13.5, color: m.textPrimary),
                     ),
                     Text(
@@ -1537,7 +1557,7 @@ class _ChequeTimelineRow extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      l.chequeLabel(index + 1, dueDate),
+                      l.chequeLabel(chequeNumber(payment, index), dueDate),
                       style: _body(
                         l.ar,
                         size: 13.5,
