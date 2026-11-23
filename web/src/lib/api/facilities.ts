@@ -13,6 +13,7 @@ import type {
   DecisionRequest,
   MyFacilitiesDTO,
   BookingResourceType,
+  BookingQuoteDTO,
   BookingRequestStatus,
 } from '@/types/facility'
 
@@ -323,4 +324,33 @@ export function parseSpotNumbers(input: string): string[] {
     out.push(entry)
   }
   return Array.from(new Set(out))
+}
+
+/** The server's fee quote for a bay or amenity and dates: the month/day maths and VAT live there only. */
+export async function fetchBookingQuote(params: {
+  resourceType: BookingResourceType
+  resourceId: string
+  start?: string
+  end?: string
+  from?: string
+  to?: string
+  /** Staff quoting for a renter: the VAT then follows that renter's lease on the unit. */
+  unitId?: string
+  renterUserId?: string
+}): Promise<BookingQuoteDTO> {
+  const q = new URLSearchParams({ resourceType: params.resourceType, resourceId: params.resourceId })
+  for (const k of ['start', 'end', 'from', 'to', 'unitId', 'renterUserId'] as const) {
+    if (params[k]) q.set(k, params[k]!)
+  }
+  return handle(await fetch(`${BOOKINGS}/quote?${q.toString()}`))
+}
+
+/** Staff book for a renter: created and approved at once, the fee posted. 201 with the approved booking. */
+export async function createBookingOnBehalf(body: {
+  booking: BookingCreateRequest
+  renterUserId: string
+}): Promise<BookingRequestDTO> {
+  return handle(
+    await fetch(`${BOOKINGS}/on-behalf`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
+  )
 }

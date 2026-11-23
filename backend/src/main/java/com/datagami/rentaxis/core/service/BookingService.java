@@ -192,7 +192,7 @@ public class BookingService {
             // propertyId always derives from the resource, never from the client.
             booking.setPropertyId(amenity.getPropertyId());
             // F14-50: the fee the renter was shown, fixed now.
-            booking.setFeeAmount(BookingFeeService.quote(amenity, booking));
+            BookingFeeService.applyQuote(amenity, booking);
         } else {
             // Locked first load of the bay: an attach or approval racing this request
             // waits for it, and this one sees theirs once they commit.
@@ -201,6 +201,7 @@ public class BookingService {
                 throw new NotFoundException("Parking spot not found");
             }
             requireNotAttached(spot);
+            requireEndDateForPeriodicFee(spot, req);
             Optional<BookingRequest> existing =
                     bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
                             tenantId, renterUserId, spot.getId(), BookingRequestStatus.PENDING);
@@ -227,10 +228,27 @@ public class BookingService {
             }
             booking.setParkingSpotId(spot.getId());
             booking.setPropertyId(spot.getPropertyId());
-            booking.setFeeAmount(BookingFeeService.quote(spot, booking));
+            BookingFeeService.applyQuote(spot, booking);
         }
 
         return saveNewBooking(tenantId, booking);
+    }
+
+    /**
+     * Final review I1 (spec 2026-11-19 §1): a bay charged by the day or the month is quoted
+     * for its dates, so the renter (or staff booking for them) must choose the end date.
+     * Without one the request would be filled in to the contract end and charged for
+     * months, while the quote shown was for a single day. Refused here, so no undated
+     * periodic request exists for approval to re-quote. FREE and PER_BOOKING bays may
+     * still be requested without an end date.
+     */
+    private static void requireEndDateForPeriodicFee(ParkingSpot spot, BookingCreateRequest req) {
+        if (req.preferredEndDate() == null
+                && ("PER_DAY".equals(spot.getFeeType()) || "PER_MONTH".equals(spot.getFeeType()))) {
+            throw new BusinessRuleViolationException(
+                    "Choose an end date: this parking bay is charged by the day or the month.",
+                    "booking.endDateRequired", Map.of());
+        }
     }
 
     /** Changeset 175: a bay allocated to a unit is never bookable — refused here, not only hidden. */
@@ -300,12 +318,32 @@ public class BookingService {
             throw new BusinessRuleViolationException("The booking date cannot be before today.",
                     "booking.dateInPast", Map.of("today", today.format(DMY)));
         }
-        if (type == BookingResourceType.PARKING_SPOT && from != null && to != null
-                && to.isAfter(from.plusYears(MAX_PARKING_YEARS))) {
+        if (type == BookingResourceType.PARKING_SPOT) requireWithinMaxRange(from, to);
+    }
+
+    private static void requireWithinMaxRange(LocalDate from, LocalDate to) {
+        if (from != null && to != null && to.isAfter(from.plusYears(MAX_PARKING_YEARS))) {
             throw new BusinessRuleViolationException(
                     "A parking booking can cover at most " + MAX_PARKING_YEARS + " years.",
                     "booking.rangeTooLong", Map.of("years", MAX_PARKING_YEARS));
         }
+    }
+
+    /**
+     * PR #468 review I1: the dates of a fee quote ({@code GET /bookings/quote}) are bounded as a
+     * request's are, before anything is priced: an end needs a start and is not before it, and
+     * the range covers at most {@link #MAX_PARKING_YEARS} years ({@code booking.rangeTooLong}),
+     * whatever the resource. A date before today is not refused here: quoting it harms nothing,
+     * and the request itself is still refused ({@code booking.dateInPast}).
+     */
+    public static void validateQuoteDates(LocalDate from, LocalDate to) {
+        if (to != null && from == null) {
+            throw new BusinessRuleViolationException("An end date requires a start date");
+        }
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new BusinessRuleViolationException("The end date must be on or after the start date");
+        }
+        requireWithinMaxRange(from, to);
     }
 
     /**
@@ -534,12 +572,15 @@ public class BookingService {
         requirePending(booking);
         // Changeset 175: an undated parking request left from before runs from the day
         // it is approved, open-ended (see create).
+        boolean datesFilledIn = false;
         if (booking.getResourceType() == BookingResourceType.PARKING_SPOT && booking.getPreferredDate() == null) {
             booking.setPreferredDate(LocalDate.now(clock.withZone(DUBAI)));
+            datesFilledIn = true;
         }
         if (booking.getResourceType() == BookingResourceType.PARKING_SPOT && booking.getPreferredEndDate() == null) {
             booking.setPreferredEndDate(contractEnd(tenantId, booking.getRenterUserId(), booking.getUnitId(),
                     booking.getPreferredDate()));
+            datesFilledIn = true;
         }
         // Break-it R3 ops3 F8: the request's dates are checked again — it may have sat
         // pending past its date, or the contract may have changed since.
@@ -555,6 +596,10 @@ public class BookingService {
                 throw new SlotConflictException("Parking spot is already booked for those dates", null,
                         "booking.spotTaken");
             }
+            // Booking journal vouchers (review focus 2): the request's quote was made
+            // without the dates filled in above, so it is quoted again for them. A dated
+            // request keeps the fee the renter was shown, even if the bay's fee changed.
+            if (datesFilledIn) BookingFeeService.applyQuote(spot, booking);
         }
         if (booking.getResourceType() == BookingResourceType.AMENITY) {
             // Break-it R3 ops3 F7: under the amenity's row lock, so two approvals for the
@@ -575,6 +620,35 @@ public class BookingService {
         // F14-50: the fee becomes a charge on the renter's lease, posted with the approval.
         if (bookingFees != null) bookingFees.chargeOnApproval(booking, resourceLabel(booking), LocalDate.now(clock.withZone(DUBAI)));
         return decide(booking, BookingRequestStatus.APPROVED, adminUserId, adminNote);
+    }
+
+    /**
+     * Staff book on behalf of a renter (spec 2026-11-19 §4): the booking is created and approved
+     * in one transaction, so the fee posts at once. The renter must hold a live lease on the unit
+     * (checked before anything is created: {@code booking.noLease}); a taken bay or a refused
+     * approval rolls the whole thing back.
+     */
+    public BookingRequest createOnBehalf(UUID tenantId, UUID staffUserId, UUID renterUserId, Unit unit,
+                                         BookingCreateRequest req) {
+        if (bookingFees != null) bookingFees.requireLiveLease(tenantId, unit.getId(), renterUserId);
+        BookingRequest created = create(tenantId, renterUserId, unit, req);
+        // PR #468 review m6: create hands back the renter's own pending request for the same
+        // slot (a double submit), quoted when the renter asked. Staff approve at the price they
+        // were just quoted, so the fee and its snapshot are taken again from the resource now;
+        // for a request created just above this changes nothing.
+        requote(tenantId, created);
+        return approve(tenantId, created.getId(), staffUserId, null);
+    }
+
+    private void requote(UUID tenantId, BookingRequest booking) {
+        if (booking.getParkingSpotId() != null) {
+            facilityService.findParkingSpot(tenantId, booking.getParkingSpotId())
+                    .ifPresent(spot -> BookingFeeService.applyQuote(spot, booking));
+        } else if (booking.getAmenityId() != null) {
+            facilityService.findAmenity(tenantId, booking.getAmenityId())
+                    .ifPresent(amenity -> BookingFeeService.applyQuote(amenity, booking));
+        }
+        bookingRepository.saveAndFlush(booking);
     }
 
     public BookingRequest reject(UUID tenantId, UUID id, UUID adminUserId, String adminNote) {
@@ -616,19 +690,29 @@ public class BookingService {
      * has not started, with a reason. Its fee is reversed; when the renter already paid
      * it, the payment stays on their account as a credit (a credit note), so every money
      * movement is the office's. A pending request is rejected, not cancelled.
+     *
+     * <p>Spec 2026-11-19 §6: an approved parking booking too, while its start date is after
+     * today (Dubai); on or after its start date staff release it instead, which credits the
+     * unused days.</p>
      */
     public BookingRequest cancelByStaff(UUID tenantId, UUID id, UUID staffUserId, String reason) {
         BookingRequest booking = getForUpdate(tenantId, id);
-        if (booking.getStatus() != BookingRequestStatus.APPROVED
-                || booking.getResourceType() != BookingResourceType.AMENITY) {
-            throw new BusinessRuleViolationException("Only an approved amenity booking can be cancelled by the office;"
-                    + " reject a pending request, release a parking booking.", "booking.notCancellable", java.util.Map.of());
+        if (booking.getStatus() != BookingRequestStatus.APPROVED) {
+            throw new BusinessRuleViolationException("Only an approved booking can be cancelled by the office, and a"
+                    + " parking booking only before its start date; reject a pending request.", "booking.notCancellable",
+                    java.util.Map.of());
         }
         if (reason == null || reason.isBlank()) {
             throw new BusinessRuleViolationException("Give a reason for cancelling the booking.",
                     "booking.cancelReason", java.util.Map.of());
         }
-        if (!BookingFeeService.beforeSlot(booking, java.time.LocalDateTime.now(clock.withZone(DUBAI)))) {
+        if (booking.getResourceType() == BookingResourceType.PARKING_SPOT) {
+            LocalDate start = booking.getPreferredDate();
+            if (start == null || !start.isAfter(LocalDate.now(clock.withZone(DUBAI)))) {
+                throw new BusinessRuleViolationException("The parking booking has started; release it instead of"
+                        + " cancelling it.", "booking.slotStarted", java.util.Map.of());
+            }
+        } else if (!BookingFeeService.beforeSlot(booking, java.time.LocalDateTime.now(clock.withZone(DUBAI)))) {
             throw new BusinessRuleViolationException("The booking's slot has started; it can no longer be cancelled.",
                     "booking.slotStarted", java.util.Map.of());
         }
@@ -673,7 +757,7 @@ public class BookingService {
         }
         if (b.getParkingSpotId() != null) {
             return facilityService.findParkingSpot(b.getTenantId(), b.getParkingSpotId())
-                    .map(sp -> "parking " + sp.getSpotNumber()).orElse("booking");
+                    .map(sp -> "Parking " + sp.getSpotNumber()).orElse("booking");
         }
         return "booking";
     }
@@ -690,6 +774,17 @@ public class BookingService {
         if (booking.getStatus() != BookingRequestStatus.APPROVED) {
             throw new BusinessRuleViolationException("Only approved bookings can be released");
         }
+        LocalDate today = LocalDate.now(clock.withZone(DUBAI));
+        // Spec 2026-11-19 §5: before its start date a parking booking is cancelled, not
+        // released — by the office (staff cancel), so a paid fee is never credited back by
+        // the renter alone.
+        if (booking.getPreferredDate() != null && today.isBefore(booking.getPreferredDate())) {
+            throw new BusinessRuleViolationException("This parking booking has not started yet, so it cannot be"
+                    + " released. Ask the management office to cancel it.", "booking.releaseBeforeStart", Map.of());
+        }
+        // Spec 2026-11-19 §6: the unused days of a PER_DAY / PER_MONTH fee are credited, the
+        // release day counted as used. A payment in flight refuses the release (booking.feeInFlight).
+        if (bookingFees != null) bookingFees.creditOnRelease(booking, today);
         booking.setStatus(BookingRequestStatus.RELEASED);
         booking.setDecidedByUserId(actorUserId);
         booking.setDecidedAt(Instant.now());

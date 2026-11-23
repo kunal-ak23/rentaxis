@@ -94,4 +94,15 @@ public class BookingRequest extends BaseTenantEntity {
     /** F14-50: the BOOKING_FEE charge raised on approval. */
     @Column(name = "charge_id")
     private UUID chargeId;
+
+    /**
+     * Spec 2026-11-19 §6: the fee type and unit amount the fee was quoted on, so an early
+     * release credits the unused part at the price charged, not the bay's price today.
+     * Null on bookings made before the snapshot existed (their release credits nothing).
+     */
+    @Column(name = "fee_type", length = 16)
+    private String feeType;
+
+    @Column(name = "fee_unit_amount", precision = 14, scale = 2)
+    private java.math.BigDecimal feeUnitAmount;
 }

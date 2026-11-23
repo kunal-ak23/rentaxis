@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { fetchAmenities, createAmenity, updateAmenity, deactivateAmenity, ApiError } from "@/lib/api/facilities";
 import { NumberInput } from "@/components/ui/NumberInput";
+import AccountPicker from "@/components/finance/AccountPicker";
 import type { AmenityDTO, BookingFeeType } from "@/types/facility";
 
 export type BuildingOption = { id: string; nameEn: string; nameAr?: string | null };
@@ -20,7 +21,9 @@ interface AmenitiesTabProps {
 
 const PAGE_SIZE = 10;
 const EMPTY_FORM = { nameEn: "", nameAr: "", description: "", bookable: true, active: true, buildingIds: [] as string[],
-    feeType: "FREE" as BookingFeeType, feeAmount: 0 };
+    feeType: "FREE" as BookingFeeType, feeAmount: 0,
+    // Booking fees credit this income account; null = the property default. `incomeTouched` makes an edit send it.
+    incomeAccountId: null as string | null, incomeTouched: false };
 
 /** Locale tag for toLocaleDateString — mirrors bookings/page.tsx's ar-AE/en-GB split. */
 function dateLocale(locale: string): string {
@@ -77,6 +80,8 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
             buildingIds: a.buildingIds,
             feeType: a.feeType ?? "FREE",
             feeAmount: a.feeAmount ?? 0,
+            incomeAccountId: a.incomeAccountId ?? null,
+            incomeTouched: false,
         });
         setFormError(null);
         setShowForm(true);
@@ -110,6 +115,7 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                     buildingIds: form.buildingIds,
                     feeType: form.feeType,
                     feeAmount: form.feeType === "FREE" ? null : form.feeAmount,
+                    ...(form.incomeTouched ? (form.incomeAccountId ? { incomeAccountId: form.incomeAccountId } : { clearIncomeAccount: true }) : {}),
                 });
             } else {
                 await createAmenity({
@@ -121,6 +127,7 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                     buildingIds: form.buildingIds,
                     feeType: form.feeType,
                     feeAmount: form.feeType === "FREE" ? null : form.feeAmount,
+                    ...(form.incomeAccountId ? { incomeAccountId: form.incomeAccountId } : {}),
                 });
             }
             setShowForm(false);
@@ -331,7 +338,7 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                                         data-testid="amenity-fee-type"
                                         onChange={e => setForm({ ...form, feeType: e.target.value as BookingFeeType })}
                                     >
-                                        {(["FREE", "PER_BOOKING", "PER_HOUR"] as BookingFeeType[]).map(f => (
+                                        {(["FREE", "PER_BOOKING", "PER_HOUR", "PER_DAY"] as BookingFeeType[]).map(f => (
                                             <option key={f} value={f}>{t(`fee.${f}`)}</option>
                                         ))}
                                     </select>
@@ -349,6 +356,14 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                                         />
                                     </label>
                                 )}
+                                <div className="col-span-2 text-xs font-semibold text-foreground" data-testid="amenity-income-account">
+                                    {t("incomeAccount")}
+                                    <div className="mt-1 font-normal">
+                                        <AccountPicker value={form.incomeAccountId} accountType="INCOME" propertyId={propertyId}
+                                                       onChange={(id) => setForm({ ...form, incomeAccountId: id || null, incomeTouched: true })} />
+                                    </div>
+                                    <p className="text-[10px] text-muted font-normal mt-1">{t("incomeAccountHint")}</p>
+                                </div>
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input

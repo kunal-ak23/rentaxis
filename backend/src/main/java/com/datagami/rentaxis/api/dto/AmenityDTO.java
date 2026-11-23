@@ -18,7 +18,8 @@ public record AmenityDTO(
         Instant createdAt,
         Instant updatedAt,
         /* F14-50 */ String feeType,
-        java.math.BigDecimal feeAmount) {
+        java.math.BigDecimal feeAmount,
+        /* changeset 192 */ UUID incomeAccountId) {
     public AmenityDTO(UUID id,
         UUID propertyId,
         String nameEn,
@@ -31,7 +32,7 @@ public record AmenityDTO(
         long pendingCount,
         Instant createdAt,
         Instant updatedAt) {
-        this(id, propertyId, nameEn, nameAr, description, photoUrls, bookable, active, buildingIds, pendingCount, createdAt, updatedAt, "FREE", java.math.BigDecimal.ZERO);
+        this(id, propertyId, nameEn, nameAr, description, photoUrls, bookable, active, buildingIds, pendingCount, createdAt, updatedAt, "FREE", java.math.BigDecimal.ZERO, null);
     }
 
 }

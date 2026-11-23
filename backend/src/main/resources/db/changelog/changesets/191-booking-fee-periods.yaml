@@ -1,0 +1,20 @@
+# Booking fees per day and per month: PER_DAY for amenities and parking spots,
+# PER_MONTH for parking spots only (PER_HOUR stays amenity-only).
+databaseChangeLog:
+  - changeSet:
+      id: 191-booking-fee-periods
+      author: claude
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE parking_spots DROP CONSTRAINT IF EXISTS ck_spot_fee;
+              ALTER TABLE parking_spots ADD CONSTRAINT ck_spot_fee CHECK (fee_type IN ('FREE', 'PER_BOOKING', 'PER_DAY', 'PER_MONTH') AND fee_amount >= 0);
+              ALTER TABLE property_amenities DROP CONSTRAINT IF EXISTS ck_amenity_fee;
+              ALTER TABLE property_amenities ADD CONSTRAINT ck_amenity_fee CHECK (fee_type IN ('FREE', 'PER_BOOKING', 'PER_HOUR', 'PER_DAY') AND fee_amount >= 0);
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE parking_spots DROP CONSTRAINT IF EXISTS ck_spot_fee;
+              ALTER TABLE parking_spots ADD CONSTRAINT ck_spot_fee CHECK (fee_type IN ('FREE', 'PER_BOOKING') AND fee_amount >= 0);
+              ALTER TABLE property_amenities DROP CONSTRAINT IF EXISTS ck_amenity_fee;
+              ALTER TABLE property_amenities ADD CONSTRAINT ck_amenity_fee CHECK (fee_type IN ('FREE', 'PER_BOOKING', 'PER_HOUR') AND fee_amount >= 0);

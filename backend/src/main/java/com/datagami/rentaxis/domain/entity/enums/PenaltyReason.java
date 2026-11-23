@@ -69,6 +69,16 @@ public enum PenaltyReason {
         return vatable;
     }
 
+    /**
+     * Booking journal vouchers (spec 2026-11-19 §3): a charge for something the renter
+     * asked for (a contract journal voucher, a booking fee), not a fine. It posts as a
+     * {@code JV}, its narration and collection row read as its own description, and
+     * the renter is not told they "incurred a penalty".
+     */
+    public boolean requestedByRenter() {
+        return this == JOURNAL_VOUCHER || this == BOOKING_FEE;
+    }
+
     public AccountRole incomeRole() {
         return incomeRole;
     }

@@ -60,6 +60,10 @@ public class ParkingSpot extends BaseTenantEntity {
     @Column(name = "fee_type", nullable = false, length = 12)
     private String feeType = "FREE";
 
+    /** Income leaf the booking fee credits (changeset 192); null = the role default. */
+    @Column(name = "income_account_id")
+    private UUID incomeAccountId;
+
     @Column(name = "fee_amount", nullable = false, precision = 14, scale = 2)
     private java.math.BigDecimal feeAmount = java.math.BigDecimal.ZERO;
 }

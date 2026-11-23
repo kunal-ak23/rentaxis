@@ -1000,6 +1000,51 @@ public class ChequeService {
         return cancel(chequeId, request, null, false);
     }
 
+    /**
+     * Spec 2026-11-19 §6: an unpaid collection row lowered by {@code by}, because part of
+     * the charge it collects was credited back (an early parking release). The row's
+     * {@code PDR} is reversed and the row registered again at the new amount, both on
+     * {@code date}, so its registering journal always carries what the row collects. A row
+     * lowered to nothing is cancelled. Only a REGISTERED row without VAT of its own (a
+     * charge's collection row: the charge declared its VAT) is lowered.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public ChequeDTO reduceUnpaidBySystem(UUID chequeId, BigDecimal by, LocalDate date, String reason) {
+        Cheque cheque = lock(chequeId);
+        Lease lease = requireCollectable(cheque.getLease());
+        requireStatus(cheque, "reduce", ChequeStatus.REGISTERED);
+        // PR #468 review m2: a finalised settlement counted this row at its full amount;
+        // lowering it (and the credit behind it) would move the contract off that figure.
+        if (closure.isSettlementFinalized(lease.getId())) {
+            throw new BusinessRuleViolationException("The lease settlement is finalised; " + label(cheque)
+                    + " can no longer be lowered.", "cheque.settlementFinalized", java.util.Map.of());
+        }
+        if (by == null || by.signum() <= 0 || by.compareTo(cheque.getAmount()) > 0) {
+            throw new BusinessRuleViolationException(label(cheque) + " can be lowered by more than zero and at most "
+                    + cheque.getAmount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
+        }
+        if (cheque.getVatAmount() != null && cheque.getVatAmount().signum() > 0) {
+            throw new BusinessRuleViolationException(label(cheque) + " carries VAT of its own and cannot be lowered here");
+        }
+        BigDecimal left = cheque.getAmount().subtract(by);
+        if (left.signum() == 0) {
+            return cancel(chequeId, new ChequeActionRequest(date, reason, null, null), null, false);
+        }
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_ROW, date);
+        // No requireSettlementUndisturbed: the reversal and the new registration together
+        // leave the receivable as the caller's credit left it (the row only shrinks). A
+        // finalised settlement is refused outright above.
+        reversePdr(cheque, date, reason);
+        BigDecimal was = cheque.getAmount();
+        cheque.setAmount(left);
+        chequeRepository.save(cheque);
+        registrar.register(lease, cheque, null, date);
+        recordLeaseEvent(lease, cheque, "lowered from " + was.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+                + " to " + left.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+                + (reason != null && !reason.isBlank() ? " — " + reason.trim() : ""));
+        return dto(cheque, lease);
+    }
+
     private ChequeDTO cancel(UUID chequeId, ChequeActionRequest request, UUID moveVatToChequeId, boolean checkAccess) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         // Both rows are claimed in id order, so two cancels that move VAT onto each
