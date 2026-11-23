@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import '../providers/renter_data.dart';
 import '../utils/renter_rules.dart';
+import '../widgets/receipt_picker_bar.dart';
 import '../widgets/renter_document_button.dart';
 import 'next_payment.dart';
 
@@ -19,6 +20,38 @@ class PaymentsScreen extends ConsumerStatefulWidget {
 class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   _Filter _filter = _Filter.all;
   String? _leaseId;
+  final Set<String> _ticked = {};
+  bool _downloading = false;
+
+  Future<void> _download(Rect origin, List<String> ids) async {
+    final ar = context.isAr;
+    final fetch = ref.read(combinedReceiptProvider);
+    final share = ref.read(shareRenterDocumentProvider);
+    setState(() => _downloading = true);
+    try {
+      final pdf = await fetch(ids);
+      if (!mounted) return;
+      await share(pdf.bytes, pdf.fileName, origin);
+      if (mounted) setState(() => _ticked.removeAll(ids));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              errorMessage(
+                e,
+                ar
+                    ? 'تعذر تحميل الإيصالات. حاول مجدداً.'
+                    : 'Could not download the receipts. Please retry.',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
 
   Future<void> _refresh() async {
     ref.invalidate(renterPaymentsProvider);
@@ -26,6 +59,52 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     ref.invalidate(renterPenaltiesProvider);
     ref.invalidate(renterInvoicesProvider);
     await ref.read(renterPaymentsProvider.future);
+  }
+
+  /// Contracts to choose from: my-leases (as before) plus any lease that only
+  /// shows up in the payment rows (e.g. one assigned away), so the dropdown is
+  /// there whenever the rows span more than one lease.
+  List<({String id, String label})> _contractOptions(
+    List<Map<String, dynamic>> leases,
+    List<Map<String, dynamic>> payments,
+  ) {
+    final out = <({String id, String label})>[
+      for (final row in orderedRenterLeases(leases))
+        (
+          id: row['id'] as String,
+          label:
+              '${row['propertyName'] ?? ''} · ${row['unitIdentifier'] ?? ''} · ${row['displayContractNumber'] ?? row['startDate'] ?? ''}',
+        ),
+    ];
+    final known = {for (final o in out) o.id};
+    final byLease = <String, List<Map<String, dynamic>>>{};
+    for (final r in payments) {
+      final id = r['leaseId'];
+      if (id is String && !known.contains(id)) {
+        (byLease[id] ??= []).add(r);
+      }
+    }
+    for (final e in byLease.entries) {
+      final dates =
+          e.value
+              .map((r) => '${r['dueDate'] ?? ''}')
+              .where((d) => d.isNotEmpty)
+              .toList()
+            ..sort();
+      final span = dates.isEmpty
+          ? ''
+          : dates.first == dates.last
+          ? dates.first
+          : '${dates.first} – ${dates.last}';
+      final first = e.value.first;
+      final label = [
+        '${first['propertyName'] ?? ''}',
+        '${first['unitIdentifier'] ?? ''}',
+        span,
+      ].where((p) => p.isNotEmpty).join(' · ');
+      out.add((id: e.key, label: label.isEmpty ? e.key : label));
+    }
+    return out;
   }
 
   @override
@@ -66,10 +145,13 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                         : 'Could not load contracts',
                     onRetry: () => ref.invalidate(renterLeasesProvider),
                   ),
-                if (leases.valueOrNull case final rows? when rows.length > 1)
+                if (_contractOptions(
+                  leases.valueOrNull ?? const [],
+                  payments.valueOrNull ?? const [],
+                ) case final options when options.length > 1)
                   DropdownButtonFormField<String>(
                     key: ValueKey('wallet-lease-$_leaseId'),
-                    initialValue: rows.any((r) => r['id'] == _leaseId)
+                    initialValue: options.any((o) => o.id == _leaseId)
                         ? _leaseId
                         : null,
                     isExpanded: true,
@@ -81,16 +163,16 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                         value: null,
                         child: Text(ar ? 'كل العقود' : 'All contracts'),
                       ),
-                      for (final row in orderedRenterLeases(rows))
+                      for (final o in options)
                         DropdownMenuItem(
-                          value: row['id'] as String,
-                          child: Text(
-                            '${row['propertyName'] ?? ''} · ${row['unitIdentifier'] ?? ''} · ${row['displayContractNumber'] ?? row['startDate'] ?? ''}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          value: o.id,
+                          child: Text(o.label, overflow: TextOverflow.ellipsis),
                         ),
                     ],
-                    onChanged: (id) => setState(() => _leaseId = id),
+                    onChanged: (id) => setState(() {
+                      _leaseId = id;
+                      _ticked.clear();
+                    }),
                   ),
                 const SizedBox(height: 12),
                 payments.when(
@@ -149,6 +231,20 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                           },
                         )
                         .toList();
+                    // One download is one contract: decided from the rows
+                    // themselves, so it holds while the leases list loads or fails.
+                    final receiptLeases = rows
+                        .where(isReceiptable)
+                        .map((r) => r['leaseId'])
+                        .toSet();
+                    final needsPick = receiptLeases.length > 1;
+                    final selectable = !needsPick;
+                    final years = receiptYears(rows);
+                    final shown = filtered
+                        .where(isReceiptable)
+                        .map((r) => '${r['id']}')
+                        .toSet();
+                    final effective = _ticked.intersection(shown).toList();
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -206,6 +302,32 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        if (needsPick) ...[
+                          Text(
+                            ar
+                                ? 'اختر عقداً لتحديد عدة إيصالات وتحميلها معاً.'
+                                : 'Pick a contract to select several receipts and download them together.',
+                          ),
+                          const SizedBox(height: 12),
+                        ] else if (selectable && rows.any(isReceiptable)) ...[
+                          ReceiptPickerBar(
+                            years: years,
+                            selected: effective.length,
+                            busy: _downloading,
+                            onYear: (y) => setState(() {
+                              // A due/upcoming view hides the cleared rows just ticked.
+                              if (_filter == _Filter.due ||
+                                  _filter == _Filter.upcoming) {
+                                _filter = _Filter.all;
+                              }
+                              _ticked
+                                ..clear()
+                                ..addAll(idsInYear(rows, y));
+                            }),
+                            onDownload: (o) => _download(o, effective),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         if (filtered.isEmpty)
                           EmptyState(
                             icon: Icons.receipt_long_outlined,
@@ -216,7 +338,16 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                         for (final row in filtered)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: _PaymentCard(row: row),
+                            child: _PaymentCard(
+                              row: row,
+                              selectable: selectable,
+                              ticked: _ticked.contains('${row['id']}'),
+                              onTick: (v) => setState(() {
+                                v
+                                    ? _ticked.add('${row['id']}')
+                                    : _ticked.remove('${row['id']}');
+                              }),
+                            ),
                           ),
                       ],
                     );
@@ -233,8 +364,16 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
 }
 
 class _PaymentCard extends ConsumerWidget {
-  const _PaymentCard({required this.row});
+  const _PaymentCard({
+    required this.row,
+    required this.selectable,
+    required this.ticked,
+    required this.onTick,
+  });
   final Map<String, dynamic> row;
+  final bool selectable;
+  final bool ticked;
+  final ValueChanged<bool> onTick;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ar = context.isAr;
@@ -308,8 +447,15 @@ class _PaymentCard extends ConsumerWidget {
             ),
           Wrap(
             spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (raw == 'CLEARED')
+              if (selectable && isReceiptable(row))
+                Checkbox(
+                  key: ValueKey('receipt-pick-${row['id']}'),
+                  value: ticked,
+                  onChanged: (v) => onTick(v == true),
+                ),
+              if (isReceiptable(row))
                 RenterDocumentButton(
                   path: '/v1/cheques/${row['id']}/receipt',
                   filename: 'receipt-${row['id']}.pdf',

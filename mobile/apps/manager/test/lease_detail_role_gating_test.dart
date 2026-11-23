@@ -53,7 +53,7 @@ class _FakeLeaseApi implements HttpClientAdapter {
   ) async {
     final path = options.path;
     if (path.endsWith('/v1/leases/lease-1')) return _json(lease);
-    if (path.endsWith('/v1/payments/lease/lease-1')) return _json([]);
+    if (path.endsWith('/v1/leases/lease-1/cheques')) return _json([]);
     if (path.endsWith('/v1/leases/lease-1/documents')) return _json([]);
     if (path.endsWith('/v1/leases/lease-1/attachments')) return _json([]);
     return ResponseBody.fromString('not found', 404);

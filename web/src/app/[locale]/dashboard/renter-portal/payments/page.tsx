@@ -20,6 +20,7 @@ import { ApiError, chequeApi, onlinePayApi, type RenterCheque } from "@/lib/api/
 import PayOnlineButton from "@/components/renter/PayOnlineButton";
 import RenterTaxInvoices from "@/components/renter/RenterTaxInvoices";
 import ChequeScanLink from "@/components/cheques/ChequeScanLink";
+import RenterReceiptPicker, { isReceiptable, useReceiptPicker } from "@/components/renter/RenterReceiptPicker";
 
 /**
  * The renter's own payments screen, on accounting-v2's own cheque register
@@ -74,6 +75,8 @@ export default function RenterPaymentsPage() {
     useEffect(() => {
         fetchPayments();
     }, [fetchPayments]);
+
+    const picker = useReceiptPicker(rows, t("combinedReceiptFailed"));
 
     if (loading) {
         return (
@@ -293,6 +296,7 @@ export default function RenterPaymentsPage() {
                     {historyRows.length > 0 && (
                         <div>
                             <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4">{t("paymentHistory")}</h2>
+                            <RenterReceiptPicker picker={picker} />
                             <div className="space-y-3">
                                 {historyRows.map(row => (
                                     <div
@@ -302,6 +306,15 @@ export default function RenterPaymentsPage() {
                                     >
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                             <div className="flex items-center gap-4">
+                                                {picker.tickable(row) && (
+                                                    <input
+                                                        type="checkbox"
+                                                        data-testid={`receipt-select-${row.id}`}
+                                                        aria-label={t("selectReceipt", { n: row.installmentNumber })}
+                                                        checked={picker.isPicked(row.id)}
+                                                        onChange={() => picker.toggle(row.id)}
+                                                    />
+                                                )}
                                                 <div
                                                     className={cn(
                                                         "w-10 h-10 rounded-xl flex items-center justify-center border",
@@ -327,7 +340,7 @@ export default function RenterPaymentsPage() {
                                                 {row.hasImage && (
                                                     <ChequeScanLink chequeId={row.id} testId={`scan-link-${row.id}`} />
                                                 )}
-                                                {row.status === "CLEARED" && (
+                                                {isReceiptable(row) && (
                                                     <a
                                                         href={chequeApi.receiptUrl(row.id)}
                                                         target="_blank"

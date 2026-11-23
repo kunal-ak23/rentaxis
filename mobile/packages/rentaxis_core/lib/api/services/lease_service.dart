@@ -14,6 +14,11 @@ class LeaseService {
     return response.data;
   }
 
+  Future<List<dynamic>> getLeaseCheques(String leaseId) async {
+    final response = await _dio.get('/v1/leases/$leaseId/cheques');
+    return response.data;
+  }
+
   Future<Map<String, dynamic>> getLeaseById(String id) async {
     final response = await _dio.get('/v1/leases/$id');
     return response.data;

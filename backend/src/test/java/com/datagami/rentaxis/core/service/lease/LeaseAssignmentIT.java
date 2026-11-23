@@ -397,6 +397,53 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         assertThat(tx.execute(s -> chequeQueries.imageOf(april.getId())).blobPath()).startsWith("cheques/");
     }
 
+    /**
+     * A combined receipt is checked row by row like a single one: after the assignment
+     * neither party can fold the other's cleared row into their own download — the
+     * whole request is not found.
+     */
+    @Test
+    void aCombinedReceiptCannotMixTheTwoRentersRowsAfterAnAssignment() {
+        UUID leaseId = lease(true);
+        Renter a = fixtures.renter();
+        Renter b = fixtures.createRenter("Estate");
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Death of the tenant", null));
+        assignments.post(leaseId, draft.id(), null);
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        Cheque january = chequeOn(leaseId, RENT_2);       // cleared by A
+        Cheque april = chequeOn(leaseId, RENT_3);
+        chequeService.deposit(april.getId(), ChequeActionRequest.on(RENT_3));
+        chequeService.clear(april.getId(), ChequeActionRequest.on(RENT_3));   // cleared under B
+
+        asRenter(a);
+        assertThatThrownBy(() -> tx.execute(s -> receipts.combined(List.of(january.getId(), april.getId()))))
+                .isInstanceOf(NotFoundException.class);
+        asRenter(b);
+        assertThatThrownBy(() -> tx.execute(s -> receipts.combined(List.of(january.getId(), april.getId()))))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    /**
+     * The renter who cleared rows before the assignment keeps their own receipts
+     * afterwards; only mixing in the new owner's rows is refused.
+     */
+    @Test
+    void aRenterCanStillCombineTheirOwnRowsAfterAnAssignment() {
+        UUID leaseId = lease(true);
+        Renter a = fixtures.renter();
+        Renter b = fixtures.createRenter("Estate");
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Death of the tenant", null));
+        assignments.post(leaseId, draft.id(), null);
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        Cheque october = chequeOn(leaseId, RENT_1);
+        Cheque january = chequeOn(leaseId, RENT_2);
+
+        asRenter(a);
+        var receipt = tx.execute(s -> receipts.combined(List.of(october.getId(), january.getId())));
+
+        assertThat(receipt.pdf()).isNotEmpty();
+    }
+
     private void asRenter(Renter r) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 r.getUserId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));

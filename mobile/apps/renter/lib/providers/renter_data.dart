@@ -70,3 +70,10 @@ final renterDocumentProvider = Provider<Future<List<int>> Function(String)>((
     return response.data!;
   };
 });
+
+/// One combined PDF for the given cheque ids (all of one lease). Overridable in tests.
+final combinedReceiptProvider =
+    Provider<Future<CombinedReceipt> Function(List<String>)>((ref) {
+      final service = ReceiptService(ref.watch(apiClientProvider).dio);
+      return service.combined;
+    });

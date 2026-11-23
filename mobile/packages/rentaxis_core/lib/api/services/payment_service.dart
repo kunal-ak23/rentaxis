@@ -119,8 +119,9 @@ class PaymentService {
     required String failureReason,
     String? notes,
   }) async {
-    final response = await _dio.post(
-      '/v1/payments/$id/mark-failed',
+    // The cheque register's bounce action (the /v1/payments routes are gone).
+    final response = await _dio.put(
+      '/v1/cheques/$id/bounce',
       data: {
         'failureReason': failureReason,
         if (notes != null && notes.isNotEmpty) 'notes': notes,

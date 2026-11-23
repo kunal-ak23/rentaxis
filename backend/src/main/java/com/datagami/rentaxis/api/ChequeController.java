@@ -346,7 +346,11 @@ public class ChequeController {
     }
 
     /** The cheques whose receipts go into one PDF. */
-    public record CombinedReceiptRequest(@jakarta.validation.constraints.NotEmpty java.util.List<UUID> chequeIds) { }
+    public record CombinedReceiptRequest(
+            @jakarta.validation.constraints.NotEmpty
+            // Slack over the service's cap of 100 distinct receipts (it dedupes first); this only
+            // stops a huge body being walked before that check runs.
+            @jakarta.validation.constraints.Size(max = 500) java.util.List<UUID> chequeIds) { }
 
     /**
      * Several cleared rows of one contract as one PDF, a receipt per page. The same

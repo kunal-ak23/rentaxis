@@ -588,6 +588,129 @@ class ChequeControllerIT extends AbstractPostgresIT {
                 Map.of("chequeIds", List.of()))).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
+    /** The renter whose lease it is gets the same combined PDF staff do, for their own rows. */
+    @Test
+    void aRenterGetsACombinedReceiptOfTheirOwnClearedRows() throws Exception {
+        List<UUID> ids = clearFirstTwo();
+        User tenant = userRepo.findById(fixtures.renter().getUserId()).orElseThrow();
+
+        ResponseEntity<byte[]> pdf = request(tenant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", ids)).toEntity(byte[].class);
+
+        assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(pdf.getHeaders().getContentType().toString()).contains("application/pdf");
+        assertThat(pages(pdf.getBody())).isEqualTo(2);
+    }
+
+    /** A renter keeps their receipts when the lease has ended: the download does not depend on the lease's status. */
+    @Test
+    void aRenterGetsACombinedReceiptOfTheirOwnClearedRowsOnAnEndedLease() throws Exception {
+        List<UUID> ids = clearFirstTwo();
+        // Marked not-renewing, so the sweep expires it instead of putting it on hold.
+        jdbc.update("update leases set not_renewing_at = now() where id = ?", leaseId);
+        tx.executeWithoutResult(s -> leaseService.markExpired(leaseId, END.plusDays(1)));
+        assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.EXPIRED);
+        User tenant = userRepo.findById(fixtures.renter().getUserId()).orElseThrow();
+
+        ResponseEntity<byte[]> pdf = request(tenant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", ids)).toEntity(byte[].class);
+
+        assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(pages(pdf.getBody())).isEqualTo(2);
+    }
+
+    /** One of the ids is another renter's row: the whole request is not found, nothing is leaked. */
+    @Test
+    void aRenterCannotCombineAnotherRentersRow() {
+        List<UUID> ids = clearFirstTwo();
+        User tenant = userRepo.findById(fixtures.renter().getUserId()).orElseThrow();
+        UUID strangersRow = clearedRowOfAnotherRenter();
+
+        assertThat(status(tenant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of(ids.get(0), strangersRow)))).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    /** One download is one contract, and at most a hundred receipts. */
+    @Test
+    void aCombinedReceiptRefusesMixedLeasesAndMoreThanAHundred() {
+        UUID mine = clearFirstTwo().get(0);
+        UUID otherLeasesRow = clearedRowOfAnotherRenter();
+
+        assertThat(status(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of(mine, otherLeasesRow)))).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        List<UUID> tooMany = java.util.stream.IntStream.range(0, 101).mapToObj(i -> UUID.randomUUID()).toList();
+        assertThat(status(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", tooMany))).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /** An absurd list is rejected by validation, before the service dedupes or loads anything. */
+    @Test
+    void aCombinedReceiptRejectsAnAbsurdlyLongListBeforeProcessing() {
+        List<UUID> huge = java.util.stream.IntStream.range(0, 501).mapToObj(i -> UUID.randomUUID()).toList();
+
+        ResponseEntity<Map> res = map(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", huge));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(String.valueOf(res.getBody().get("message"))).contains("Validation failed").contains("chequeIds");
+    }
+
+    /** A row the previous owner banked is not ours to receipt: it refuses the whole request. */
+    @Test
+    void aCombinedReceiptRefusesARowTheFormerOwnerBanked() {
+        UUID ours = register.get(0).getId();
+        LocalDate on = reread(ours).getChequeDate();
+        chequeService.deposit(ours, ChequeActionRequest.on(on));
+        chequeService.clear(ours, ChequeActionRequest.on(on.plusDays(2)));
+        UUID theirs = register.get(1).getId();
+        tx.executeWithoutResult(s -> chequeService.markSettledBeforeAcquisition(
+                chequeRepo.findById(theirs).orElseThrow(), on.minusDays(20), on.minusDays(15)));
+
+        assertThat(status(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of(ours, theirs)))).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(status(accountant, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", List.of(ours)))).isEqualTo(HttpStatus.OK);
+    }
+
+    /** Another organisation's renter cannot reach our cleared rows through the combined endpoint. */
+    @Test
+    void aRenterOfAnotherOrganisationCannotCombineOurRows() {
+        List<UUID> ids = clearFirstTwo();
+        var http = new com.datagami.rentaxis.testsupport.CrossTenantHttp(
+                port, orgRepo, userRepo, accountService, propertyAccountService, propertyService);
+        UUID tenantB = http.tenant("Rcpt-XT-");
+        User outsider = http.user(tenantB, UserRole.RENTER);
+        TenantContextHolder.clear();
+
+        assertThat(http.call(outsider, HttpMethod.POST, "/api/v1/cheques/receipts/combined",
+                Map.of("chequeIds", ids)).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    /** Clear the first two rows of the fixture lease, each on its own date; returns their ids. */
+    private List<UUID> clearFirstTwo() {
+        List<UUID> ids = List.of(register.get(0).getId(), register.get(1).getId());
+        for (UUID id : ids) {
+            LocalDate on = reread(id).getChequeDate();
+            chequeService.deposit(id, ChequeActionRequest.on(on));
+            chequeService.clear(id, ChequeActionRequest.on(on.plusDays(2)));
+        }
+        return ids;
+    }
+
+    /** A cleared row on a second lease that belongs to a different renter. */
+    private UUID clearedRowOfAnotherRenter() {
+        var other = fixtures.createRenter("Somebody Else");
+        var unit = fixtures.createUnit(fixtures.property(), "B-" + UUID.randomUUID().toString().substring(0, 6));
+        UUID otherLease = fixtures.postedLease(unit, other, CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000")), 4, "200040").lease().getId();
+        Cheque c = tx.execute(s -> chequeRepo.findByLease_IdOrderBySeqNoAsc(otherLease)).get(0);
+        LocalDate on = c.getChequeDate();
+        chequeService.deposit(c.getId(), ChequeActionRequest.on(on));
+        chequeService.clear(c.getId(), ChequeActionRequest.on(on.plusDays(2)));
+        return c.getId();
+    }
+
     /** A paid charge's receipt names the charge, not the "Penalty - ..." label of its row, and is not a rent receipt. */
     @Test
     void aChargesReceiptNamesTheChargeAndIsNotARentReceipt() throws Exception {

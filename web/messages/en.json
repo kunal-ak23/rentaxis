@@ -534,6 +534,13 @@
     "viewProperties": "View Properties"
   },
   "OnlinePayments": {
+    "combinedReceipt": "Download receipts ({count})",
+    "combinedReceiptHint": "Tick cleared payments, or pick a year, to download their receipts as one PDF.",
+    "combinedReceiptFailed": "Could not build the combined receipt.",
+    "combinedReceiptLimit": "You can download at most {max} receipts at a time. Untick some payments.",
+    "selectYear": "Select year",
+    "selectContract": "Contract",
+    "selectReceipt": "Select receipt for payment {n}",
     "title": "My Payments",
     "description": "View your payment schedule and pay rent online.",
     "descriptionOffline": "View your payment schedule and payment history.",
@@ -2963,6 +2970,8 @@
     "combinedReceipt": "Combined receipt ({count})",
     "combinedReceiptHint": "Tick cleared rows to download their receipts as one PDF.",
     "combinedReceiptFailed": "Could not build the combined receipt.",
+    "selectYear": "Select year",
+    "combinedReceiptLimit": "You can download at most {max} receipts at a time. Untick some rows.",
     "selectReceipt": "Select receipt for row {row}",
     "depositNotCleared": "Deposit not cleared — check with the bank",
     "depositedDaysAgo": "{n, plural, =0 {Deposited today} one {Deposited # day ago} other {Deposited # days ago}}",
