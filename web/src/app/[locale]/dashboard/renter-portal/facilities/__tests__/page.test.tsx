@@ -291,6 +291,9 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         expect(await screen.findByTestId("request-quote-needs-dates")).toHaveTextContent("quoteNeedsDates");
         expect(screen.getByTestId("request-end-date")).toBeRequired();
         expect(screen.getByTestId("request-start-date")).toBeRequired();
+        // Bug 58: the start date is required here, so it is not labelled "(optional)".
+        expect(screen.getByText("preferredDateRequired")).toBeInTheDocument();
+        expect(screen.queryByText("preferredDate")).not.toBeInTheDocument();
         fireEvent.change(screen.getByTestId("request-start-date"), { target: { value: "2099-12-01" } });
         await new Promise(r => setTimeout(r, 400));
         expect(api.fetchBookingQuote).not.toHaveBeenCalled();
@@ -300,6 +303,19 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         fireEvent.submit(screen.getByTestId("request-end-date").closest("form")!);
         expect(await screen.findByText("periodicDatesRequired")).toBeInTheDocument();
         expect(api.createBooking).not.toHaveBeenCalled();
+    });
+});
+
+describe("RenterFacilitiesPage start date label (bug 58)", () => {
+    it("keeps the optional start date label on a free bay, where the date is not required", async () => {
+        api.fetchMyFacilities.mockResolvedValue(facilitiesWithSpot(false));
+        api.fetchMyBookings.mockResolvedValue([]);
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByText("available")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        expect(await screen.findByTestId("request-start-date")).not.toBeRequired();
+        expect(screen.getByText("preferredDate")).toBeInTheDocument();
+        expect(screen.queryByText("preferredDateRequired")).not.toBeInTheDocument();
     });
 });
 

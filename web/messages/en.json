@@ -1834,6 +1834,7 @@
     "preferredEndDate": "End date (optional)",
     "preferredEndDateHint": "Leave blank for an open-ended booking.",
     "periodicDatesRequired": "Choose a start and an end date: this parking spot is charged by the day or the month.",
+    "preferredDateRequired": "Start date",
     "preferredEndDateRequired": "End date",
     "quoteNeedsDates": "Choose the start and end dates to see the fee.",
     "endBeforeStart": "The end date cannot be before the start date."

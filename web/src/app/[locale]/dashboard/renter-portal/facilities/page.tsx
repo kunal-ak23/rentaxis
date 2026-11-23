@@ -734,7 +734,7 @@ export default function RenterFacilitiesPage() {
                                 )}
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("preferredDate")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t(!!target?.dateRequired || periodicParking ? "preferredDateRequired" : "preferredDate")}</label>
                                 <input
                                     type="date"
                                     min={toDateInput(new Date())}
