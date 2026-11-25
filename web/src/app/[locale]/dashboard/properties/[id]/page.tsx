@@ -4,10 +4,12 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell, Car, BookOpen } from "lucide-react";
+import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell, Car, BookOpen, TrendingUp } from "lucide-react";
 import { AmenitiesTab } from "./_components/AmenitiesTab";
 import { ParkingTab } from "./_components/ParkingTab";
 import { OverviewCounts } from "./_components/OverviewCounts";
+import { RentalIndexTab } from "./_components/RentalIndexTab";
+import { rentalIndexTabVisible, useRentalIndexEnabled } from "@/components/rentalIndex/useRentalIndexEnabled";
 import PropertyAccountsTab from "@/components/finance/PropertyAccountsTab";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
@@ -79,6 +81,7 @@ export default function PropertyDetailPage() {
     const tOnlinePayments = useTranslations("OnlinePayments");
     const tFacilities = useTranslations("Facilities");
     const tLedger = useTranslations("Ledger");
+    const tRentalIndex = useTranslations("RentalIndex");
     const tNav = useTranslations("Navigation");
     const tState = useTranslations("PageState");
     const tc = useTranslations("PropertyContacts");
@@ -99,8 +102,10 @@ export default function PropertyDetailPage() {
     // ACCOUNTANT visit doesn't log a 403 on every load.
     const canViewManagers = hasPermission(userRole, 'canViewPropertyManagers');
 
-    const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts" | "rentalIndex">("overview");
     const [property, setProperty] = useState<any>(null);
+    const rentalIndexEnabled = useRentalIndexEnabled();
+    const showRentalIndex = rentalIndexTabVisible(rentalIndexEnabled, property?.emirate);
     const [propertyLoad, setPropertyLoad] = useState<"loading" | "ok" | "notFound" | "forbidden" | "failed">("loading");
     const [buildings, setBuildings] = useState<any[]>([]);
     const [units, setUnits] = useState<any[]>([]);
@@ -331,6 +336,10 @@ export default function PropertyDetailPage() {
                     // offered a tab that only 403s.
                     ...(canManageAccountSetup ? [
                         { id: "accounts", label: tLedger("propertyAccounts"), icon: BookOpen },
+                    ] : []),
+                    // RENTAL_INDEX flag on, a viewing role and a Dubai property; the endpoints 404 otherwise.
+                    ...(showRentalIndex ? [
+                        { id: "rentalIndex", label: tRentalIndex("tab"), icon: TrendingUp },
                     ] : []),
                 ].map(tab => {
                     const Icon = tab.icon;
@@ -602,6 +611,10 @@ export default function PropertyDetailPage() {
 
             {activeTab === "accounts" && canManageAccountSetup && (
                 <PropertyAccountsTab propertyId={propertyId} />
+            )}
+
+            {activeTab === "rentalIndex" && showRentalIndex && (
+                <RentalIndexTab propertyId={propertyId} buildings={buildings} emirate={property?.emirate} />
             )}
         </div>
     );

@@ -38,6 +38,9 @@ export const PERMISSIONS = {
     canViewLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
     canViewRenterRatings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT'] as UserRole[],
     canAdjustRenterRatings: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // RentalIndexController: staff read, admins and property managers write.
+    canViewRentalIndex: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT'] as UserRole[],
+    canManageRentalIndex: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canManageRenters: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     // The accounting-v2 ledger pages: chart of accounts, journals, general ledger,
     // tenant ledger, trial balance. ACCOUNTANT is admitted because every controller
