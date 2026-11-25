@@ -447,7 +447,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                                             <div className="mt-1">
                                                 <div className="flex items-center gap-2">
                                                     <input data-testid={`unit-dewa-input-${u.id}`} dir="ltr" inputMode="numeric" autoFocus aria-label={t("dewaPremiseNumber")} className="min-w-0 flex-1 bg-input border border-border px-2 py-1 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={dewaDraft} onChange={ev => setDewaDraft(ev.target.value)} />
-                                                    <button type="button" data-testid={`unit-dewa-save-${u.id}`} disabled={dewaSaving} onClick={() => saveDewa(u.id)} className="px-2 py-1 rounded-lg bg-primary text-white text-[10px] font-bold cursor-pointer disabled:opacity-50">{t("dewaSave")}</button>
+                                                    <button type="button" data-testid={`unit-dewa-save-${u.id}`} disabled={dewaSaving} onClick={() => saveDewa(u.id)} className="px-2 py-1 rounded-lg bg-primary text-primary-foreground text-[10px] font-bold cursor-pointer disabled:opacity-50">{t("dewaSave")}</button>
                                                     <button type="button" aria-label={t("cancel")} onClick={() => setDewaEditId(null)} className="p-1 text-muted cursor-pointer"><X size={12} /></button>
                                                 </div>
                                                 {dewaError && <p data-testid={`unit-dewa-error-${u.id}`} className="text-[10px] text-error mt-1">{dewaError}</p>}
