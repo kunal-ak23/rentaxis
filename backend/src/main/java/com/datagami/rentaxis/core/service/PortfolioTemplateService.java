@@ -239,7 +239,7 @@ public class PortfolioTemplateService {
         addRow(sheet, 1, "Marina Heights", "Tower A", "101", "BHK1", "850", "60000", "");
         addRow(sheet, 2, "Marina Heights", "Tower A", "102", "BHK2", "1200", "85000", "");
         addRow(sheet, 3, "Marina Heights", "Tower B", "201", "STUDIO", "500", "40000", "");
-        addRow(sheet, 4, "Business Central", "", "G01", "OFFICE", "2000", "150000");
+        addRow(sheet, 4, "Business Central", "", "G01", "OFFICE", "2000", "150000", "");
 
         autoSizeColumns(sheet, headers.length);
     }

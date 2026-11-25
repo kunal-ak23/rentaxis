@@ -36,17 +36,22 @@ class UnitDewaPremiseIT extends AbstractPostgresIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired PropertyService propertyService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository assignmentRepo;
 
     private CrossTenantHttp http;
     private UUID propertyId;
     private User admin;
+    private UUID tenantId;
+    private UUID otherPropertyId;
 
     @BeforeEach
     void setUp() {
         http = new CrossTenantHttp(port, orgRepo, userRepo, accountService, propertyAccountService, propertyService);
         UUID tenant = http.tenant("Dewa-");
         propertyId = http.property("Dewa Tower").getId();
+        otherPropertyId = http.property("Other Dewa Tower").getId();
         admin = http.admin(tenant);
+        tenantId = tenant;
         TenantContextHolder.clear();
     }
 
@@ -155,5 +160,38 @@ class UnitDewaPremiseIT extends AbstractPostgresIT {
         User adminB = http.admin(tenantB);
         TenantContextHolder.clear();
         assertThat(setDewa(adminB, id, "123456789").getStatusCode().value()).isEqualTo(404);
+    }
+
+    private User managerAssignedTo(UUID property) {
+        User pm = http.user(tenantId, com.datagami.rentaxis.domain.entity.enums.UserRole.PROPERTY_MANAGER);
+        com.datagami.rentaxis.domain.entity.UserPropertyAssignment link = new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        link.setUserId(pm.getId());
+        link.setPropertyId(property);
+        assignmentRepo.save(link);
+        return pm;
+    }
+
+    @Test
+    void propertyManagerAssignedToTheUnitsPropertyMaySetIt() {
+        Object id = create(admin, propertyId, null).getBody().get("id");
+        var res = setDewa(managerAssignedTo(propertyId), id, "246802468");
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(res.getBody().get("dewaPremiseNumber")).isEqualTo("246802468");
+    }
+
+    @Test
+    void propertyManagerAssignedToAnotherPropertyGets404AndNothingChanges() {
+        Object id = create(admin, propertyId, null).getBody().get("id");
+        var res = setDewa(managerAssignedTo(otherPropertyId), id, "246802468");
+        assertThat(res.getStatusCode().value()).isEqualTo(404);
+        assertThat(jdbc.queryForObject("select dewa_premise_number from units where id = ?::uuid", String.class, id.toString()))
+                .isNull();
+    }
+
+    @Test
+    void renterGets403() {
+        Object id = create(admin, propertyId, null).getBody().get("id");
+        User renter = http.user(tenantId, com.datagami.rentaxis.domain.entity.enums.UserRole.RENTER);
+        assertThat(setDewa(renter, id, "246802468").getStatusCode().value()).isEqualTo(403);
     }
 }

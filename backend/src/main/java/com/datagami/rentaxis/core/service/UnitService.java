@@ -72,7 +72,7 @@ public class UnitService {
         if (r.actualRent() != null) u.setActualRent(r.actualRent());
         u.setCurrentTenantName(r.currentTenantName());
         Unit saved = repository.save(u);
-        flushTranslatingNumberClash(number, property, building);
+        flushTranslatingNumberClash(number, property, building, dewa);
         return Loaded.with(saved, Unit::getProperty, Unit::getBuilding);
     }
 
@@ -159,10 +159,13 @@ public class UnitService {
      * meets changeset 157's unique index here, and gets the same readable refusal
      * rather than a constraint name.
      */
-    private void flushTranslatingNumberClash(String number, Property property, Building building) {
+    private void flushTranslatingNumberClash(String number, Property property, Building building, String dewa) {
         try {
             repository.flush();
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            if (isDewaIndexViolation(e)) {
+                throw dewaTaken(dewa);
+            }
             if (isNumberIndexViolation(e)) {
                 throw numberTaken(number, property, building, null);
             }
