@@ -46,6 +46,14 @@ export type LeaseCap = {
   leaseId: string; status: CapStatus; allowedPercent: number | null; capRent: number | null; baseRent: number | null;
 };
 
+/** One stored rental index check on a lease (GET /leases/{id}/index-checks); figures are annual. */
+export type LeaseIndexCheck = {
+  id: string; leaseId: string; successorLeaseId: string | null; decidedAt: string; decidedBy: string | null;
+  decidedByName: string | null; baseRent: number; newRent: number; average: number; gapPercent: number;
+  allowedPercent: number; capRent: number; aboveCap: boolean; overrideReason: string | null;
+  rateSource: RentalIndexSource; rateCheckedOn: string; hasUnitDocument: boolean;
+};
+
 /** DLD's category wording to a Miftah unit type: "Studio", "N bed rooms+hall" (N up to 3); anything else has none. */
 export function unitTypeForCategory(category: string | null | undefined): RentalUnitType | null {
   const c = (category ?? "").trim().toLowerCase();
@@ -84,6 +92,8 @@ export const rentalIndexApi = {
     return pages.flat();
   },
   documentUrl: (id: string) => `${BASE}/rates/${id}/document`,
+  /** The checks stored on a lease, as renewed or as successor, newest first (staff only; 404 when the flag is off). */
+  indexChecks: (leaseId: string) => apiGet<LeaseIndexCheck[]>(`/leases/${leaseId}/index-checks`),
 };
 
 export function rateStatus(r: Pick<RentalIndexRate, "revoked" | "expired">): "REVOKED" | "EXPIRED" | "ACTIVE" {

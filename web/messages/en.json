@@ -3329,7 +3329,7 @@
         "ruleInUse": "{code} is on {count} lease(s) already past draft, so its kind, its account and how it is earned cannot change. Create a new charge type for the new rule."
       },
       "renewal": { "indexOverrideRequired": "This rent is above the rental index cap of AED {cap}. Give a reason to renew at this rent.", "indexOverrideTooLong": "Keep the reason to 500 characters." },
-      "rentalIndex": { "notDldResult": "This file isn't a DLD rental index result.", "figuresDontAddUp": "This result's figures don't add up. Download it again from DLD.", "premiseMismatch": "This result is for a different DEWA premise number than the unit's.", "rangeInvalid": "Enter a range: the lowest above zero, then a highest at least as large.", "tooManyLeases": "Too many contracts at once. Show at most {max}." },
+      "rentalIndex": { "notDldResult": "This file isn't a DLD rental index result.", "figuresDontAddUp": "This result's figures don't add up. Download it again from DLD.", "premiseMismatch": "This result is for a different DEWA premise number than the unit's.", "rangeInvalid": "Enter a range: the lowest above zero, then a highest at least as large.", "tooManyLeases": "Too many contracts at once. Show at most {max}.", "checkedOnInvalid": "Enter the date you checked the range on DLD: today or within the last 12 months.", "unitScopeMismatch": "This unit's result can only be filed for its own building and unit type." },
       "unit": { "dewaInvalid": "Enter the DEWA premise number as 6 to 12 digits.", "dewaTaken": "Another unit already has this DEWA premise number." },
       "lease": { "assignmentBeforeLatestPosting": "The assignment cannot take effect before {date}: {from} already has a posting on this lease dated {date}, and the hand-over moves the balances as they stand after it. Date it on or after {date}.",
         "reductionNegative": "Line {line} ({code}): the new amount would take the rest of the term below zero.",
@@ -6408,6 +6408,14 @@
     "bulkReasonLabel": "Reason for renewing above the cap",
     "bulkRetryReason": "Renew these with this reason",
     "bulkNoIndex": "No index",
-    "bulkOverridden": "Above the cap, reason recorded"
+    "bulkOverridden": "Above the cap, reason recorded",
+    "checksTitle": "Rental index checks",
+    "checkWithin": "Within the cap: AED <n>{rent}</n> a year against a cap of AED <n>{cap}</n> (+{pct}%).",
+    "checkAbove": "Above the cap: AED <n>{rent}</n> a year against a cap of AED <n>{cap}</n> (+{pct}%).",
+    "checkBy": "{who} on <n>{date}</n>",
+    "checkOn": "On <n>{date}</n>",
+    "checkRange": "Range: {source}, checked on <n>{date}</n>",
+    "checkUnitResult": "This unit's own DLD result",
+    "checkReason": "Reason: {reason}"
   }
 }
