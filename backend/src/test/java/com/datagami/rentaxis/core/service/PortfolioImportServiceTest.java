@@ -36,6 +36,7 @@ class PortfolioImportServiceTest {
     @Mock ImportJobRepository importJobRepository;
     @Mock PropertyRepository propertyRepository;
     @Mock RenterRepository renterRepository;
+    @Mock com.datagami.rentaxis.domain.repository.UnitRepository unitRepository;
     @Mock PortfolioImportPersistService persistService;
     // The v2 cut-over collaborators: this test only exercises v1 workbooks (no
     // Contracts sheet), so neither is reached — but the constructor takes them.
@@ -47,7 +48,7 @@ class PortfolioImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new PortfolioImportService(importJobRepository, propertyRepository, renterRepository,
-                persistService, contractValidator, contractPersistService);
+                unitRepository, persistService, contractValidator, contractPersistService);
         // validateDbConflicts (called by validateAll) now uses the explicit
         // tenant-scoped repository methods and refuses to run without a
         // tenant context — set one up so the validator can proceed.

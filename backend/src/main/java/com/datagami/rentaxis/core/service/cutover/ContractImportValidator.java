@@ -226,6 +226,14 @@ public class ContractImportValidator {
             return null;
         }
 
+        /**
+         * The unit of this organisation already holding each of these DEWA premise numbers,
+         * phrased for an error message ("E-1 of Tower"), keyed by number. One query for the sheet.
+         */
+        default Map<String, String> dewaHolders(java.util.Collection<String> dewaNumbers) {
+            return Map.of();
+        }
+
         /** PR #369 R1 P3-3: whether the organisation has a TRN (its VAT documents need one). */
         default boolean organisationHasTrn() {
             return true;
@@ -284,7 +292,7 @@ public class ContractImportValidator {
         if (!errors.isEmpty()) return new PortfolioImportService.ValidationOutcome(errors, warnings);
 
         Set<String> propertyNames = validateProperties(propertiesSheet, lk, errors, warnings);
-        Set<String> unitKeys = validateUnits(unitsSheet, propertyNames, errors);
+        Set<String> unitKeys = validateUnits(unitsSheet, propertyNames, lk, errors);
         Set<String> renterEmails = validateRenters(rentersSheet, lk, errors);
         Set<String> brokenContracts = new LinkedHashSet<>();
         Map<String, ContractSummary> contracts =
@@ -415,9 +423,10 @@ public class ContractImportValidator {
     // Units
     // ------------------------------------------------------------------
 
-    private Set<String> validateUnits(Sheet sheet, Set<String> propertyNames, List<ImportErrorDTO> errors) {
+    private Set<String> validateUnits(Sheet sheet, Set<String> propertyNames, Lookups lk, List<ImportErrorDTO> errors) {
         Set<String> keys = new LinkedHashSet<>();
         Set<String> seenDewa = new HashSet<>();
+        Map<String, Integer> dewaRows = new LinkedHashMap<>();
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
             if (row == null || SheetCells.isRowEmpty(row)) continue;
@@ -452,7 +461,17 @@ public class ContractImportValidator {
                 errors.add(new ImportErrorDTO("Units", rowNum, "DewaPremiseNo",
                         "DEWA premise number " + dewaKey + " is listed twice on this sheet"));
             }
+            if (dewaKey != null && com.datagami.rentaxis.core.service.UnitRules.dewaProblem(dewaKey).isEmpty()) {
+                dewaRows.putIfAbsent(dewaKey, rowNum);
+            }
         }
+        lk.dewaHolders(dewaRows.keySet()).forEach((number, holder) -> {
+            Integer row = dewaRows.get(number);
+            if (row != null) {
+                errors.add(new ImportErrorDTO("Units", row, "DewaPremiseNo",
+                        "DEWA premise number " + number + " is already on unit " + holder));
+            }
+        });
         return keys;
     }
 
@@ -1161,6 +1180,16 @@ public class ContractImportValidator {
          */
         private final Map<String, Optional<ChargeTypeRef>> chargeTypeByCode = new HashMap<>();
         private final Map<String, List<Unit>> unitsByPropertyName = new HashMap<>();
+
+        @Override
+        public Map<String, String> dewaHolders(java.util.Collection<String> dewaNumbers) {
+            if (dewaNumbers.isEmpty()) return Map.of();
+            Map<String, String> held = new HashMap<>();
+            for (Unit u : units.findByTenantIdAndDewaPremiseNumberIn(tenantId, dewaNumbers)) {
+                held.put(u.getDewaPremiseNumber(), u.getUnitNumber() + " of " + u.getProperty().getNameEn());
+            }
+            return held;
+        }
 
         private UUID requireTenant() {
             UUID id = TenantContextHolder.getTenantId();

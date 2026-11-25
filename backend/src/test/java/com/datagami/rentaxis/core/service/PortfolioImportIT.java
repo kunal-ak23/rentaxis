@@ -58,6 +58,7 @@ class PortfolioImportIT extends AbstractPostgresIT {
     @Autowired com.datagami.rentaxis.core.service.cheque.ChequeQueryService chequeQueryService;
     @Autowired LandlordOrgRepository landlordOrgRepository;
     @Autowired UnitRepository unitRepository;
+    @Autowired com.datagami.rentaxis.domain.repository.PropertyRepository propertyRepository;
     @Autowired RenterRepository renterRepository;
 
     private UUID tenantId;
@@ -281,6 +282,42 @@ class PortfolioImportIT extends AbstractPostgresIT {
         assertThat(unitRepository.findAll().stream().filter(u -> tenantId.equals(u.getTenantId())).toList())
                 .extracting(com.datagami.rentaxis.domain.entity.Unit::getDewaPremiseNumber)
                 .containsExactly("123456789");
+    }
+
+    @Test
+    void unitsSheetDewaPremiseNo_alreadyOnAnExistingUnit_isARowErrorAndNothingIsPersisted() throws Exception {
+        com.datagami.rentaxis.domain.entity.Property held = new com.datagami.rentaxis.domain.entity.Property();
+        held.setNameEn("Existing Tower " + UUID.randomUUID());
+        held.setEmirate(com.datagami.rentaxis.domain.entity.enums.Emirate.DUBAI);
+        held.setTenantId(tenantId);
+        held = propertyRepository.save(held);
+        com.datagami.rentaxis.domain.entity.Unit existing = new com.datagami.rentaxis.domain.entity.Unit();
+        existing.setProperty(held);
+        existing.setUnitNumber("E-1");
+        existing.setTenantId(tenantId);
+        existing.setDewaPremiseNumber("123456789");
+        unitRepository.save(existing);
+
+        Workbook wb = PortfolioImportServiceTest.buildLegacyWorkbook();
+        PortfolioImportServiceTest.setCell(wb, "Units", 1, "DewaPremiseNo", "123456789");
+        byte[] bytes;
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            wb.write(baos);
+            bytes = baos.toByteArray();
+        }
+        wb.close();
+        ImportJob job = new ImportJob();
+        job.setStatus("VALIDATING");
+        job.setFileName("dewa-taken.xlsx");
+        job.setCreatedBy(UUID.randomUUID());
+        ImportJob saved = importJobRepository.save(job);
+
+        importService.processImportAsync(bytes, saved, tenantId);
+        ImportJob terminal = pollUntilTerminal(saved.getId());
+
+        assertThat(terminal.getStatus()).isEqualTo("VALIDATION_FAILED");
+        assertThat(terminal.getErrors()).contains("DewaPremiseNo").contains("already on unit E-1");
+        assertThat(unitRepository.findAll().stream().filter(u -> tenantId.equals(u.getTenantId())).toList()).hasSize(1);
     }
 
     /** Polls the job up to 30s, asserting it lands in COMPLETED. */

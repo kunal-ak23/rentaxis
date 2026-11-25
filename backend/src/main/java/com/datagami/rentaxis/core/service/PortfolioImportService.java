@@ -35,6 +35,7 @@ public class PortfolioImportService {
     private final ImportJobRepository importJobRepository;
     private final PropertyRepository propertyRepository;
     private final RenterRepository renterRepository;
+    private final com.datagami.rentaxis.domain.repository.UnitRepository unitRepository;
     private final PortfolioImportPersistService persistService;
     private final ContractImportValidator contractValidator;
     private final ContractImportPersistService contractPersistService;
@@ -209,6 +210,7 @@ public class PortfolioImportService {
     private void validateUnitsSheet(Sheet sheet, List<ImportErrorDTO> errors, Set<String> propertyNames, Map<String, Set<String>> unitsByProperty) {
         Set<String> validUnitTypes = Arrays.stream(UnitType.values()).map(Enum::name).collect(Collectors.toSet());
         Set<String> seenDewa = new HashSet<>();
+        Map<String, Integer> dewaRows = new LinkedHashMap<>();
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
@@ -277,6 +279,25 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Units", rowNum, "DewaPremiseNo",
                         "DEWA premise number " + dewaKey + " is listed twice on this sheet"));
             }
+            if (dewaKey != null && UnitRules.dewaProblem(dewaKey).isEmpty()) dewaRows.putIfAbsent(dewaKey, rowNum);
+        }
+        flagDewaAlreadyHeld(dewaRows, errors);
+    }
+
+    /** One tenant-scoped query for every DEWA number on the Units sheet: a number already on a unit is a row error. */
+    private void flagDewaAlreadyHeld(Map<String, Integer> dewaRows, List<ImportErrorDTO> errors) {
+        if (dewaRows.isEmpty()) return;
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new IllegalStateException("Units validation ran without a tenant context; refusing to run unscoped queries");
+        }
+        for (com.datagami.rentaxis.domain.entity.Unit held
+                : unitRepository.findByTenantIdAndDewaPremiseNumberIn(tenantId, dewaRows.keySet())) {
+            Integer row = dewaRows.get(held.getDewaPremiseNumber());
+            if (row == null) continue;
+            errors.add(new ImportErrorDTO("Units", row, "DewaPremiseNo",
+                    "DEWA premise number " + held.getDewaPremiseNumber() + " is already on unit "
+                            + held.getUnitNumber() + " of " + held.getProperty().getNameEn()));
         }
     }
 
