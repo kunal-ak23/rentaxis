@@ -10,6 +10,7 @@ import com.datagami.rentaxis.testsupport.CrossTenantHttp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -36,6 +37,7 @@ class UnitDewaPremiseIT extends AbstractPostgresIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired PropertyService propertyService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.TenantFeatureService features;
     @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository assignmentRepo;
 
     private CrossTenantHttp http;
@@ -149,8 +151,27 @@ class UnitDewaPremiseIT extends AbstractPostgresIT {
 
     @Test
     void worksWithRentalIndexFlagOff() {
-        // RENTAL_INDEX is off by default for a new tenant; the DEWA number does not depend on it.
-        assertThat(create(admin, propertyId, "999000111").getStatusCode().value()).isEqualTo(200);
+        // Final review M3: the DEWA number does not depend on RENTAL_INDEX — create and set work with it on and off.
+        assertThat(features.isEnabled(tenantId, TenantFeature.RENTAL_INDEX)).isFalse();
+        features.setEnabled(tenantId, TenantFeature.RENTAL_INDEX, true);
+        ResponseEntity<Map> on = create(admin, propertyId, "999000111");
+        assertThat(on.getStatusCode().value()).isEqualTo(200);
+        assertThat(on.getBody().get("dewaPremiseNumber")).isEqualTo("999000111");
+        Object onId = create(admin, propertyId, null).getBody().get("id");
+        ResponseEntity<Map> setOn = setDewa(admin, onId, "999000222");
+        assertThat(setOn.getStatusCode().value()).isEqualTo(200);
+        assertThat(setOn.getBody().get("dewaPremiseNumber")).isEqualTo("999000222");
+
+        features.setEnabled(tenantId, TenantFeature.RENTAL_INDEX, false);
+        assertThat(features.isEnabled(tenantId, TenantFeature.RENTAL_INDEX)).isFalse();
+        ResponseEntity<Map> off = create(admin, propertyId, "999000333");
+        assertThat(off.getStatusCode().value()).isEqualTo(200);
+        assertThat(off.getBody().get("dewaPremiseNumber")).isEqualTo("999000333");
+        ResponseEntity<Map> setOff = setDewa(admin, onId, "999000444");
+        assertThat(setOff.getStatusCode().value()).isEqualTo(200);
+        assertThat(setOff.getBody().get("dewaPremiseNumber")).isEqualTo("999000444");
+        // Uniqueness still holds with the flag off.
+        assertThat(create(admin, propertyId, "999000111").getStatusCode().is4xxClientError()).isTrue();
     }
 
     @Test
