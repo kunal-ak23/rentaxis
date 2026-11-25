@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { CheckCircle, XCircle } from "lucide-react";
 import LeaseDialog from "@/components/leases/LeaseDialog";
@@ -12,7 +12,7 @@ import { parseMoneyInput } from "@/lib/money";
 import { isBeyondManualPostingWindow } from "@/lib/businessDate";
 import {
     ApiError, leaseBatchApi,
-    type BulkRentRule, type BulkRenewRow, type ChargeType, type LeaseDetail, type LeaseLineInput,
+    type BulkRentRule, type BulkRenewInput, type BulkRenewRow, type ChargeType, type LeaseDetail, type LeaseLineInput,
 } from "@/lib/api/leasing";
 import { BATCH_CHUNK, chunks, ruleExample } from "@/lib/leases/renewalSeason";
 
@@ -89,15 +89,23 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
         return l ? `${l.unitIdentifier ?? "—"} · ${l.renterName ?? "—"}` : id;
     };
 
+    // Final review M2: a retry (failed rows, or above-cap rows with a reason) renews on exactly the rule and
+    // terms of the first run, snapshotted then — never on what the form or the page's props hold by the retry.
+    const firstRun = useRef<Omit<BulkRenewInput, "leaseIds" | "indexOverrideReason"> | null>(null);
+
     const run = async (ids: string[], keep: BulkRenewRow[] = [], reason = "") => {
         setError(null);
         setProgress({ done: 0, total: ids.length });
-        const rule: BulkRentRule = { mode, percent: mode === "PERCENT" ? pct : null, amount: mode === "ADD" ? add : null };
-        // Review P2-1: the fee carries its charge type's VAT default, exactly as the single renew
-        // dialog proposes it — never a hard-coded "no VAT".
-        const feeType = feeTypes.find(c => c.id === feeTypeId);
-        const additionalLines: LeaseLineInput[] | null = feeTypeId && fee
-            ? [{ chargeTypeId: feeTypeId, grossAmount: fee, discountAmount: 0, vatApplicable: !!feeType?.vatApplicableDefault }] : null;
+        if (!keep.length || !firstRun.current) {
+            const rule: BulkRentRule = { mode, percent: mode === "PERCENT" ? pct : null, amount: mode === "ADD" ? add : null };
+            // Review P2-1: the fee carries its charge type's VAT default, exactly as the single renew
+            // dialog proposes it — never a hard-coded "no VAT".
+            const feeType = feeTypes.find(c => c.id === feeTypeId);
+            const additionalLines: LeaseLineInput[] | null = feeTypeId && fee
+                ? [{ chargeTypeId: feeTypeId, grossAmount: fee, discountAmount: 0, vatApplicable: !!feeType?.vatApplicableDefault }] : null;
+            firstRun.current = { rule, termMonths, contractDate, carryDepositForward: carryDeposit, generateGrid, additionalLines };
+        }
+        const terms = firstRun.current;
         const out: BulkRenewRow[] = [];
         let firstError: string | null = null;
         // Sequential chunks: each call is a few seconds, and the progress is the server's own count.
@@ -106,7 +114,7 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
         for (const part of chunks(ids, BATCH_CHUNK)) {
             try {
                 const rows = await leaseBatchApi.renew({
-                    leaseIds: part, rule, termMonths, contractDate, carryDepositForward: carryDeposit, generateGrid, additionalLines,
+                    leaseIds: part, ...terms,
                     ...(reason.trim() ? { indexOverrideReason: reason.trim() } : {}),
                 });
                 const answered = new Map(rows.map(r => [r.leaseId, r]));
