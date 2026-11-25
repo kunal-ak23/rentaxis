@@ -1,0 +1,66 @@
+{
+  "id": "54",
+  "slug": "parking-and-amenity-fees-in-the-books",
+  "title": "Miftah tutorial 54 · Parking and amenity fees in the books",
+  "description": "Charge parking by the month and amenities by the day, book for a tenant, see the journal voucher each fee posts, and credit the unused days when a bay is released early.\n\nWho this is for: Accountant, Company Admin, Property Manager, System Admin, Tenant.\n\nChapters:\n0:00 Fees by the Day or the Month\n0:23 Book for a Tenant\n0:44 A Journal Voucher\n1:03 Released Early\n1:29 The Tenant Sees the Fee First\n\nPart of the Miftah web course — playlist: Miftah · Operations\n\nاحتسب رسوم المواقف شهريًا والمرافق يوميًا، واحجز نيابةً عن المستأجر، وتعرّف على قيد اليومية الذي تُنشئه كل رسوم، واسترد الأيام غير المستخدمة عند إخلاء الموقف مبكرًا.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "maintenance tickets",
+    "facilities booking",
+    "gate pass",
+    "meetings",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "public",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Operations",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Fees by the Day or the Month"
+    },
+    {
+      "startSec": 23,
+      "start": "0:23",
+      "label": "Book for a Tenant"
+    },
+    {
+      "startSec": 44,
+      "start": "0:44",
+      "label": "A Journal Voucher"
+    },
+    {
+      "startSec": 63,
+      "start": "1:03",
+      "label": "Released Early"
+    },
+    {
+      "startSec": 89,
+      "start": "1:29",
+      "label": "The Tenant Sees the Fee First"
+    }
+  ],
+  "durationSec": 108,
+  "roles": [
+    "SUPER_ADMIN",
+    "TENANT_ADMIN",
+    "ACCOUNTANT",
+    "PROPERTY_MANAGER",
+    "RENTER"
+  ],
+  "topic": "operations",
+  "captionsFile": "tutorials/output/54-parking-and-amenity-fees-in-the-books.srt",
+  "videoFile": "tutorials/output/54-parking-and-amenity-fees-in-the-books.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/54.png"
+}

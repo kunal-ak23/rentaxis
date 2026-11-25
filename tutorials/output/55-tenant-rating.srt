@@ -1,0 +1,148 @@
+1
+00:00:00,000 --> 00:00:04,141
+Tenant rating scores every tenant from
+zero to one hundred, from how
+
+2
+00:00:04,141 --> 00:00:07,937
+they have actually paid and behaved over
+the last two years.
+
+3
+00:00:07,937 --> 00:00:09,662
+It is a premium feature.
+
+4
+00:00:09,662 --> 00:00:12,078
+Once it is switched on for your
+
+5
+00:00:12,078 --> 00:00:14,148
+organisation, Tenant ratings appears under
+Leasing.
+
+6
+00:00:14,148 --> 00:00:16,564
+Grade A, excellent, is eighty-five and
+above.
+
+7
+00:00:16,564 --> 00:00:18,634
+B, good, is seventy and above.
+
+8
+00:00:18,634 --> 00:00:22,775
+C, fair, is fifty and above, and D, poor,
+is below fifty.
+
+9
+00:00:22,775 --> 00:00:25,536
+Tenants without enough history yet are
+marked New.
+
+10
+00:00:25,536 --> 00:00:28,987
+Filter by grade or by property, search by
+name, sort
+
+11
+00:00:28,987 --> 00:00:32,093
+by score, and export the list as a
+spreadsheet.
+
+12
+00:00:32,093 --> 00:00:34,163
+Select a grade to see why.
+
+13
+00:00:34,163 --> 00:00:35,888
+Every tenant starts at seventy.
+
+14
+00:00:35,888 --> 00:00:38,304
+Each event that moved the score is
+
+15
+00:00:38,304 --> 00:00:40,720
+listed with its date and its points.
+
+16
+00:00:40,720 --> 00:00:44,170
+Fatima's cheques that cleared on time add
+one point each.
+
+17
+00:00:44,170 --> 00:00:47,276
+Her cheque that bounced in April takes
+away fifteen.
+
+18
+00:00:47,276 --> 00:00:49,002
+That leaves sixty, a C.
+
+19
+00:00:49,002 --> 00:00:52,797
+Late payments, penalties, write-offs and
+missed meetings take points away too.
+
+20
+00:00:52,797 --> 00:00:55,558
+Early renewals add them, and events more
+than
+
+21
+00:00:55,558 --> 00:00:57,974
+a year old count at half weight.
+
+22
+00:00:57,974 --> 00:01:00,044
+Rajesh has scored eighty-one, a B.
+
+23
+00:01:00,044 --> 00:01:03,150
+A Company Admin can add a manual
+adjustment of
+
+24
+00:01:03,150 --> 00:01:06,256
+up to thirty points either way, with a
+reason.
+
+25
+00:01:06,256 --> 00:01:08,326
+Plus five: referred a new tenant.
+
+26
+00:01:08,326 --> 00:01:10,742
+Rajesh moves to eighty-six, an A, and
+
+27
+00:01:10,742 --> 00:01:12,812
+the history shows who added it.
+
+28
+00:01:12,812 --> 00:01:16,263
+The same grade appears in Renewal season,
+on each contract,
+
+29
+00:01:16,263 --> 00:01:19,369
+and on the tenant's profile, so it is in
+
+30
+00:01:19,369 --> 00:01:22,474
+front of you when you decide a renewal
+offer.
+
+31
+00:01:22,474 --> 00:01:24,890
+Ratings are recalculated every night, and
+the
+
+32
+00:01:24,890 --> 00:01:27,306
+details panel is always up to date.
+
+33
+00:01:27,306 --> 00:01:29,376
+Tenants never see their own rating.

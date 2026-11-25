@@ -447,6 +447,33 @@ export const TUTORIALS: Tutorial[] = [
         },
         relatedArticles: ["operations--bookings-meetings-promotions"],
     },
+    {
+        id: "53", slug: "download-several-receipts-at-once", topic: "collections", roles: [...PORTFOLIO, "ACCOUNTANT", "RENTER"], durationSec: 69, youtubeId: "NzzxZlX-F5c",
+        title: { en: "Download several receipts at once", ar: "تنزيل عدة إيصالات دفعة واحدة" },
+        description: {
+            en: "Tick cleared payments on a contract, or pick a year, and download their receipts as one PDF, from the office or the tenant portal.",
+            ar: "حدّد الدفعات المحصّلة في العقد، أو اختر سنة، ونزّل إيصالاتها في ملف PDF واحد، من المكتب أو من بوابة المستأجر.",
+        },
+        relatedArticles: ["leases--payment-schedules", "renter--making-payments"],
+    },
+    {
+        id: "54", slug: "parking-and-amenity-fees-in-the-books", topic: "operations", roles: [...FINANCE, "PROPERTY_MANAGER", "RENTER"], durationSec: 108, youtubeId: "xB4roTjr8mE",
+        title: { en: "Parking and amenity fees in the books", ar: "رسوم المواقف والمرافق في الدفاتر" },
+        description: {
+            en: "Charge parking by the month and amenities by the day, book for a tenant, see the journal voucher each fee posts, and credit the unused days when a bay is released early.",
+            ar: "احتسب رسوم المواقف شهريًا والمرافق يوميًا، واحجز نيابةً عن المستأجر، وتعرّف على قيد اليومية الذي تُنشئه كل رسوم، واسترد الأيام غير المستخدمة عند إخلاء الموقف مبكرًا.",
+        },
+        relatedArticles: ["operations--bookings-meetings-promotions", "properties--parking"],
+    },
+    {
+        id: "55", slug: "tenant-rating", topic: "leasing", roles: [...FINANCE, "PROPERTY_MANAGER"], durationSec: 89, youtubeId: "fbuL3cmpw3M",
+        title: { en: "Tenant rating", ar: "تقييم المستأجر" },
+        description: {
+            en: "See each tenant's score and grade from two years of payments and conduct, read why it moved, add a manual adjustment, and use it in renewal season.",
+            ar: "اطّلع على درجة كل مستأجر وتصنيفه بناءً على سجل الدفعات والسلوك لعامين، وافهم سبب تغيّرها، وأضف تعديلًا يدويًا، واستخدمها في موسم التجديد.",
+        },
+        relatedArticles: ["leases--renewal-season"],
+    },
 ];
 
 /** YouTube video ids are 11 URL-safe characters; anything else is refused before it reaches a URL. */

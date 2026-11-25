@@ -1,0 +1,109 @@
+1
+00:00:00,000 --> 00:00:03,663
+A tenant asks for every receipt of the
+year so far.
+
+2
+00:00:03,663 --> 00:00:06,328
+Open the tenancy contract, then its
+Cheques tab.
+
+3
+00:00:06,328 --> 00:00:09,991
+In the cheque grid, every cleared cheque
+has a tick box.
+
+4
+00:00:09,991 --> 00:00:12,656
+Tick the rent for January, February and
+March.
+
+5
+00:00:12,656 --> 00:00:15,653
+The button counts what you ticked:
+Combined receipt, three.
+
+6
+00:00:15,653 --> 00:00:19,650
+Select it, and one PDF downloads, with one
+receipt on each page:
+
+7
+00:00:19,650 --> 00:00:23,313
+the amount received, the cheque number,
+and the date it cleared.
+
+8
+00:00:23,313 --> 00:00:25,644
+For a whole year, use Select year.
+
+9
+00:00:25,644 --> 00:00:29,308
+Pick twenty twenty-six, and every payment
+that cleared that year is
+
+10
+00:00:29,308 --> 00:00:32,638
+ticked at once: eleven of them, the
+security deposit included.
+
+11
+00:00:32,638 --> 00:00:35,969
+Download, and the year's receipts arrive
+as a single file.
+
+12
+00:00:35,969 --> 00:00:37,967
+Only cleared cheques can be ticked.
+
+13
+00:00:37,967 --> 00:00:40,964
+A cheque that has not been banked yet has
+
+14
+00:00:40,964 --> 00:00:43,629
+no receipt, so it has no tick box.
+
+15
+00:00:43,629 --> 00:00:46,959
+One download covers one contract, up to a
+hundred receipts.
+
+16
+00:00:46,959 --> 00:00:48,624
+Tenants can do this themselves.
+
+17
+00:00:48,624 --> 00:00:51,289
+In the tenant portal, Rajesh opens My
+Payments.
+
+18
+00:00:51,289 --> 00:00:53,953
+Above his payment history is the same bar.
+
+19
+00:00:53,953 --> 00:00:57,616
+He ticks the two receipts he needs, and
+selects Download receipts.
+
+20
+00:00:57,616 --> 00:00:59,948
+Or he picks a year, and the
+
+21
+00:00:59,948 --> 00:01:01,946
+whole year downloads in one go.
+
+22
+00:01:01,946 --> 00:01:04,943
+A tenant with more than one contract first
+chooses
+
+23
+00:01:04,943 --> 00:01:07,608
+the contract, so a renewal on the same
+
+24
+00:01:07,608 --> 00:01:10,272
+unit is never mixed with the old one.

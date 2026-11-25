@@ -1,0 +1,176 @@
+1
+00:00:00,000 --> 00:00:03,803
+Parking bays and amenities can now charge
+by the day or
+
+2
+00:00:03,803 --> 00:00:07,606
+by the month, and every fee goes straight
+into the books.
+
+3
+00:00:07,606 --> 00:00:11,409
+Open the property, then its Parking tab,
+and edit bay B2-18.
+
+4
+00:00:11,409 --> 00:00:13,829
+Set the fee type to Per month,
+
+5
+00:00:13,829 --> 00:00:16,249
+and the amount to five hundred dirhams.
+
+6
+00:00:16,249 --> 00:00:17,978
+The income account is optional.
+
+7
+00:00:17,978 --> 00:00:21,781
+Left empty, parking fees go to the
+property's Additional Parking account.
+
+8
+00:00:21,781 --> 00:00:22,126
+Save.
+
+9
+00:00:22,126 --> 00:00:24,892
+The office can also book for a tenant.
+
+10
+00:00:24,892 --> 00:00:26,621
+In Bookings, select New booking.
+
+11
+00:00:26,621 --> 00:00:29,732
+Choose the property and the unit, and the
+tenant
+
+12
+00:00:29,732 --> 00:00:32,498
+on its live contract fills in by itself.
+
+13
+00:00:32,498 --> 00:00:35,610
+Choose Parking, bay B2-18, from today for
+one month.
+
+14
+00:00:35,610 --> 00:00:38,375
+The fee is worked out before you book:
+
+15
+00:00:38,375 --> 00:00:41,141
+five hundred dirhams, plus VAT where it
+applies.
+
+16
+00:00:41,141 --> 00:00:42,524
+Select Book and approve.
+
+17
+00:00:42,524 --> 00:00:45,290
+The booking is approved at once, and the
+
+18
+00:00:45,290 --> 00:00:47,710
+fee is posted as a journal voucher.
+
+19
+00:00:47,710 --> 00:00:50,476
+Rent Receivable for Ahmed is debited five
+hundred,
+
+20
+00:00:50,476 --> 00:00:53,241
+and Additional Parking income is credited
+five hundred.
+
+21
+00:00:53,241 --> 00:00:56,007
+The narration names the bay and the dates.
+
+22
+00:00:56,007 --> 00:00:59,810
+On Ahmed's contract, a row now collects
+the five hundred, like
+
+23
+00:00:59,810 --> 00:01:03,267
+any other payment, and he sees it in his
+payments.
+
+24
+00:01:03,267 --> 00:01:03,959
+Plans change.
+
+25
+00:01:03,959 --> 00:01:06,725
+Ahmed hands the bay back the same day.
+
+26
+00:01:06,725 --> 00:01:08,799
+Open the booking and select Release.
+
+27
+00:01:08,799 --> 00:01:12,602
+Today counts as used; the rest of the
+month is credited.
+
+28
+00:01:12,602 --> 00:01:16,059
+A second voucher takes four hundred and
+eighty-three dirhams, thirty-three
+
+29
+00:01:16,059 --> 00:01:19,171
+back out of parking income, and the row
+Ahmed
+
+30
+00:01:19,171 --> 00:01:22,282
+still has to pay drops to sixteen dirhams,
+sixty-seven.
+
+31
+00:01:22,282 --> 00:01:25,048
+A booking that has not started yet is
+
+32
+00:01:25,048 --> 00:01:27,814
+cancelled instead, and its whole fee is
+reversed.
+
+33
+00:01:27,814 --> 00:01:30,234
+Tenants see the fee before they ask.
+
+34
+00:01:30,234 --> 00:01:32,654
+In the tenant portal, Fatima opens
+Facilities.
+
+35
+00:01:32,654 --> 00:01:35,420
+The Fitness Centre costs thirty dirhams a
+day.
+
+36
+00:01:35,420 --> 00:01:37,840
+She picks a date, and the fee
+
+37
+00:01:37,840 --> 00:01:40,260
+is shown before she submits: thirty
+dirhams.
+
+38
+00:01:40,260 --> 00:01:44,063
+When the office approves, the fee is
+charged to her contract
+
+39
+00:01:44,063 --> 00:01:47,520
+in the same way, and she is told the
+amount.
