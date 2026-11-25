@@ -181,6 +181,11 @@
     "selectRenter": "Select Tenant",
     "selectUnit": "Select Unit",
     "sizeSqft": "Size (SqFt)",
+    "dewaPremiseNumber": "DEWA premise no.",
+    "dewaPremiseHint": "6 to 12 digits. Optional.",
+    "dewaEdit": "Edit DEWA premise number",
+    "dewaSave": "Save",
+    "dewaNotSet": "Not set",
     "startDate": "Start Date",
     "status": "Status",
     "supportingDocuments": "Supporting Documents",
@@ -3323,6 +3328,7 @@
       "chargeType": {
         "ruleInUse": "{code} is on {count} lease(s) already past draft, so its kind, its account and how it is earned cannot change. Create a new charge type for the new rule."
       },
+      "unit": { "dewaInvalid": "Enter the DEWA premise number as 6 to 12 digits.", "dewaTaken": "Another unit already has this DEWA premise number." },
       "lease": { "assignmentBeforeLatestPosting": "The assignment cannot take effect before {date}: {from} already has a posting on this lease dated {date}, and the hand-over moves the balances as they stand after it. Date it on or after {date}.",
         "reductionNegative": "Line {line} ({code}): the new amount would take the rest of the term below zero.",
         "notDraft": "Only a draft contract's cheques are numbered here; this one is {status}.",
