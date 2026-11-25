@@ -16,6 +16,9 @@ const ddmmyyyy = (iso: string) => {
     return `${d}/${m}/${y}`;
 };
 
+/** Dates inside translated sentences stay LTR. */
+const ltr = { b: (c: React.ReactNode) => <bdi dir="ltr">{c}</bdi> };
+
 type UnitInfo = { type: string | null; dewa: string | null };
 
 /**
@@ -65,7 +68,7 @@ export default function RentalIndexPanel({ lease, preview, onAttached }: {
                         <dt className="text-muted">{t("pRange")}</dt>
                         <dd className="font-semibold tabular-nums" dir="ltr">{wholeAed(preview.indexMin ?? 0)} – {wholeAed(preview.indexMax ?? 0)}</dd>
                         {preview.indexCheckedOn && (
-                            <dd className="text-[11px] text-muted">{t("pChecked", { date: fmtIsoDate(preview.indexCheckedOn, locale) })}</dd>
+                            <dd className="text-[11px] text-muted">{t.rich("pChecked", { date: fmtIsoDate(preview.indexCheckedOn, locale), ...ltr })}</dd>
                         )}
                     </div>
                     <div>
@@ -87,12 +90,12 @@ export default function RentalIndexPanel({ lease, preview, onAttached }: {
             )}
 
             {deadline && (
-                <p className="text-xs text-foreground">{t("noticeDeadline", { date: deadline })}</p>
+                <p className="text-xs text-foreground">{t.rich("noticeDeadline", { date: deadline, ...ltr })}</p>
             )}
             {preview.noticePassed && (
                 <p role="alert" data-testid="rental-index-notice-passed"
                     className="flex items-center gap-1.5 text-[11px] text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-                    <AlertTriangle size={12} /> {t("noticePassed", { date: deadline ?? "" })}
+                    <AlertTriangle size={12} /> {t.rich("noticePassed", { date: deadline ?? "", ...ltr })}
                 </p>
             )}
 

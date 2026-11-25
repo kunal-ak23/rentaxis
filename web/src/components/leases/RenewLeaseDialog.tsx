@@ -206,7 +206,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
 
     // The reason field: up front when the plan preview is above the cap; in edited-lines mode once the server asks.
     const reasonCap: string | null = copyLines && preview?.indexAboveCap && preview.indexCapRent != null
-        ? wholeAed(preview.indexCapRent) : (!copyLines ? serverCap : null);
+        ? wholeAed(preview.indexCapRent) : serverCap;
     const reasonShown = reasonCap !== null;
     const reasonMissing = reasonShown && indexReason.trim() === "";
 
@@ -384,7 +384,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                     <div className="space-y-1.5" data-testid="renew-index-section">
                         <p role="alert" data-testid="renew-index-above"
                             className="text-[11px] text-error bg-error/10 border border-error/20 rounded-lg px-3 py-2">
-                            {tIdx.rich("aboveCap", { cap: reasonCap ?? "", ...bdi })}
+                            {reasonCap ? tIdx.rich("aboveCap", { cap: reasonCap, ...bdi }) : tIdx("aboveCapNoAmount")}
                         </p>
                         <label className={label} htmlFor="renew-index-reason">{tIdx("reasonLabel")}</label>
                         <textarea id="renew-index-reason" data-testid="renew-index-reason" className={field} rows={3} maxLength={500}

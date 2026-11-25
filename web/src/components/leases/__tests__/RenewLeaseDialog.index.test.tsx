@@ -93,4 +93,19 @@ describe("RenewLeaseDialog rental index", () => {
         expect(renew.mock.calls[1][1].indexOverrideReason).toBe("Agreed with tenant");
         expect(renew.mock.calls[1][1].ejariNumber).toBe("E-1");
     });
+
+    it("plan mode: a server refusal the preview missed still reveals the reason, with and without a cap", async () => {
+        renewalPreview.mockResolvedValue({ ...BASE, ...INDEX, indexAboveCap: false });
+        renew.mockRejectedValueOnce(new ApiError(400, "above cap", JSON.stringify({ code: "renewal.indexOverrideRequired" })));
+        renew.mockResolvedValueOnce({ id: "l2" });
+        renderDialog();
+        await screen.findByTestId("rental-index-panel");
+        fireEvent.click(screen.getByTestId("renew-lease-confirm"));
+        const reason = await screen.findByTestId("renew-index-reason");
+        expect(screen.getByTestId("renew-index-above")).not.toHaveTextContent("AED");
+        fireEvent.change(reason, { target: { value: "Agreed" } });
+        fireEvent.click(screen.getByTestId("renew-lease-confirm"));
+        await waitFor(() => expect(renew).toHaveBeenCalledTimes(2));
+        expect(renew.mock.calls[1][1].indexOverrideReason).toBe("Agreed");
+    });
 });
