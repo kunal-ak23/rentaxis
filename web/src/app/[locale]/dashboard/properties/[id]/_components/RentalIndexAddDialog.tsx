@@ -8,6 +8,7 @@ import {
     type DldPropertyType, type ParsedResult, type RentalIndexRate, type RentalUnitType,
 } from "@/lib/api/rentalIndex";
 import { formatCurrency } from "@/lib/format";
+import { businessTodayIso } from "@/lib/businessDate";
 
 export type RentalIndexBuildingOption = { id: string; name: string };
 
@@ -44,7 +45,8 @@ export function RentalIndexAddDialog({ mode, propertyId, buildings = [], buildin
     const [category, setCategory] = useState("");
     const [min, setMin] = useState("");
     const [max, setMax] = useState("");
-    const [checkedOn, setCheckedOn] = useState(new Date().toISOString().slice(0, 10));
+    // Final review F4: the business (Dubai) day the server checks against, not the browser's UTC date.
+    const [checkedOn, setCheckedOn] = useState(businessTodayIso);
 
     const fail = (e: unknown, fallback: string) => setError(serverText(tc, e) || codedOf(e).message || fallback);
 
@@ -165,7 +167,7 @@ export function RentalIndexAddDialog({ mode, propertyId, buildings = [], buildin
                             </div>
                             <div>
                                 <label className={LABEL} htmlFor="ri-checked">{t("checkedOn")}</label>
-                                <input id="ri-checked" type="date" dir="ltr" className={FIELD} value={checkedOn} onChange={(e) => setCheckedOn(e.target.value)} />
+                                <input id="ri-checked" type="date" dir="ltr" className={FIELD} value={checkedOn} max={businessTodayIso()} onChange={(e) => setCheckedOn(e.target.value)} />
                             </div>
                         </>
                     )}

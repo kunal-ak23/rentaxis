@@ -123,6 +123,26 @@ describe("RentalIndexTab", () => {
         await waitFor(() => expect(api.revoke).toHaveBeenCalledWith("r1"));
     });
 
+    it("defaults the checked-on date to the business (Dubai) day, not the UTC one (final review F4)", async () => {
+        // 21:30 UTC on the 25th is already the 26th in Dubai.
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-11-25T21:30:00Z"));
+        try {
+            api.list.mockResolvedValue([]);
+            api.manual.mockResolvedValue(rate({ source: "MANUAL" }));
+            render(<RentalIndexTab propertyId="p1" buildings={buildings} emirate="DUBAI" />);
+            fireEvent.click(await screen.findByRole("button", { name: "Enter by hand" }));
+            expect((screen.getByLabelText("Checked on") as HTMLInputElement).value).toBe("2026-11-26");
+            fireEvent.change(screen.getByTestId("ri-min"), { target: { value: "60000" } });
+            fireEvent.change(screen.getByTestId("ri-max"), { target: { value: "80000" } });
+            fireEvent.click(screen.getByRole("button", { name: "Save range" }));
+            await waitFor(() => expect(api.manual).toHaveBeenCalled());
+            expect(api.manual.mock.calls[0][0].checkedOn).toBe("2026-11-26");
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("refuses a bad hand-entered range before calling the server", async () => {
         api.list.mockResolvedValue([]);
         render(<RentalIndexTab propertyId="p1" buildings={buildings} emirate="DUBAI" />);
