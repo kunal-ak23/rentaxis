@@ -24,7 +24,8 @@ import org.apache.pdfbox.text.PDFTextStripper;
 public final class DldResultParser {
 
     private static final String NOT_DLD = "rentalIndex.notDldResult";
-    private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/uuuu");
+    private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/uuuu")
+            .withResolverStyle(java.time.format.ResolverStyle.STRICT);
 
     private static final Pattern TITLE = Pattern.compile("^Rental Index Resul?t?\\s*$", Pattern.MULTILINE);
     private static final Pattern ISSUER = Pattern.compile("Dubai Land Department");
@@ -81,8 +82,11 @@ public final class DldResultParser {
             throw notDld("contract end date");
         }
 
-        Matcher cat = CATEGORY.matcher(t);
         Matcher bld = BUILDING.matcher(t);
+        boolean hasBld = bld.find();
+        String building = hasBld ? (bld.group(1) != null ? bld.group(1) : bld.group(2)).trim() : "";
+        // A building name can contain a category word ("Studio One Tower"); look for the category without the building row.
+        Matcher cat = CATEGORY.matcher(BUILDING.matcher(t).replaceAll(""));
         Matcher at = AREA_TYPE.matcher(t);
         Matcher iss = ISSUED.matcher(t);
         boolean hasAt = at.find();
@@ -104,7 +108,7 @@ public final class DldResultParser {
         return new DldResult(percent, increase, after, premise.group(1), contractEnd, currentRent,
                 num(range.group(1)), num(range.group(2)),
                 cat.find() ? cat.group(1) : "",
-                bld.find() ? (bld.group(1) != null ? bld.group(1) : bld.group(2)).trim() : "",
+                building,
                 hasAt ? at.group(1) : null, hasAt ? at.group(2) : null,
                 iss.find() ? iss.group(1) : "");
     }

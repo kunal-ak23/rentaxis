@@ -22,6 +22,12 @@ final class DldPdfFixtures {
             return new Values(5, 6000, 126000, 120000, 138000, 162000, "123456789", "Test Tower",
                     "2 bed rooms+hall", "28/02/2027", "Test Area", "25 November 2026, 9:05 AM");
         }
+        Values withBuilding(String b) {
+            return new Values(pct, increase, after, rent, min, max, premise, b, category, endDate, area, issuedAt);
+        }
+        Values withEndDate(String d) {
+            return new Values(pct, increase, after, rent, min, max, premise, building, category, d, area, issuedAt);
+        }
         Values withIncrease(long inc, long aft) {
             return new Values(pct, inc, aft, rent, min, max, premise, building, category, endDate, area, issuedAt);
         }

@@ -68,4 +68,20 @@ class DldResultParserTest {
         var v = DldPdfFixtures.Values.valid().withIncrease(7000, 127000);
         assertCode(DldPdfFixtures.layoutNovember(v), "rentalIndex.figuresDontAddUp");
     }
+
+    @Test
+    void buildingNameWithCategoryWordDoesNotChangeCategory() {
+        var v = DldPdfFixtures.Values.valid().withBuilding("Studio One Tower");
+        for (byte[] pdf : List.of(DldPdfFixtures.layoutOctober(v), DldPdfFixtures.layoutNovember(v))) {
+            DldResult r = DldResultParser.parse(pdf);
+            assertThat(r.category()).isEqualTo("2 bed rooms+hall");
+            assertThat(r.building()).isEqualTo("Studio One Tower");
+        }
+    }
+
+    @Test
+    void refusesImpossibleDate() {
+        var v = DldPdfFixtures.Values.valid().withEndDate("31/02/2027");
+        assertCode(DldPdfFixtures.layoutOctober(v), "rentalIndex.notDldResult");
+    }
 }
