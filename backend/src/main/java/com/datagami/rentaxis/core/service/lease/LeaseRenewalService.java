@@ -287,15 +287,12 @@ public class LeaseRenewalService {
      * @param annualNew    the successor's rent, annualised over the successor's term
      * @param aboveCap     {@code annualNew > cap.capRent}
      * @param noticeDeadline the predecessor's end less 90 days (warning only)
+     * @param unitResult   the range in force is this unit's own DLD result (Ruling 2: its evidence and
+     *                     percentage apply)
      */
     public record IndexAssessment(IndexStatus status, RentalIndexRate rate, RentalIndexMath.Cap cap,
                                   BigDecimal annualBase, BigDecimal annualNew, boolean aboveCap,
-                                  LocalDate noticeDeadline, boolean noticePassed) {
-
-        /** The range in force is this unit's own DLD result (Ruling 2: its evidence and percentage apply). */
-        public boolean unitResult(UUID unitId) {
-            return rate != null && unitId != null && unitId.equals(rate.getSourceUnitId());
-        }
+                                  LocalDate noticeDeadline, boolean noticePassed, boolean unitResult) {
     }
 
     /** The longest override reason (spec §8: 1–500 characters). */
@@ -307,6 +304,8 @@ public class LeaseRenewalService {
     private RentalIndexRateService rentalIndex;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private RenewalIndexCheckRepository indexChecks;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypes;
     private Clock clock = Clock.systemDefaultZone();
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -325,34 +324,62 @@ public class LeaseRenewalService {
         leaseAccessPolicy.requireReadable(lease);
         LocalDate from = lease.getEndDate() == null ? null : lease.getEndDate().plusDays(1);
         LocalDate to = from == null ? null : termEnd(from, 12);
-        CurrentRent[] current = new CurrentRent[1];
-        return assess(lease, () -> current[0] = currentRent(lease),
-                () -> current[0] == null ? null : current[0].net(), from, to);
+        // The rent unchanged: the successor charges exactly what renews.
+        return assess(lease, () -> renewingRent(lease), IndexBase::net, from, to);
     }
 
-    /** The contract rent the renter pays now (headline less discount, after any credit) and the term it covers. */
-    private record CurrentRent(BigDecimal net, LocalDate from, LocalDate to) {
+    /**
+     * What one rent line charges the renter now: the headline less its discount, or, after a credit addendum, the
+     * credit's headline less discount (PR #359 R1 P2-1, follow-up ruling R7). {@code removed}: credited to nothing.
+     * The one place a renewal's base is worked out — the plan's base rent and the index both read it.
+     */
+    private record NetRent(BigDecimal net, BigDecimal discount, boolean removed) {
     }
 
-    private CurrentRent currentRent(Lease lease) {
+    private NetRent netRent(LeaseLine line, List<LeaseEffectiveTerms.EffectiveLine> effective) {
+        LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, line);
+        if (eff != null && eff.credited()) {
+            return new NetRent(eff.headlineLessDiscount(), eff.discount(), eff.removed());
+        }
+        BigDecimal discount = line.getDiscountAmount() == null ? BigDecimal.ZERO : line.getDiscountAmount();
+        return new NetRent(line.getGrossAmount().subtract(discount), discount, false);
+    }
+
+    /** The rent that renews, net, and the term the contract rent was priced for (spec 2026-11-25 §14.2). */
+    private record IndexBase(BigDecimal net, LocalDate from, LocalDate to) {
+    }
+
+    /**
+     * Every RENT line a renewal copies (the contract's own, not an addendum's or an extension's, not credited
+     * away; see {@link #copiedLines}), summed net — the same set the successor's RENT lines are measured on.
+     */
+    private IndexBase renewingRent(Lease lease) {
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
-        LeaseLine rent = LeaseService.contractRentLine(lease, lines);
-        if (rent == null || rent.getGrossAmount() == null) return null;
-        BigDecimal net = rent.getGrossAmount()
-                .subtract(rent.getDiscountAmount() == null ? BigDecimal.ZERO : rent.getDiscountAmount());
-        LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effectiveTerms.effectiveLines(lease, null), rent);
-        if (eff != null && eff.removed()) return null;
-        if (eff != null && eff.credited()) net = eff.headlineLessDiscount();
-        LocalDate[] priced = contractRentTerm(lease, lines, rent);
+        LeaseLine contract = LeaseService.contractRentLine(lease, lines);
+        if (contract == null) return null;
+        LocalDate[] priced = contractRentTerm(lease, lines, contract);
         if (priced[0] == null || priced[1] == null) return null;
-        return new CurrentRent(net, priced[0], priced[1]);
+        List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(lease, null);
+        BigDecimal sum = BigDecimal.ZERO;
+        boolean any = false;
+        for (LeaseLine l : lines) {
+            ChargeType type = l.getChargeType();
+            if (type == null || type.getBehaviour() != ChargeBehaviour.RENT || l.getGrossAmount() == null
+                    || l.getAddendumId() != null || isExtensionLine(l, lease)) continue;
+            NetRent n = netRent(l, effective);
+            if (n.removed()) continue;
+            sum = sum.add(n.net());
+            any = true;
+        }
+        return any ? new IndexBase(sum, priced[0], priced[1]) : null;
     }
 
     /**
      * Measures a renewal against the range in force today. The rents are read only when there is a range to
      * compare them with, so a renewal the index does not touch reads nothing more than it did before.
      */
-    private IndexAssessment assess(Lease predecessor, Supplier<CurrentRent> currentRent, Supplier<BigDecimal> newRent,
+    private IndexAssessment assess(Lease predecessor, Supplier<IndexBase> renewing,
+                                   java.util.function.Function<IndexBase, BigDecimal> newRent,
                                    LocalDate newStart, LocalDate newEnd) {
         if (rentalIndex == null) return null;
         Unit unit = predecessor.getUnit();
@@ -360,54 +387,54 @@ public class LeaseRenewalService {
         IndexStatus status = rentalIndex.statusFor(unit, today);
         if (status == null) return null; // RENTAL_INDEX off: renewals exactly as before
         if (status != IndexStatus.OK && status != IndexStatus.NO_INDEX) {
-            return new IndexAssessment(status, null, null, null, null, false, null, false);
+            return new IndexAssessment(status, null, null, null, null, false, null, false, false);
         }
         LocalDate deadline = predecessor.getEndDate() == null ? null : predecessor.getEndDate().minusDays(NOTICE_DAYS);
         boolean passed = deadline != null && today.isAfter(deadline);
         RentalIndexRate rate = status == IndexStatus.OK ? rentalIndex.inForce(unit, today).orElse(null) : null;
         if (rate == null) {
-            return new IndexAssessment(IndexStatus.NO_INDEX, null, null, null, null, false, deadline, passed);
+            return new IndexAssessment(IndexStatus.NO_INDEX, null, null, null, null, false, deadline, passed, false);
         }
-        CurrentRent base = currentRent.get();
+        boolean own = unit != null && unit.getId() != null && unit.getId().equals(rate.getSourceUnitId());
+        IndexBase base = renewing.get();
         if (base == null) {
-            return new IndexAssessment(status, rate, null, null, null, false, deadline, passed);
+            return new IndexAssessment(status, rate, null, null, null, false, deadline, passed, own);
         }
         BigDecimal annualBase = RentalIndexMath.annualise(base.net(), base.from(), base.to());
         RentalIndexMath.Cap cap = RentalIndexMath.of(rate.getIndexMin(), rate.getIndexMax(), annualBase);
-        if (unit != null && unit.getId() != null && unit.getId().equals(rate.getSourceUnitId())
-                && rate.getDldPercent() != null) {
+        if (own && rate.getDldPercent() != null) {
             // Spec §14.4: DLD's printed percentage for this unit beats the midpoint arithmetic.
             int pct = rate.getDldPercent();
             cap = new RentalIndexMath.Cap(cap.average(), cap.gap(), pct, RentalIndexMath.capRent(annualBase, pct));
         }
-        BigDecimal rent = newStart == null || newEnd == null ? null : newRent.get();
+        BigDecimal rent = newStart == null || newEnd == null ? null : newRent.apply(base);
         BigDecimal annualNew = rent == null ? null : RentalIndexMath.annualise(rent, newStart, newEnd);
         boolean above = annualNew != null && annualNew.compareTo(cap.capRent()) > 0;
-        return new IndexAssessment(status, rate, cap, annualBase, annualNew, above, deadline, passed);
+        return new IndexAssessment(status, rate, cap, annualBase, annualNew, above, deadline, passed, own);
     }
 
-    /** The successor's rent for the index: every RENT line it will carry, net of discount. */
-    private BigDecimal indexNewRent(RenewLeaseRequest r, BigDecimal planNewRent) {
-        BigDecimal total = r.lines() != null ? rentOf(r.lines()) : planNewRent;
-        BigDecimal extra = rentOf(r.additionalLines());
-        if (total == null) return extra.signum() == 0 ? null : extra;
-        return total.add(extra);
-    }
-
+    /**
+     * The successor's rent for the index: every RENT line the draft will carry (copied, edited, or added as an
+     * extra charge), net of discount. Charge types are read from the repository, never through a service that
+     * throws: an unknown type is skipped here and refused by the draft with its own message, and a swallowed
+     * exception from a transactional proxy would have marked the renewal's transaction rollback-only.
+     */
     private BigDecimal rentOf(List<LeaseLineInput> lines) {
         BigDecimal sum = BigDecimal.ZERO;
-        if (lines == null) return sum;
-        int seq = 0;
+        if (lines == null || chargeTypes == null) return sum;
+        Map<String, java.util.Optional<ChargeType>> seen = new java.util.HashMap<>();
         for (LeaseLineInput in : lines) {
-            seq++;
             if (in == null || in.grossAmount() == null) continue;
-            ChargeType type;
-            try {
-                type = leaseService.chargeTypeOf(in, seq);
-            } catch (BusinessRuleViolationException e) {
-                continue; // the draft refuses it with its own message
+            java.util.Optional<ChargeType> type;
+            if (in.chargeTypeId() != null) {
+                type = seen.computeIfAbsent("id:" + in.chargeTypeId(), k -> chargeTypes.findById(in.chargeTypeId()));
+            } else if (in.chargeTypeCode() != null && !in.chargeTypeCode().isBlank()) {
+                String code = in.chargeTypeCode().trim();
+                type = seen.computeIfAbsent("code:" + code, k -> chargeTypes.findByCode(code));
+            } else {
+                continue;
             }
-            if (type == null || type.getBehaviour() != ChargeBehaviour.RENT) continue;
+            if (type.isEmpty() || type.get().getBehaviour() != ChargeBehaviour.RENT) continue;
             sum = sum.add(in.grossAmount()
                     .subtract(in.discountAmount() == null ? BigDecimal.ZERO : in.discountAmount()));
         }
@@ -440,7 +467,7 @@ public class LeaseRenewalService {
             return;
         }
         RentalIndexRate rate = index.rate();
-        boolean own = index.unitResult(predecessor.getUnit() == null ? null : predecessor.getUnit().getId());
+        boolean own = index.unitResult();
         RenewalIndexCheck c = new RenewalIndexCheck();
         c.setTenantId(predecessor.getTenantId());
         c.setLeaseId(predecessor.getId());
@@ -496,7 +523,6 @@ public class LeaseRenewalService {
         }
         RentalIndexRate rate = ix.rate();
         RentalIndexMath.Cap cap = ix.cap();
-        UUID unitId = leaseRepository.findByIdScopedToTenant(leaseId).map(l -> l.getUnit().getId()).orElse(null);
         return new com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO(plan.baseRent(), plan.newRent(),
                 plan.changePercent(), lines, plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList(),
                 plan.warnPercent(), plan.exceedsWarn(), plan.droppedDiscount(),
@@ -511,7 +537,7 @@ public class LeaseRenewalService {
                 rate == null ? null : rate.getId(),
                 rate == null ? null : rate.getSource().name(),
                 rate == null ? null : rate.getCheckedOn(),
-                rate == null ? null : ix.unitResult(unitId),
+                rate == null ? null : ix.unitResult(),
                 ix.noticeDeadline(),
                 ix.noticeDeadline() == null ? null : ix.noticePassed());
     }
@@ -559,18 +585,12 @@ public class LeaseRenewalService {
                 // PR #358 R1 P2-3: the base is what the renter pays — headline less the
                 // discount — because the discount does not renew. A NONE renewal keeps
                 // that rent; a percentage and the notice are measured net to net.
-                dropped = contractRent.getDiscountAmount() == null ? BigDecimal.ZERO : contractRent.getDiscountAmount();
-                base = contractRent.getGrossAmount().subtract(dropped);
                 // PR #359 R1 P2-1: a credit addendum cut the rent — the renter pays the
-                // reduced rate, and that is what a renewal carries on and escalates.
-                LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(
-                        effectiveTerms.effectiveLines(predecessor, null), contractRent);
-                if (eff != null && eff.credited()) {
-                    // Follow-up ruling R7: from the credit's headline (the concession it
-                    // re-applied does not renew); a pre-180 credit has only its net figure.
-                    dropped = eff.discount();
-                    base = eff.headlineLessDiscount();
-                }
+                // reduced rate, and that is what a renewal carries on and escalates
+                // (follow-up ruling R7: from the credit's headline; see netRent).
+                NetRent now = netRent(contractRent, effectiveTerms.effectiveLines(predecessor, null));
+                dropped = now.discount();
+                base = now.net();
                 newRent = switch (mode) {
                     case NONE -> base;
                     case AMOUNT -> {
@@ -636,10 +656,10 @@ public class LeaseRenewalService {
         boolean exceeds = warn != null && percent != null && percent.compareTo(warn) > 0;
         // Spec 2026-11-25 §14.2: the same base as above, with the term it was priced for; the explicit-lines and
         // extra-charge paths are measured too, so no shape of request escapes the cap.
-        BigDecimal planNewRent = newRent;
-        IndexAssessment index = assess(predecessor, () -> currentRent(predecessor),
-                () -> indexNewRent(r, planNewRent), r.startDate(), r.endDate());
-        return new RenewalPlan(base, newRent, changed ? percent : null, changed, List.copyOf(lines), sources,
+        List<LeaseLineInput> drafted = List.copyOf(lines);
+        IndexAssessment index = assess(predecessor, () -> renewingRent(predecessor),
+                b -> rentOf(drafted), r.startDate(), r.endDate());
+        return new RenewalPlan(base, newRent, changed ? percent : null, changed, drafted, sources,
                 skipped, warn, exceeds, dropped, index);
     }
 

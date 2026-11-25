@@ -288,6 +288,38 @@ class LeaseRenewalIndexIT extends AbstractPostgresIT {
     }
 
     @Test
+    void twoRentLinesMeasuredOnTheSameSet() {
+        flagOn();
+        rate(today.minusMonths(1));
+        // Two original RENT lines, 60,000 each: 120,000 a year renews, against a cap of 126,000.
+        UUID lease = fx.postedLease(unit, fx.renter(), start, start, end,
+                List.of(line("RENT", "60000"), line("RENT", "60000")), 4, null).lease().getId();
+
+        // The grid resubmitted unchanged: nothing went up, so no reason is needed.
+        RenewLeaseRequest unchanged = new RenewLeaseRequest(null, rStart, rEnd,
+                List.of(line("RENT", "60000"), line("RENT", "60000")), false, null, null, null, null);
+        RenewalPreviewDTO grid = renewal.preview(lease, unchanged);
+        assertThat(grid.indexCapRent()).isEqualByComparingTo("126000");
+        assertThat(grid.indexAboveCap()).isFalse();
+
+        // Plan mode on the same lease gives the same verdict, and the preview's base is still the contract line.
+        RenewalPreviewDTO same = renewal.preview(lease, new RenewLeaseRequest(null, rStart, rEnd, null, false,
+                new RentChange(RentChange.Mode.NONE, null, null), null, null, null));
+        assertThat(same.baseRent()).isEqualByComparingTo("60000");
+        assertThat(same.indexCapRent()).isEqualByComparingTo("126000");
+        assertThat(same.indexAboveCap()).isFalse();
+        // The contract line to 66,000: 126,000 in all, at the cap; 66,001 is above it.
+        assertThat(renewal.preview(lease, amount("66000")).indexAboveCap()).isFalse();
+        assertThat(renewal.preview(lease, amount("66001")).indexAboveCap()).isTrue();
+
+        renewal.renew(lease, unchanged);
+        RenewalIndexCheck c = onlyCheck(lease);
+        assertThat(c.getBaseRent()).isEqualByComparingTo("120000");
+        assertThat(c.getNewRent()).isEqualByComparingTo("120000");
+        assertThat(c.isAboveCap()).isFalse();
+    }
+
+    @Test
     void noRangeRenewsAsToday() {
         flagOn();
         UUID lease = lease("120000");
