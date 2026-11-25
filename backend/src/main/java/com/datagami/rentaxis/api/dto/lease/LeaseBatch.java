@@ -57,6 +57,8 @@ public final class LeaseBatch {
      *                        "Generate cheques" uses: the lease's payment terms, and the deposit and
      *                        each fee on a cheque of their own (client request 2026-10-28)
      * @param additionalLines charges added to every renewal (e.g. a renewal fee), as on the single renew
+     * @param indexOverrideReason one reason, stored on every row that ends up above the rental index cap
+     *                        (1–500 characters); rows within the cap ignore it, rows above it without it are refused
      */
     public record RenewRequest(@NotEmpty(message = "Choose at least one contract")
                                @Size(max = MAX_LEASES, message = "At most " + MAX_LEASES + " contracts at a time")
@@ -66,7 +68,14 @@ public final class LeaseBatch {
                                LocalDate contractDate,
                                boolean carryDepositForward,
                                boolean generateGrid,
-                               List<@Valid LeaseLineInput> additionalLines) {
+                               List<@Valid LeaseLineInput> additionalLines,
+                               String indexOverrideReason) {
+
+        /** The shape before the rental index. */
+        public RenewRequest(List<UUID> leaseIds, RentRule rule, Integer termMonths, LocalDate contractDate,
+                            boolean carryDepositForward, boolean generateGrid, List<LeaseLineInput> additionalLines) {
+            this(leaseIds, rule, termMonths, contractDate, carryDepositForward, generateGrid, additionalLines, null);
+        }
     }
 
     /**
@@ -75,10 +84,24 @@ public final class LeaseBatch {
      * @param renewalLeaseId the DRAFT successor, when {@code ok}
      * @param previousRent   the base the rule was applied to (null when unchanged by request)
      * @param newRent        the successor's contract rent
+     * @param indexAllowedPercent the rental index's allowed increase for this contract (null: flag off, or no range)
+     * @param indexCapRent   the most the annualised rent may be under the index (null as above)
+     * @param indexAboveCap  the successor's annualised rent is above the cap (null: flag off)
+     * @param indexStatus    OK, NO_INDEX, NOT_DUBAI, NO_EMIRATE or NOT_RESIDENTIAL (null: flag off)
      */
     public record RenewRow(UUID leaseId, boolean ok, UUID renewalLeaseId, LocalDate startDate, LocalDate endDate,
                            BigDecimal previousRent, BigDecimal newRent, BigDecimal changePercent,
-                           int chequeRows, String code, Map<String, Object> args, String message) {
+                           int chequeRows, String code, Map<String, Object> args, String message,
+                           Integer indexAllowedPercent, BigDecimal indexCapRent, Boolean indexAboveCap,
+                           String indexStatus) {
+
+        /** The shape before the rental index: its fields are null. */
+        public RenewRow(UUID leaseId, boolean ok, UUID renewalLeaseId, LocalDate startDate, LocalDate endDate,
+                        BigDecimal previousRent, BigDecimal newRent, BigDecimal changePercent,
+                        int chequeRows, String code, Map<String, Object> args, String message) {
+            this(leaseId, ok, renewalLeaseId, startDate, endDate, previousRent, newRent, changePercent, chequeRows,
+                    code, args, message, null, null, null, null);
+        }
     }
 
     /**

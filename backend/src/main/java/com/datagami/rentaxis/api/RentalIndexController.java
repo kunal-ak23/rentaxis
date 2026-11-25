@@ -1,11 +1,13 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.rentalindex.LeaseCapDTO;
 import com.datagami.rentaxis.api.dto.rentalindex.ManualRateRequest;
 import com.datagami.rentaxis.api.dto.rentalindex.ParsedResultDTO;
 import com.datagami.rentaxis.api.dto.rentalindex.RentalIndexRateDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.core.service.lease.LeaseRenewalService;
 import com.datagami.rentaxis.core.service.rentalindex.RentalIndexRateService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
@@ -28,6 +30,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,10 +50,48 @@ public class RentalIndexController {
 
     private final RentalIndexRateService service;
     private final TenantFeatureService tenantFeatureService;
+    private final LeaseRenewalService renewalService;
 
-    public RentalIndexController(RentalIndexRateService service, TenantFeatureService tenantFeatureService) {
+    public RentalIndexController(RentalIndexRateService service, TenantFeatureService tenantFeatureService,
+                                 LeaseRenewalService renewalService) {
         this.service = service;
         this.tenantFeatureService = tenantFeatureService;
+        this.renewalService = renewalService;
+    }
+
+    /** The most lease ids one /caps call takes; the queue sends its page (50) or a season in chunks. */
+    public static final int MAX_CAP_LEASES = 200;
+
+    /**
+     * The renewal queue's "Max increase" for each lease (spec §8). A lease the caller cannot read (another
+     * organisation's, or outside a manager's properties, or not there) is omitted, not 404'd: one stale id in a
+     * page must not blank the column, and the omission leaks no more than the 404 would. Duplicates collapse; the
+     * order is the request's. More than {@value #MAX_CAP_LEASES} ids is refused.
+     */
+    @GetMapping("/caps")
+    @PreAuthorize(READ_ROLES)
+    public List<LeaseCapDTO> caps(@RequestParam(required = false) List<UUID> leaseIds) {
+        requireFeature();
+        LinkedHashSet<UUID> ids = new LinkedHashSet<>(leaseIds == null ? List.of() : leaseIds);
+        if (ids.size() > MAX_CAP_LEASES) {
+            throw new BusinessRuleViolationException("At most " + MAX_CAP_LEASES + " contracts at a time.",
+                    "rentalIndex.tooManyLeases", Map.of("max", MAX_CAP_LEASES));
+        }
+        List<LeaseCapDTO> out = new ArrayList<>();
+        for (UUID id : ids) {
+            LeaseRenewalService.IndexAssessment a;
+            try {
+                a = renewalService.indexCapFor(id);
+            } catch (NotFoundException e) {
+                continue;
+            }
+            if (a == null) continue;
+            out.add(new LeaseCapDTO(id, a.status().name(),
+                    a.cap() == null ? null : a.cap().percent(),
+                    a.cap() == null ? null : a.cap().capRent(),
+                    a.cap() == null ? null : a.annualBase()));
+        }
+        return out;
     }
 
     @GetMapping("/rates")

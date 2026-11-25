@@ -105,6 +105,8 @@ public class LeaseBatchService {
 
     private LeaseBatch.RenewRow renewOne(UUID leaseId, LeaseBatch.RenewRequest r) {
         RenewTerms terms = termsFor(leaseId, r);
+        // Read before the renewal, in the row's transaction: null when RENTAL_INDEX is off.
+        LeaseRenewalService.IndexAssessment ix = renewalService.planFor(leaseId, terms.request()).index();
         LeaseDTO draft = renewalService.renew(leaseId, terms.request());
         int rows = 0;
         if (r.generateGrid()) {
@@ -112,7 +114,11 @@ public class LeaseBatchService {
         }
         return new LeaseBatch.RenewRow(leaseId, true, draft.getId(), draft.getStartDate(), draft.getEndDate(),
                 draft.getRenewalPreviousRent() != null ? draft.getRenewalPreviousRent() : terms.previousRent(),
-                draft.getRentAmount(), draft.getRenewalChangePercent(), rows, null, null, null);
+                draft.getRentAmount(), draft.getRenewalChangePercent(), rows, null, null, null,
+                ix == null || ix.cap() == null ? null : ix.cap().percent(),
+                ix == null || ix.cap() == null ? null : ix.cap().capRent(),
+                ix == null ? null : ix.aboveCap(),
+                ix == null ? null : ix.status().name());
     }
 
     /**
@@ -182,7 +188,7 @@ public class LeaseBatchService {
             default -> throw new IllegalStateException();
         }
         return new RenewTerms(new RenewLeaseRequest(r.contractDate(), start, end, null, r.carryDepositForward(),
-                change, null, extra), previous);
+                change, null, extra, r.indexOverrideReason()), previous);
     }
 
     /** {@link #termsFor} in a read-only transaction of its own (review P3-1), for callers outside one. */

@@ -12,6 +12,8 @@ import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.rentalindex.DldPdfFixtures;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.RentalIndexRate;
+import com.datagami.rentaxis.domain.entity.enums.DldPropertyType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.enums.RentalIndexSource;
@@ -79,6 +81,7 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
+    @Autowired JdbcTemplate jdbc;
 
     private LeaseTestFixtures a;
     private UUID tenantId;
@@ -363,6 +366,92 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
 
         // A manager outside the unit's property: 404.
         assertThat(multipart(unassignedManager, UserRole.PROPERTY_MANAGER, BASE + "/parse", form)
+                .getStatusCode().value()).isEqualTo(404);
+    }
+
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void capsForQueue() {
+        a.withLeaseServices(leaseService, generation, posting);
+        RentalIndexRate rate = new RentalIndexRate();
+        rate.setTenantId(tenantId);
+        rate.setPropertyId(propertyId);
+        rate.setUnitType(UnitType.BHK2);
+        rate.setDldPropertyType(DldPropertyType.APARTMENT);
+        rate.setCategory("2 bed rooms+hall");
+        rate.setIndexMin(new java.math.BigDecimal("138000"));
+        rate.setIndexMax(new java.math.BigDecimal("162000"));
+        rate.setSource(RentalIndexSource.MANUAL);
+        LocalDate checked = LocalDate.now().minusMonths(1);
+        rate.setCheckedOn(checked);
+        rate.setExpiresOn(checked.plusMonths(12));
+        rate.setCreatedBy(UUID.randomUUID());
+        rates.save(rate);
+
+        Unit studio = a.createUnit(a.property(), "102");
+        studio.setType(UnitType.BHK1); // no range for 1 bed
+        studio = unitRepo.save(studio);
+        TenantContextHolder.setTenantId(tenantId);
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        UUID ok = a.draftLease(unit, a.renter(), LocalDate.of(2026, 2, 20), LocalDate.of(2026, 3, 1),
+                LocalDate.of(2027, 2, 28), List.of(line("RENT", "120000")));
+        UUID noIndex = a.draftLease(studio, a.renter(), LocalDate.of(2026, 2, 20), LocalDate.of(2026, 3, 1),
+                LocalDate.of(2027, 2, 28), List.of(line("RENT", "60000")));
+        TenantContextHolder.clear();
+        LeaseTestFixtures.clearAuth();
+
+        String ids = ok + "," + noIndex + "," + UUID.randomUUID() + "," + ok;
+        java.util.function.Function<Object, Map<String, Map<String, Object>>> byLease = body -> {
+            Map<String, Map<String, Object>> m = new java.util.LinkedHashMap<>();
+            for (Map<String, Object> row : (List<Map<String, Object>>) body) m.put(row.get("leaseId").toString(), row);
+            return m;
+        };
+        ResponseEntity<Object> res = raw(manager, UserRole.PROPERTY_MANAGER, HttpMethod.GET, BASE + "/caps?leaseIds=" + ids, null);
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        Map<String, Map<String, Object>> rows = byLease.apply(res.getBody());
+        // The unknown id is omitted, the duplicate collapses.
+        assertThat(rows).containsOnlyKeys(ok.toString(), noIndex.toString());
+        Map<String, Object> okRow = rows.get(ok.toString());
+        assertThat(okRow.get("status")).isEqualTo("OK");
+        assertThat(okRow.get("allowedPercent")).isEqualTo(5);
+        assertThat(new java.math.BigDecimal(okRow.get("capRent").toString())).isEqualByComparingTo("126000");
+        assertThat(new java.math.BigDecimal(okRow.get("baseRent").toString())).isEqualByComparingTo("120000");
+        Map<String, Object> noRow = rows.get(noIndex.toString());
+        assertThat(noRow.get("status")).isEqualTo("NO_INDEX");
+        assertThat(noRow.get("allowedPercent")).isNull();
+        assertThat(noRow.get("capRent")).isNull();
+
+        // Outside Dubai the index does not apply.
+        jdbc.update("update properties set emirate = 'SHARJAH' where id = ?", propertyId);
+        try {
+            Map<String, Map<String, Object>> sharjah = byLease.apply(raw(admin, UserRole.TENANT_ADMIN, HttpMethod.GET,
+                    BASE + "/caps?leaseIds=" + ok, null).getBody());
+            assertThat(sharjah.get(ok.toString()).get("status")).isEqualTo("NOT_DUBAI");
+            assertThat(sharjah.get(ok.toString()).get("capRent")).isNull();
+        } finally {
+            jdbc.update("update properties set emirate = 'DUBAI' where id = ?", propertyId);
+        }
+
+        // Scope: an unassigned manager and another organisation's admin see nothing; an accountant reads.
+        assertThat((List<?>) raw(unassignedManager, UserRole.PROPERTY_MANAGER, HttpMethod.GET,
+                BASE + "/caps?leaseIds=" + ok, null).getBody()).isEmpty();
+        assertThat((List<?>) callFor(otherAdmin, UserRole.TENANT_ADMIN, otherTenantId, HttpMethod.GET,
+                BASE + "/caps?leaseIds=" + ok, null, List.class).getBody()).isEmpty();
+        assertThat(((List<?>) raw(accountant, UserRole.ACCOUNTANT, HttpMethod.GET,
+                BASE + "/caps?leaseIds=" + ok, null).getBody())).hasSize(1);
+
+        // Too many ids in one call.
+        String tooMany = java.util.stream.Stream.generate(UUID::randomUUID).limit(201).map(UUID::toString)
+                .collect(java.util.stream.Collectors.joining(","));
+        ResponseEntity<Map> refused = call(admin, UserRole.TENANT_ADMIN, HttpMethod.GET,
+                BASE + "/caps?leaseIds=" + tooMany, null);
+        assertThat(refused.getStatusCode().is4xxClientError()).isTrue();
+        assertThat(refused.getBody().get("code")).isEqualTo("rentalIndex.tooManyLeases");
+
+        // Flag off: 404.
+        features.setEnabled(tenantId, TenantFeature.RENTAL_INDEX, false);
+        assertThat(raw(admin, UserRole.TENANT_ADMIN, HttpMethod.GET, BASE + "/caps?leaseIds=" + ok, null)
                 .getStatusCode().value()).isEqualTo(404);
     }
 
