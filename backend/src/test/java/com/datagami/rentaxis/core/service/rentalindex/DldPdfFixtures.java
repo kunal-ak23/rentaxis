@@ -11,14 +11,14 @@ import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 
 /** Synthetic stand-ins for DLD rental index result PDFs; every value is fictional. */
-final class DldPdfFixtures {
+public final class DldPdfFixtures {
 
     private DldPdfFixtures() {}
 
     /** Figures in whole AED; dates dd/MM/yyyy. */
-    record Values(int pct, long increase, long after, long rent, long min, long max, String premise,
+    public record Values(int pct, long increase, long after, long rent, long min, long max, String premise,
                   String building, String category, String endDate, String area, String issuedAt) {
-        static Values valid() {
+        public static Values valid() {
             return new Values(5, 6000, 126000, 120000, 138000, 162000, "123456789", "Test Tower",
                     "2 bed rooms+hall", "28/02/2027", "Test Area", "25 November 2026, 9:05 AM");
         }
@@ -28,14 +28,14 @@ final class DldPdfFixtures {
         Values withEndDate(String d) {
             return new Values(pct, increase, after, rent, min, max, premise, building, category, d, area, issuedAt);
         }
-        Values withIncrease(long inc, long aft) {
+        public Values withIncrease(long inc, long aft) {
             return new Values(pct, inc, aft, rent, min, max, premise, building, category, endDate, area, issuedAt);
         }
     }
 
     private static String grouped(long v) { return String.format("%,d", v); }
 
-    static byte[] layoutOctober(Values v) {
+    public static byte[] layoutOctober(Values v) {
         return pdf(List.of(
                 "Rental Index Result",
                 "Rental Index Type Percentage increase Amount of increase",
@@ -49,7 +49,7 @@ final class DldPdfFixtures {
                 "Dubai Land Department, Dubai"));
     }
 
-    static byte[] layoutNovember(Values v) {
+    public static byte[] layoutNovember(Values v) {
         return pdf(List.of(
                 "Rental Index Result",
                 "Rental Index Type Area Property Type",
@@ -65,7 +65,7 @@ final class DldPdfFixtures {
                 "Dubai Land Department, Dubai"));
     }
 
-    static byte[] pdf(List<String> lines) {
+    public static byte[] pdf(List<String> lines) {
         try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             PDPage page = new PDPage();
             doc.addPage(page);

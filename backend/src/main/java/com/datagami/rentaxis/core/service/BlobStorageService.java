@@ -136,6 +136,33 @@ public class BlobStorageService {
         }
     }
 
+    /**
+     * Stores a DLD rental index result PDF at {@code tenant-{tenantId}/rental-index/{uuid}.pdf}, private like every
+     * tenant blob. Callers keep {@link UploadResult#blobPath()} and serve it through {@link #download}; the URL is
+     * never handed to a browser.
+     */
+    public UploadResult uploadRentalIndexDoc(UUID tenantId, byte[] pdf) {
+        if (tenantId == null || pdf == null || pdf.length == 0) {
+            throw new BlobStorageException("tenantId and non-empty bytes are required");
+        }
+        String blobPath = "rental-index/" + UUID.randomUUID() + ".pdf";
+        try {
+            BlobClient blob = getContainerClient(tenantId).getBlobClient(blobPath);
+            blob.uploadWithResponse(new com.azure.storage.blob.options.BlobParallelUploadOptions(
+                            com.azure.core.util.BinaryData.fromBytes(pdf))
+                            .setHeaders(new com.azure.storage.blob.models.BlobHttpHeaders()
+                                    .setContentType("application/pdf")),
+                    null, com.azure.core.util.Context.NONE);
+            return new UploadResult(blob.getBlobUrl(), blobPath);
+        } catch (com.azure.storage.blob.models.BlobStorageException e) {
+            throw new BlobStorageException("Failed to upload blob " + blobPath, e);
+        } catch (BlobStorageException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new BlobStorageException("Blob storage unreachable uploading " + blobPath, e);
+        }
+    }
+
     /** The folder promotion artwork and business logos are stored in, in the organisation's container. */
     public static final String PROMOTIONS_FOLDER = "promotions";
 
