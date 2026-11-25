@@ -38,6 +38,14 @@ export type FromPdfArgs = { propertyId: string; buildingId?: string | null; unit
 
 const BASE = "/api/proxy/v1/rental-index";
 
+/** The caps endpoint takes at most this many lease ids per call (query-string size). */
+export const CAPS_BATCH = 100;
+
+export type CapStatus = "OK" | "NO_INDEX" | "NOT_DUBAI" | "NO_EMIRATE" | "NOT_RESIDENTIAL";
+export type LeaseCap = {
+  leaseId: string; status: CapStatus; allowedPercent: number | null; capRent: number | null; baseRent: number | null;
+};
+
 /** DLD's category wording to a Miftah unit type: "Studio", "N bed rooms+hall" (N up to 3); anything else has none. */
 export function unitTypeForCategory(category: string | null | undefined): RentalUnitType | null {
   const c = (category ?? "").trim().toLowerCase();
@@ -68,6 +76,13 @@ export const rentalIndexApi = {
     }),
   manual: (body: ManualRateInput) => apiSend<RentalIndexRate>("POST", "/rental-index/rates/manual", body),
   revoke: (id: string) => apiSend<RentalIndexRate>("POST", `/rental-index/rates/${id}/revoke`),
+  /** Max increase per lease, in chunks of {@link CAPS_BATCH}; leases the caller can't read are omitted. */
+  caps: async (leaseIds: string[]): Promise<LeaseCap[]> => {
+    const parts: string[][] = [];
+    for (let i = 0; i < leaseIds.length; i += CAPS_BATCH) parts.push(leaseIds.slice(i, i + CAPS_BATCH));
+    const pages = await Promise.all(parts.map(c => apiGet<LeaseCap[]>(`/rental-index/caps${qs({ leaseIds: c })}`)));
+    return pages.flat();
+  },
   documentUrl: (id: string) => `${BASE}/rates/${id}/document`,
 };
 

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import LeaseDialog from "./LeaseDialog";
+import { wholeAed } from "@/components/rentalIndex/format";
+import { serverText, codedOf } from "@/components/finance/bankrec/serverText";
 import LeaseLinesGrid from "./LeaseLinesGrid";
 import { defaultTermEnd, isOneOff, linesAreValid, renewalRows, sameTermEnd, splitLineErrors, toInputs, todayIso, withCarriedDeposit, type LineRow } from "./leaseMath";
 import {
@@ -37,6 +39,9 @@ export function skippedOneOffCharges(lines: LeaseLine[]): LeaseLine[] {
  * across" and applies the rent change to; untick it and the grid below is what
  * the new contract charges (a rent change is then typed into the grid).
  */
+
+// Loaded only when the preview carries an index (the feature is on), so the flag-off dialog is unchanged.
+const RentalIndexPanel = lazy(() => import("./RentalIndexPanel"));
 
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -83,6 +88,8 @@ const moneyError = (s: string) => (s.trim() === "" ? null : moneyInputError(s));
 export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, onRenewed }: Props) {
     const t = useTranslations("Leasing");
     const tr = useTranslations("Renewal");
+    const tCommon = useTranslations("Common");
+    const tIdx = useTranslations("RentalIndex");
     const locale = useLocale();
     const [contractDate, setContractDate] = useState(todayIso());
     const [startDate, setStartDate] = useState("");
@@ -109,6 +116,11 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
      * operator has already clicked past — changing either date re-arms it.
      */
     const [termAck, setTermAck] = useState<string | null>(null);
+    // Rental index: the override reason, the cap the server named when it asked for one (edited-lines mode,
+    // where the preview computes no cap), and a counter that re-reads the preview after a DLD result is attached.
+    const [indexReason, setIndexReason] = useState("");
+    const [serverCap, setServerCap] = useState<string | null>(null);
+    const [previewKey, setPreviewKey] = useState(0);
 
     const skipped = skippedOneOffCharges(lease.lines ?? []);
     const extraTypes = useMemo(
@@ -141,6 +153,8 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
         setPreviewError(null);
         setErrors([]);
         setTermAck(null);
+        setIndexReason("");
+        setServerCap(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps -- proposeEnd reads only lease.startDate/endDate, listed
     }, [open, lease.startDate, lease.endDate, lease.lines]);
 
@@ -169,7 +183,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
             live = false;
             clearTimeout(handle);
         };
-    }, [open, copyLines, lease.id, startDate, endDate, mode, percent, amount, carryDeposit, tr]);
+    }, [open, copyLines, lease.id, startDate, endDate, mode, percent, amount, carryDeposit, tr, previewKey]);
 
     const { rest } = splitLineErrors(errors);
 
@@ -190,6 +204,12 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
     const termNeedsConfirm = !termTooLong && !!startDate && !!endDate && endDate > startDate
         && termExceedsYears(startDate, endDate, CONFIRM_TERM_YEARS) && termAck !== termKey;
 
+    // The reason field: up front when the plan preview is above the cap; in edited-lines mode once the server asks.
+    const reasonCap: string | null = copyLines && preview?.indexAboveCap && preview.indexCapRent != null
+        ? wholeAed(preview.indexCapRent) : (!copyLines ? serverCap : null);
+    const reasonShown = reasonCap !== null;
+    const reasonMissing = reasonShown && indexReason.trim() === "";
+
     const submit = async () => {
         setBusy(true);
         setErrors([]);
@@ -208,10 +228,18 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                     : null,
                 ejariNumber: ejari.trim() || null,
                 additionalLines: additionalLines.length ? additionalLines : null,
+                ...(reasonShown && indexReason.trim() ? { indexOverrideReason: indexReason.trim() } : {}),
             });
             onRenewed(successor);
         } catch (e) {
-            setErrors(e instanceof ApiError ? [e.message] : [t("renewFailed")]);
+            const c = codedOf(e);
+            if (c.code === "renewal.indexOverrideRequired") {
+                const cap = c.args?.cap;
+                setServerCap(cap == null ? "" : typeof cap === "number" ? wholeAed(cap) : String(cap));
+                setErrors([]);
+            } else {
+                setErrors(e instanceof ApiError ? [serverText(tCommon, e) || e.message] : [t("renewFailed")]);
+            }
         } finally {
             setBusy(false);
         }
@@ -231,7 +259,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
             cancelText={t("cancel")}
             confirmDisabled={!startDate || !endDate || endDate <= startDate || (!copyLines && !linesAreValid(rows))
                 || (copyLines && !rentChangeReady) || !extrasReady || termTooLong || termNeedsConfirm
-                || contractDateTooFar}
+                || contractDateTooFar || reasonMissing}
             busy={busy}
             confirmTestId="renew-lease-confirm"
             width={copyLines ? "lg" : "xl"}
@@ -293,6 +321,12 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                     {t("copyLines")}
                 </label>
 
+                {preview?.indexStatus && (
+                    <Suspense fallback={null}>
+                        <RentalIndexPanel lease={lease} preview={preview} onAttached={() => setPreviewKey(k => k + 1)} />
+                    </Suspense>
+                )}
+
                 {/* 2. Rent change, with a live preview */}
                 {copyLines && (
                     <div className="border border-border rounded-lg p-3 space-y-2" data-testid="renew-rent-change">
@@ -333,7 +367,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                                 {tr.rich("droppedDiscount", { amount: fmtAmount(preview.droppedDiscount ?? 0), ...bdi })}
                             </p>
                         )}
-                        {preview?.exceedsWarn && preview.warnPercent != null && (
+                        {preview?.exceedsWarn && preview.warnPercent != null && !preview.indexAboveCap && (
                             <p role="note" data-testid="renew-rent-notice"
                                 className="text-[11px] text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
                                 {tr.rich("aboveNotice", { percent: preview.warnPercent, ...bdi })}
@@ -343,6 +377,21 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                             <p role="alert" data-testid="renew-preview-error" className="text-[11px] font-semibold text-error">{previewError}</p>
                         )}
                         <p className="text-[11px] text-muted">{tr("concessionsDoNotRenew")}</p>
+                    </div>
+                )}
+
+                {reasonShown && (
+                    <div className="space-y-1.5" data-testid="renew-index-section">
+                        <p role="alert" data-testid="renew-index-above"
+                            className="text-[11px] text-error bg-error/10 border border-error/20 rounded-lg px-3 py-2">
+                            {tIdx.rich("aboveCap", { cap: reasonCap ?? "", ...bdi })}
+                        </p>
+                        <label className={label} htmlFor="renew-index-reason">{tIdx("reasonLabel")}</label>
+                        <textarea id="renew-index-reason" data-testid="renew-index-reason" className={field} rows={3} maxLength={500}
+                            value={indexReason} onChange={e => setIndexReason(e.target.value)} />
+                        <p className={`text-[11px] ${reasonMissing ? "text-error font-semibold" : "text-muted"}`}>
+                            {reasonMissing ? tIdx("reasonNeeded") : tIdx("reasonCount", { n: indexReason.length })}
+                        </p>
                     </div>
                 )}
 

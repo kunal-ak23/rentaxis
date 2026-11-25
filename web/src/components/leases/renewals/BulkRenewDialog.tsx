@@ -51,6 +51,7 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
 }) {
     const t = useTranslations("RenewalSeason");
     const tCommon = useTranslations("Common");
+    const tIdx = useTranslations("RentalIndex");
     const locale = useLocale();
     const [mode, setMode] = useState<Mode>("NONE");
     const [percent, setPercent] = useState("");
@@ -65,6 +66,7 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
     const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
     const [results, setResults] = useState<BulkRenewRow[] | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [indexReason, setIndexReason] = useState("");
 
     const feeTypes = useMemo(() => chargeTypes.filter(c => c.active !== false && c.behaviour === "FEE"), [chargeTypes]);
 
@@ -87,7 +89,7 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
         return l ? `${l.unitIdentifier ?? "—"} · ${l.renterName ?? "—"}` : id;
     };
 
-    const run = async (ids: string[], keep: BulkRenewRow[] = []) => {
+    const run = async (ids: string[], keep: BulkRenewRow[] = [], reason = "") => {
         setError(null);
         setProgress({ done: 0, total: ids.length });
         const rule: BulkRentRule = { mode, percent: mode === "PERCENT" ? pct : null, amount: mode === "ADD" ? add : null };
@@ -105,6 +107,7 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
             try {
                 const rows = await leaseBatchApi.renew({
                     leaseIds: part, rule, termMonths, contractDate, carryDepositForward: carryDeposit, generateGrid, additionalLines,
+                    ...(reason.trim() ? { indexOverrideReason: reason.trim() } : {}),
                 });
                 const answered = new Map(rows.map(r => [r.leaseId, r]));
                 out.push(...part.map(id => answered.get(id) ?? unanswered(id, t("notProcessed"))));
@@ -123,6 +126,7 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
     };
 
     const failed = (results ?? []).filter(r => !r.ok);
+    const needReason = failed.filter(r => r.code === "renewal.indexOverrideRequired");
     const okCount = (results ?? []).length - failed.length;
     const showResults = results !== null;
 
@@ -238,6 +242,19 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
                             </button>
                         )}
                     </div>
+                    {needReason.length > 0 && (
+                        <div className="space-y-1.5 border border-border rounded-lg p-3" data-testid="bulk-index-section">
+                            <p className="text-xs text-error">{tIdx("bulkReasonIntro", { n: needReason.length })}</p>
+                            <label className={label} htmlFor="bulk-index-reason">{tIdx("bulkReasonLabel")}</label>
+                            <textarea id="bulk-index-reason" data-testid="bulk-index-reason" className={field} rows={2} maxLength={500}
+                                value={indexReason} onChange={e => setIndexReason(e.target.value)} />
+                            <button type="button" data-testid="bulk-index-retry" disabled={!!progress || indexReason.trim() === ""}
+                                onClick={() => run(needReason.map(r => r.leaseId), results ?? [], indexReason)}
+                                className="text-xs font-semibold text-primary hover:underline disabled:opacity-50">
+                                {tIdx("bulkRetryReason")}
+                            </button>
+                        </div>
+                    )}
                     <ul className="space-y-1.5 text-xs max-h-[50vh] overflow-y-auto">
                         {(results ?? []).map(r => (
                             <li key={r.leaseId} className="flex items-start gap-2" data-testid={`bulk-renew-result-${r.leaseId}`} data-ok={r.ok}>
@@ -253,6 +270,8 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
                                                 end: fmtIsoDate(r.endDate, locale),
                                                 cheques: r.chequeRows,
                                             })}
+                                            {r.indexStatus === "NO_INDEX" && <> · {tIdx("bulkNoIndex")}</>}
+                                            {r.indexAboveCap && <> · {tIdx("bulkOverridden")}</>}
                                         </Link>
                                     ) : (
                                         <span className="text-error">{serverText(tCommon, r) || t("batchFailed")}</span>

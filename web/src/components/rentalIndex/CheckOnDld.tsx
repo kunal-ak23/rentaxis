@@ -44,7 +44,7 @@ export function CheckOnDld({ end, typeLabel, dewa, rent, unitsHref = "?tab=units
     const [copied, setCopied] = useState(false);
     const bookmark = useRef<HTMLAnchorElement>(null);
     // React refuses a javascript: href in JSX, so the bookmark's address is set on the node.
-    useEffect(() => { bookmark.current?.setAttribute("href", bookmarkletHref()); });
+    useEffect(() => { bookmark.current?.setAttribute("href", bookmarkletHref()); }, []);
 
     const copyAll = async () => {
         if (!dewa) return;
