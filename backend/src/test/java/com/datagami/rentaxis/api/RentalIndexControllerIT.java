@@ -13,7 +13,6 @@ import com.datagami.rentaxis.core.service.rentalindex.DldPdfFixtures;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.RentalIndexRate;
 import com.datagami.rentaxis.domain.entity.enums.DldPropertyType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.enums.RentalIndexSource;
@@ -39,6 +38,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -46,9 +46,13 @@ import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -369,7 +373,6 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
                 .getStatusCode().value()).isEqualTo(404);
     }
 
-
     @Test
     @SuppressWarnings("unchecked")
     void capsForQueue() {
@@ -380,8 +383,8 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
         rate.setUnitType(UnitType.BHK2);
         rate.setDldPropertyType(DldPropertyType.APARTMENT);
         rate.setCategory("2 bed rooms+hall");
-        rate.setIndexMin(new java.math.BigDecimal("138000"));
-        rate.setIndexMax(new java.math.BigDecimal("162000"));
+        rate.setIndexMin(new BigDecimal("138000"));
+        rate.setIndexMax(new BigDecimal("162000"));
         rate.setSource(RentalIndexSource.MANUAL);
         LocalDate checked = LocalDate.now().minusMonths(1);
         rate.setCheckedOn(checked);
@@ -402,8 +405,8 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
         LeaseTestFixtures.clearAuth();
 
         String ids = ok + "," + noIndex + "," + UUID.randomUUID() + "," + ok;
-        java.util.function.Function<Object, Map<String, Map<String, Object>>> byLease = body -> {
-            Map<String, Map<String, Object>> m = new java.util.LinkedHashMap<>();
+        Function<Object, Map<String, Map<String, Object>>> byLease = body -> {
+            Map<String, Map<String, Object>> m = new LinkedHashMap<>();
             for (Map<String, Object> row : (List<Map<String, Object>>) body) m.put(row.get("leaseId").toString(), row);
             return m;
         };
@@ -415,8 +418,8 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
         Map<String, Object> okRow = rows.get(ok.toString());
         assertThat(okRow.get("status")).isEqualTo("OK");
         assertThat(okRow.get("allowedPercent")).isEqualTo(5);
-        assertThat(new java.math.BigDecimal(okRow.get("capRent").toString())).isEqualByComparingTo("126000");
-        assertThat(new java.math.BigDecimal(okRow.get("baseRent").toString())).isEqualByComparingTo("120000");
+        assertThat(new BigDecimal(okRow.get("capRent").toString())).isEqualByComparingTo("126000");
+        assertThat(new BigDecimal(okRow.get("baseRent").toString())).isEqualByComparingTo("120000");
         Map<String, Object> noRow = rows.get(noIndex.toString());
         assertThat(noRow.get("status")).isEqualTo("NO_INDEX");
         assertThat(noRow.get("allowedPercent")).isNull();
@@ -442,8 +445,8 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
                 BASE + "/caps?leaseIds=" + ok, null).getBody())).hasSize(1);
 
         // Too many ids in one call.
-        String tooMany = java.util.stream.Stream.generate(UUID::randomUUID).limit(201).map(UUID::toString)
-                .collect(java.util.stream.Collectors.joining(","));
+        String tooMany = Stream.generate(UUID::randomUUID).limit(101).map(UUID::toString)
+                .collect(Collectors.joining(","));
         ResponseEntity<Map> refused = call(admin, UserRole.TENANT_ADMIN, HttpMethod.GET,
                 BASE + "/caps?leaseIds=" + tooMany, null);
         assertThat(refused.getStatusCode().is4xxClientError()).isTrue();

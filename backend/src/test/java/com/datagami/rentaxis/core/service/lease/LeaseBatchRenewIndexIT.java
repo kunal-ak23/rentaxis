@@ -1,31 +1,20 @@
 package com.datagami.rentaxis.core.service.lease;
 
-import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseBatch;
-import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
-import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
-import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest.RentChange;
-import com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO;
-import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
-import com.datagami.rentaxis.core.service.rentalindex.RentalIndexMath;
-import com.datagami.rentaxis.core.service.rentalindex.RentalIndexRateService.IndexStatus;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
-import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.RentalIndexRate;
 import com.datagami.rentaxis.domain.entity.RenewalIndexCheck;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.DldPropertyType;
-import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.RentalIndexSource;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.enums.UnitType;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
-import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenewalIndexCheckRepository;
 import com.datagami.rentaxis.domain.repository.RentalIndexRateRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
@@ -43,14 +32,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import static com.datagami.rentaxis.testsupport.LeaseTestFixtures.line;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The rental index in bulk renew (spec 2026-11-25 §8). Range 138,000–162,000 (average 150,000): a 120,000 rent has
@@ -188,6 +175,24 @@ class LeaseBatchRenewIndexIT extends AbstractPostgresIT {
         assertThat(row.indexCapRent()).isNull();
         assertThat(row.indexAboveCap()).isNull();
         assertThat(checkCount(above)).isZero();
+    }
+
+    @Test
+    void flagOffRefusalsKeepTheSingleRenewsGateOrder() {
+        // A contract that already has a successor, asked to renew by PERCENT over a different term length: the
+        // single renew's own gate ("already renewed") answers, not the plan's term-length refusal.
+        UUID lease = leaseOn(unit, "120000");
+        fx.withLeaseServices(leaseService, chequeGeneration, posting);
+        batch.renew(request(List.of(lease), null));
+        assertThat(successorCount(lease)).isEqualTo(1);
+
+        LeaseBatch.RenewRow row = batch.renew(new LeaseBatch.RenewRequest(List.of(lease),
+                new LeaseBatch.RentRule(LeaseBatch.RentRule.Mode.PERCENT, new BigDecimal("3"), null), 6, null,
+                false, false, null)).get(0);
+
+        assertThat(row.ok()).isFalse();
+        assertThat(row.message()).contains("has already been renewed");
+        assertThat(row.indexStatus()).isNull();
     }
 
     // ------------------------------------------------------------------

@@ -59,8 +59,8 @@ public class RentalIndexController {
         this.renewalService = renewalService;
     }
 
-    /** The most lease ids one /caps call takes; the queue sends its page (50) or a season in chunks. */
-    public static final int MAX_CAP_LEASES = 200;
+    /** The most lease ids one /caps call takes; the queue sends its page or a season in chunks. */
+    public static final int MAX_CAP_LEASES = 100;
 
     /**
      * The renewal queue's "Max increase" for each lease (spec §8). A lease the caller cannot read (another

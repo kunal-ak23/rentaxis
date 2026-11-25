@@ -105,9 +105,10 @@ public class LeaseBatchService {
 
     private LeaseBatch.RenewRow renewOne(UUID leaseId, LeaseBatch.RenewRequest r) {
         RenewTerms terms = termsFor(leaseId, r);
-        // Read before the renewal, in the row's transaction: null when RENTAL_INDEX is off.
-        LeaseRenewalService.IndexAssessment ix = renewalService.planFor(leaseId, terms.request()).index();
-        LeaseDTO draft = renewalService.renew(leaseId, terms.request());
+        // The assessment is renew's own (the one it enforced and recorded); null when RENTAL_INDEX is off.
+        LeaseRenewalService.Renewed renewed = renewalService.renewWithIndex(leaseId, terms.request());
+        LeaseDTO draft = renewed.draft();
+        LeaseRenewalService.IndexAssessment ix = renewed.index();
         int rows = 0;
         if (r.generateGrid()) {
             rows = chequeGeneration.generate(draft.getId(), gridFor(leaseId, draft)).size();

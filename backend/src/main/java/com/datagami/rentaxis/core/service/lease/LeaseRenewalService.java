@@ -151,6 +151,16 @@ public class LeaseRenewalService {
      */
     @Transactional
     public LeaseDTO renew(UUID leaseId, RenewLeaseRequest r) {
+        return renewWithIndex(leaseId, r).draft();
+    }
+
+    /** A renewal's draft with the index assessment {@code renew} enforced and recorded (null: flag off). */
+    record Renewed(LeaseDTO draft, IndexAssessment index) {
+    }
+
+    /** {@link #renew}, also returning the assessment from the plan the renewal was drafted from (bulk renew rows). */
+    @Transactional
+    Renewed renewWithIndex(UUID leaseId, RenewLeaseRequest r) {
         // Locked, not merely loaded. The "already renewed" check below reads a row
         // this call is about to create the competitor for: two accountants hitting
         // Renew at the same moment would both find no successor and both write one,
@@ -232,7 +242,7 @@ public class LeaseRenewalService {
         if (renewalMarks != null) renewalMarks.clearOnContinuation(leaseId);
         // Spec §4c: shown to the operator — "Not copied: Admin Fee 1,500 (one-off)".
         draft.setSkippedOneOffLines(plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList());
-        return draft;
+        return new Renewed(draft, plan.index());
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
