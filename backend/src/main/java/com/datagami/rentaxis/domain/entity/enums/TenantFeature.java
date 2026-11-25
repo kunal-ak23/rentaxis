@@ -8,7 +8,8 @@ public enum TenantFeature {
     GATEPASS(false),             // guest gate passes + guard app — off by default, per-tenant rollout
     MOBILE_FINANCE(false),       // mobile finance/lease/cheque screens — off until the apps are rewritten for accounting v2 (spec D7)
     RENTER_RATING(false),        // premium — off by default
-    WORKSPACE_TABS(false);       // web workspace tabs (several screens open at once) — off until piloted per tenant
+    WORKSPACE_TABS(false),       // web workspace tabs (several screens open at once) — off until piloted per tenant
+    RENTAL_INDEX(false);         // Dubai rental index check on renewal (Decree 43) — off by default, per-tenant rollout
 
     private final boolean defaultEnabled;
 
