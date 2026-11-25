@@ -67,6 +67,8 @@ import static org.mockito.Mockito.when;
 class RentalIndexControllerIT extends AbstractPostgresIT {
 
     private static final String BASE = "/api/v1/rental-index";
+    /** A checked-on date always within the last 12 months (final review I3 refuses older and future ones). */
+    private static final LocalDate CHECKED = LocalDate.now(java.time.ZoneId.of("Asia/Dubai")).minusDays(24);
 
     @LocalServerPort int port;
     @MockitoBean BlobStorageService blob;
@@ -86,6 +88,8 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.domain.repository.BuildingRepository buildingRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.RenewalIndexCheckRepository checkRepo;
 
     private LeaseTestFixtures a;
     private UUID tenantId;
@@ -169,6 +173,9 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
                     .getStatusCode().value()).as(role.name()).isEqualTo(403);
             assertThat(raw(u, role, HttpMethod.GET, BASE + "/rates/" + rateId + "/document", null)
                     .getStatusCode().value()).as(role.name()).isEqualTo(403);
+            // Final review F1: nor the queue's caps.
+            assertThat(raw(u, role, HttpMethod.GET, BASE + "/caps?leaseIds=" + UUID.randomUUID(), null)
+                    .getStatusCode().value()).as(role.name()).isEqualTo(403);
         }
         // An accountant reads but does not write.
         assertThat(raw(accountant, UserRole.ACCOUNTANT, HttpMethod.GET, BASE + "/rates?propertyId=" + propertyId, null)
@@ -186,8 +193,12 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
                 BASE + "/rates", null, List.class);
         assertThat(theirs.getStatusCode().value()).isEqualTo(200);
         assertThat(theirs.getBody()).isEmpty();
-        assertThat(callFor(otherAdmin, UserRole.TENANT_ADMIN, otherTenantId, HttpMethod.GET,
-                BASE + "/rates?propertyId=" + propertyId, null, Object.class).getStatusCode().value()).isIn(200, 404);
+        // Final review F1: exactly 404 on our property, and nothing of it in the body.
+        ResponseEntity<String> probe = callFor(otherAdmin, UserRole.TENANT_ADMIN, otherTenantId, HttpMethod.GET,
+                BASE + "/rates?propertyId=" + propertyId, null, String.class);
+        assertThat(probe.getStatusCode().value()).isEqualTo(404);
+        assertThat(String.valueOf(probe.getBody())).doesNotContain(rateId.toString()).doesNotContain("138000")
+                .doesNotContain("2 bed rooms");
         assertThat(callFor(otherAdmin, UserRole.TENANT_ADMIN, otherTenantId, HttpMethod.POST,
                 BASE + "/rates/" + rateId + "/revoke", null, Map.class).getStatusCode().value()).isEqualTo(404);
         assertThat(callFor(otherAdmin, UserRole.TENANT_ADMIN, otherTenantId, HttpMethod.GET,
@@ -299,8 +310,8 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
         assertThat(ok.getStatusCode().value()).isEqualTo(200);
         assertThat(ok.getBody().get("source")).isEqualTo("MANUAL");
         assertThat(ok.getBody().get("hasDocument")).isEqualTo(false);
-        assertThat(ok.getBody().get("checkedOn")).isEqualTo("2026-11-01");
-        assertThat(ok.getBody().get("expiresOn")).isEqualTo("2027-11-01");
+        assertThat(ok.getBody().get("checkedOn")).isEqualTo(CHECKED.toString());
+        assertThat(ok.getBody().get("expiresOn")).isEqualTo(CHECKED.plusMonths(12).toString());
     }
 
     @Test
@@ -458,6 +469,181 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
                 .getStatusCode().value()).isEqualTo(404);
     }
 
+    // --- final review I3: checked-on dates ---
+
+    @Test
+    void manualCheckedOnMustBeTodayOrWithinAYear() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Dubai"));
+        for (LocalDate bad : List.of(today.plusDays(1), today.minusMonths(12).minusDays(1), today.minusYears(3))) {
+            Map<String, Object> body = new java.util.HashMap<>(manualBody("138000", "162000"));
+            body.put("checkedOn", bad.toString());
+            ResponseEntity<Map> res = call(admin, UserRole.TENANT_ADMIN, HttpMethod.POST, BASE + "/rates/manual", body);
+            assertThat(res.getStatusCode().is4xxClientError()).as(bad.toString()).isTrue();
+            assertThat(res.getBody().get("code")).as(bad.toString()).isEqualTo("rentalIndex.checkedOnInvalid");
+        }
+        assertThat(rates.findAll().stream().filter(r -> tenantId.equals(r.getTenantId()))).isEmpty();
+        for (LocalDate good : List.of(today, today.minusMonths(12))) {
+            Map<String, Object> body = new java.util.HashMap<>(manualBody("138000", "162000"));
+            body.put("checkedOn", good.toString());
+            ResponseEntity<Map> res = call(admin, UserRole.TENANT_ADMIN, HttpMethod.POST, BASE + "/rates/manual", body);
+            assertThat(res.getStatusCode().value()).as(good.toString()).isEqualTo(200);
+            assertThat(res.getBody().get("expired")).isEqualTo(false);
+        }
+    }
+
+    @Test
+    void pdfIssuedInTheFutureRefusedOldOneLandsExpired() {
+        java.time.format.DateTimeFormatter issued =
+                java.time.format.DateTimeFormatter.ofPattern("d MMMM uuuu, h:mm a", java.util.Locale.ENGLISH);
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Dubai"));
+        DldPdfFixtures.Values v = DldPdfFixtures.Values.valid();
+        DldPdfFixtures.Values future = new DldPdfFixtures.Values(v.pct(), v.increase(), v.after(), v.rent(), v.min(),
+                v.max(), v.premise(), v.building(), v.category(), v.endDate(), v.area(),
+                today.plusDays(3).atTime(9, 5).format(issued));
+        MultiValueMap<String, Object> form = form(DldPdfFixtures.layoutOctober(future));
+        form.add("propertyId", propertyId.toString());
+        form.add("unitType", "BHK2");
+        ResponseEntity<Map> res = multipart(admin, UserRole.TENANT_ADMIN, BASE + "/rates/from-pdf", form);
+        assertThat(res.getStatusCode().is4xxClientError()).isTrue();
+        assertThat(res.getBody().get("code")).isEqualTo("rentalIndex.checkedOnInvalid");
+        verify(blob, never()).uploadRentalIndexDoc(any(), any());
+
+        DldPdfFixtures.Values old = new DldPdfFixtures.Values(v.pct(), v.increase(), v.after(), v.rent(), v.min(),
+                v.max(), v.premise(), v.building(), v.category(), v.endDate(), v.area(),
+                today.minusYears(2).atTime(9, 5).format(issued));
+        MultiValueMap<String, Object> oldForm = form(DldPdfFixtures.layoutOctober(old));
+        oldForm.add("propertyId", propertyId.toString());
+        oldForm.add("unitType", "BHK2");
+        ResponseEntity<Map> kept = multipart(admin, UserRole.TENANT_ADMIN, BASE + "/rates/from-pdf", oldForm);
+        assertThat(kept.getStatusCode().value()).isEqualTo(200);
+        assertThat(kept.getBody().get("checkedOn")).isEqualTo(today.minusYears(2).toString());
+        assertThat(kept.getBody().get("expired")).isEqualTo(true);
+    }
+
+    // --- final review F2: a unit's result stays on its own building and type ---
+
+    @Test
+    void unitResultRefusedForAnotherBuildingOrType() {
+        com.datagami.rentaxis.domain.entity.Building tower = new com.datagami.rentaxis.domain.entity.Building();
+        tower.setTenantId(tenantId);
+        tower.setProperty(a.property());
+        tower.setNameEn("Synthetic Tower");
+        tower = buildingRepo.save(tower);
+        UUID towerId = tower.getId();
+        java.util.function.BiFunction<String, String, ResponseEntity<Map>> upload = (building, type) -> {
+            MultiValueMap<String, Object> f = pdfForm(DldPdfFixtures.Values.valid());
+            f.add("propertyId", propertyId.toString());
+            if (building != null) f.add("buildingId", building);
+            f.add("unitType", type);
+            f.add("unitId", unit.getId().toString());
+            return multipart(admin, UserRole.TENANT_ADMIN, BASE + "/rates/from-pdf", f);
+        };
+        // The unit is in no building: not for the tower, and not for another type.
+        assertThat(upload.apply(towerId.toString(), "BHK2").getBody().get("code"))
+                .isEqualTo("rentalIndex.unitScopeMismatch");
+        assertThat(upload.apply(null, "BHK1").getBody().get("code")).isEqualTo("rentalIndex.unitScopeMismatch");
+
+        // The unit moves into the tower: not property-wide, only for the tower.
+        unit.setBuilding(tower);
+        unit = unitRepo.save(unit);
+        assertThat(upload.apply(null, "BHK2").getBody().get("code")).isEqualTo("rentalIndex.unitScopeMismatch");
+        assertThat(upload.apply(towerId.toString(), "STUDIO").getBody().get("code"))
+                .isEqualTo("rentalIndex.unitScopeMismatch");
+        assertThat(rates.findAll().stream().filter(r -> tenantId.equals(r.getTenantId()))).isEmpty();
+        verify(blob, never()).uploadRentalIndexDoc(any(), any());
+
+        ResponseEntity<Map> ok = upload.apply(towerId.toString(), "BHK2");
+        assertThat(ok.getStatusCode().value()).isEqualTo(200);
+        assertThat(ok.getBody().get("buildingId")).isEqualTo(towerId.toString());
+    }
+
+    // --- final review I2: the checks stored on a lease ---
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void indexChecksOnLease() {
+        a.withLeaseServices(leaseService, generation, posting);
+        TenantContextHolder.setTenantId(tenantId);
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        UUID predecessor = a.draftLease(unit, a.renter(), LocalDate.of(2026, 2, 20), LocalDate.of(2026, 3, 1),
+                LocalDate.of(2027, 2, 28), List.of(line("RENT", "120000")));
+        UUID successor = a.draftLease(a.createUnit(a.property(), "IC-2"), a.renter(), LocalDate.of(2026, 2, 20),
+                LocalDate.of(2027, 3, 1), LocalDate.of(2028, 2, 29), List.of(line("RENT", "130000")));
+        UUID unrelated = a.draftLease(a.createUnit(a.property(), "IC-3"), a.renter(), LocalDate.of(2026, 2, 20),
+                LocalDate.of(2026, 3, 1), LocalDate.of(2027, 2, 28), List.of(line("RENT", "90000")));
+        TenantContextHolder.clear();
+        LeaseTestFixtures.clearAuth();
+        java.time.Instant t0 = java.time.Instant.parse("2026-11-20T08:00:00Z");
+        check(predecessor, successor, "120000", false, null, t0);
+        check(predecessor, successor, "130000", true, "Agreed with the renter", t0.plusSeconds(3600));
+
+        String path = "/api/v1/leases/" + predecessor + "/index-checks";
+        ResponseEntity<Object> res = raw(admin, UserRole.TENANT_ADMIN, HttpMethod.GET, path, null);
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) res.getBody();
+        assertThat(rows).hasSize(2);
+        Map<String, Object> newest = rows.get(0);
+        assertThat(newest.get("aboveCap")).isEqualTo(true);
+        assertThat(newest.get("overrideReason")).isEqualTo("Agreed with the renter");
+        assertThat(newest.get("decidedByName")).isNotNull();
+        assertThat(newest.get("decidedAt")).isNotNull();
+        assertThat(new BigDecimal(newest.get("baseRent").toString())).isEqualByComparingTo("120000");
+        assertThat(new BigDecimal(newest.get("newRent").toString())).isEqualByComparingTo("130000");
+        assertThat(new BigDecimal(newest.get("capRent").toString())).isEqualByComparingTo("126000");
+        assertThat(newest.get("allowedPercent")).isEqualTo(5);
+        assertThat(newest.get("rateSource")).isEqualTo("MANUAL");
+        assertThat(newest.get("rateCheckedOn")).isEqualTo(CHECKED.toString());
+        assertThat(newest.get("hasUnitDocument")).isEqualTo(false);
+        assertThat(newest.toString()).doesNotContain("rental-index/");
+        assertThat(rows.get(1).get("aboveCap")).isEqualTo(false);
+        assertThat(rows.get(1).get("overrideReason")).isNull();
+
+        // The successor shows the same checks; a lease that took part in none shows none.
+        assertThat((List<?>) raw(manager, UserRole.PROPERTY_MANAGER, HttpMethod.GET,
+                "/api/v1/leases/" + successor + "/index-checks", null).getBody()).hasSize(2);
+        assertThat((List<?>) raw(accountant, UserRole.ACCOUNTANT, HttpMethod.GET,
+                "/api/v1/leases/" + unrelated + "/index-checks", null).getBody()).isEmpty();
+
+        // Renters and other staff roles never; another organisation and an unassigned manager get 404.
+        for (UserRole role : List.of(UserRole.RENTER, UserRole.TENANT_USER, UserRole.SECURITY_GUARD)) {
+            UUID u = TestIdentities.user(userRepo, role, tenantId);
+            assertThat(raw(u, role, HttpMethod.GET, path, null).getStatusCode().value()).as(role.name())
+                    .isEqualTo(403);
+        }
+        ResponseEntity<String> theirs = callFor(otherAdmin, UserRole.TENANT_ADMIN, otherTenantId, HttpMethod.GET,
+                path, null, String.class);
+        assertThat(theirs.getStatusCode().value()).isEqualTo(404);
+        assertThat(String.valueOf(theirs.getBody())).doesNotContain("Agreed").doesNotContain("126000");
+        assertThat(raw(unassignedManager, UserRole.PROPERTY_MANAGER, HttpMethod.GET, path, null)
+                .getStatusCode().value()).isEqualTo(404);
+
+        // Flag off: 404.
+        features.setEnabled(tenantId, TenantFeature.RENTAL_INDEX, false);
+        assertThat(raw(admin, UserRole.TENANT_ADMIN, HttpMethod.GET, path, null).getStatusCode().value())
+                .isEqualTo(404);
+    }
+
+    private void check(UUID lease, UUID successor, String newRent, boolean above, String reason,
+                       java.time.Instant at) {
+        com.datagami.rentaxis.domain.entity.RenewalIndexCheck c = new com.datagami.rentaxis.domain.entity.RenewalIndexCheck();
+        c.setTenantId(tenantId);
+        c.setLeaseId(lease);
+        c.setSuccessorLeaseId(successor);
+        c.setRateSource("MANUAL");
+        c.setRateCheckedOn(CHECKED);
+        c.setBaseRent(new BigDecimal("120000"));
+        c.setAverage(new BigDecimal("150000"));
+        c.setGapPercent(new BigDecimal("20"));
+        c.setAllowedPercent(5);
+        c.setCapRent(new BigDecimal("126000"));
+        c.setNewRent(new BigDecimal(newRent));
+        c.setAboveCap(above);
+        c.setOverrideReason(reason);
+        c.setDecidedBy(admin);
+        c.setDecidedAt(at);
+        checkRepo.save(c);
+    }
+
     // --- helpers ---
 
     private LeaseTestFixtures fixtures() {
@@ -474,7 +660,7 @@ class RentalIndexControllerIT extends AbstractPostgresIT {
 
     private Map<String, Object> manualBody(String min, String max) {
         return Map.of("propertyId", propertyId.toString(), "unitType", "BHK2", "dldPropertyType", "APARTMENT",
-                "category", "2 bed rooms+hall", "indexMin", min, "indexMax", max, "checkedOn", "2026-11-01");
+                "category", "2 bed rooms+hall", "indexMin", min, "indexMax", max, "checkedOn", CHECKED.toString());
     }
 
     private MultiValueMap<String, Object> pdfForm(DldPdfFixtures.Values v) {

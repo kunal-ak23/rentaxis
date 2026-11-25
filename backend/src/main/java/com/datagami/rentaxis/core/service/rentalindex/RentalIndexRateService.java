@@ -230,6 +230,13 @@ public class RentalIndexRateService {
             if (!propertyId.equals(unit.getProperty().getId())) {
                 throw new NotFoundException("Unit not found");
             }
+            // Final review F2: a unit's own result covers its own building and type, nothing wider or other.
+            UUID unitBuilding = unit.getBuilding() == null ? null : unit.getBuilding().getId();
+            if (!Objects.equals(unitBuilding, buildingId) || unit.getType() != unitType) {
+                throw new BusinessRuleViolationException(
+                        "This unit's result can only be filed for its own building and unit type.",
+                        "rentalIndex.unitScopeMismatch", Map.of());
+            }
         }
         DldResult r = DldResultParser.parse(pdf);
         if (unit != null && unit.getDewaPremiseNumber() != null && !unit.getDewaPremiseNumber().equals(r.premiseNo())) {
@@ -257,6 +264,8 @@ public class RentalIndexRateService {
         rate.setDldPercent(r.dldPercent());
         rate.setDldIssuedAt(issuedAt(r.issuedAt()));
         LocalDate checkedOn = checkedOnFor(r);
+        // Final review I3: a result issued in the future is refused; an old one is kept, already expired.
+        if (checkedOn.isAfter(LocalDate.now(clock))) throw checkedOnInvalid();
         rate.setCheckedOn(checkedOn);
         rate.setExpiresOn(checkedOn.plusMonths(VALID_MONTHS));
         rate.setCreatedBy(requireUser(userId));
@@ -279,6 +288,11 @@ public class RentalIndexRateService {
             throw new BusinessRuleViolationException("A range needs a unit type, a DLD property type and a checked-on date");
         }
         requireRange(req.indexMin(), req.indexMax());
+        // Final review I3: today or within the last 12 months (an older range would already be expired).
+        LocalDate today = LocalDate.now(clock);
+        if (req.checkedOn().isAfter(today) || req.checkedOn().plusMonths(VALID_MONTHS).isBefore(today)) {
+            throw checkedOnInvalid();
+        }
         String category = blankToNull(req.category());
         if (category != null && category.length() > MAX_CATEGORY) {
             throw new BusinessRuleViolationException("The category is longer than " + MAX_CATEGORY + " characters");
@@ -417,6 +431,12 @@ public class RentalIndexRateService {
             throw new BusinessRuleViolationException("No signed-in user to record against this range");
         }
         return userId;
+    }
+
+    private static BusinessRuleViolationException checkedOnInvalid() {
+        return new BusinessRuleViolationException(
+                "Enter the date you checked the range on DLD: today or within the last 12 months.",
+                "rentalIndex.checkedOnInvalid", Map.of());
     }
 
     private static void requireRange(BigDecimal min, BigDecimal max) {
