@@ -17,6 +17,7 @@ databaseChangeLog:
         - dropColumn: { tableName: units, columnName: dewa_premise_number }
   # Rental index ranges (flag RENTAL_INDEX): one row per check, never edited; a wrong row is revoked.
   # The newest unexpired, unrevoked row for (building, unit type), else (property with no building, unit type), is in force.
+  # Ranges go with their property or building (an import discard deletes both); source_unit_id is evidence only and is cleared.
   - changeSet:
       id: 194-rental-index-rates
       author: claude
@@ -26,8 +27,8 @@ databaseChangeLog:
             columns:
               - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_rental_index_rates, nullable: false } }
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_rental_index_rates_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
-              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_rental_index_rates_property, referencedTableName: properties, referencedColumnNames: id } }
-              - column: { name: building_id, type: uuid, constraints: { foreignKeyName: fk_rental_index_rates_building, referencedTableName: buildings, referencedColumnNames: id } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_rental_index_rates_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: building_id, type: uuid, constraints: { foreignKeyName: fk_rental_index_rates_building, referencedTableName: buildings, referencedColumnNames: id, deleteCascade: true } }
               - column: { name: dld_property_type, type: varchar(20), constraints: { nullable: false } }
               - column: { name: category, type: varchar(100) }
               - column: { name: unit_type, type: varchar(20), constraints: { nullable: false } }

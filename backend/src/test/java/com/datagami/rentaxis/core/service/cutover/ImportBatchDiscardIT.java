@@ -202,6 +202,43 @@ class ImportBatchDiscardIT extends AbstractPostgresIT {
         });
     }
 
+    /**
+     * Rental index ranges added after the import (one on the building with a unit as its evidence, one on the
+     * property) do not stop the discard: they go with their property and building, and the unit link is cleared.
+     */
+    @Test
+    void aBatchWhosePropertyHasRentalIndexRangesIsDiscardedAndTheRangesGo() throws Exception {
+        UUID batchId;
+        try (Workbook wb = fixture.template()) {
+            CutoverFixture.set(wb, "Units", 1, 1, "Tower One");
+            CutoverFixture.set(wb, "Units", 2, 1, "Tower One");
+            CutoverFixture.set(wb, "Contracts", 1, 3, "Tower One");
+            CutoverFixture.set(wb, "Contracts", 3, 3, "Tower One");
+            assertThat(importService.validateAll(wb).errors()).isEmpty();
+            batchId = contractPersist.persist(wb, fixture.newJob()).batchId();
+        }
+        UUID[] ids = tx.execute(s -> {
+            var building = buildingRepo.findAll().get(0);
+            var unit = unitRepo.findAll().get(0);
+            return new UUID[]{building.getProperty().getId(), building.getId(), unit.getId()};
+        });
+        String insert = "insert into rental_index_rates (id, tenant_id, property_id, building_id, dld_property_type,"
+                + " unit_type, index_min, index_max, source, source_unit_id, checked_on, expires_on, created_by,"
+                + " created_at) values (?, ?, ?, ?, 'APARTMENT', 'BHK2', 138000, 162000, 'MANUAL', ?,"
+                + " date '2026-11-01', date '2027-11-01', ?, now())";
+        jdbc.update(insert, UUID.randomUUID(), tenantId, ids[0], ids[1], ids[2], UUID.randomUUID());
+        jdbc.update(insert, UUID.randomUUID(), tenantId, ids[0], null, null, UUID.randomUUID());
+
+        DiscardResult result = discardService.discard(batchId);
+
+        assertThat(result.kept()).isEmpty();
+        assertThat(result.propertiesDeleted()).isEqualTo(1);
+        assertThat(result.buildingsDeleted()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from rental_index_rates where tenant_id = ?",
+                Integer.class, tenantId)).isZero();
+        tx.executeWithoutResult(s -> assertThat(propertyRepo.findAll()).isEmpty());
+    }
+
     // ------------------------------------------------------------------
     // what is kept, and why
     // ------------------------------------------------------------------
