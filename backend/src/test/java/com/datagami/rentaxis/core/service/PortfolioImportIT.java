@@ -259,6 +259,30 @@ class PortfolioImportIT extends AbstractPostgresIT {
         assertThat(terminal.getErrors()).startsWith("[");
     }
 
+    @Test
+    void unitsSheetColumn6_dewaPremiseNo_isPersistedDigitsOnly() throws Exception {
+        Workbook wb = PortfolioImportServiceTest.buildLegacyWorkbook();
+        PortfolioImportServiceTest.setCell(wb, "Units", 1, "DewaPremiseNo", "123 456 789");
+        byte[] bytes;
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            wb.write(baos);
+            bytes = baos.toByteArray();
+        }
+        wb.close();
+        ImportJob job = new ImportJob();
+        job.setStatus("VALIDATING");
+        job.setFileName("dewa.xlsx");
+        job.setCreatedBy(UUID.randomUUID());
+        ImportJob saved = importJobRepository.save(job);
+
+        importService.processImportAsync(bytes, saved, tenantId);
+        pollUntilCompleted(saved.getId());
+
+        assertThat(unitRepository.findAll().stream().filter(u -> tenantId.equals(u.getTenantId())).toList())
+                .extracting(com.datagami.rentaxis.domain.entity.Unit::getDewaPremiseNumber)
+                .containsExactly("123456789");
+    }
+
     /** Polls the job up to 30s, asserting it lands in COMPLETED. */
     private ImportJob pollUntilCompleted(UUID jobId) throws InterruptedException {
         return pollUntil(jobId, "COMPLETED");

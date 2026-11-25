@@ -79,6 +79,27 @@ class PortfolioImportServiceTest {
                         "BookingDeposit_Date", "BookingDeposit_Bank");
     }
 
+    @Test
+    void unitsSheetDewaPremiseNo_nonDigitsIsARowErrorOnTheDewaColumn() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Units", 1, "DewaPremiseNo", "12AB");
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Units");
+            assertThat(e.getRow()).isEqualTo(2);
+            assertThat(e.getField()).isEqualTo("DewaPremiseNo");
+        });
+    }
+
+    @Test
+    void unitsSheetDewaPremiseNo_validOrBlankIsAccepted() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Units", 1, "DewaPremiseNo", "123456789");
+        assertThat(service.validateAll(wb).errors()).extracting(ImportErrorDTO::getField).doesNotContain("DewaPremiseNo");
+        setCell(wb, "Units", 1, "DewaPremiseNo", "");
+        assertThat(service.validateAll(wb).errors()).extracting(ImportErrorDTO::getField).doesNotContain("DewaPremiseNo");
+    }
+
     /** Break-it R2 money2 review N2: a contract the ledger could not date is a row error at preview. */
     @Test
     void aLeaseDatedBefore2000IsARowError() {

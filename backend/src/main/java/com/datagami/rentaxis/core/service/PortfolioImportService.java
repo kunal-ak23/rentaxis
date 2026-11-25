@@ -208,6 +208,7 @@ public class PortfolioImportService {
 
     private void validateUnitsSheet(Sheet sheet, List<ImportErrorDTO> errors, Set<String> propertyNames, Map<String, Set<String>> unitsByProperty) {
         Set<String> validUnitTypes = Arrays.stream(UnitType.values()).map(Enum::name).collect(Collectors.toSet());
+        Set<String> seenDewa = new HashSet<>();
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
@@ -220,6 +221,7 @@ public class PortfolioImportService {
             String unitType = getCellString(row, 3);
             String sizeSqft = getCellString(row, 4);
             String expectedRent = getCellString(row, 5);
+            String dewaPremiseNo = getCellString(row, 6);
 
             if (propertyName.isEmpty()) {
                 errors.add(new ImportErrorDTO("Units", rowNum, "PropertyName", "Property name is required"));
@@ -267,6 +269,13 @@ public class PortfolioImportService {
             }
             if (UnitRules.rentProblem(rent) != null) {
                 errors.add(new ImportErrorDTO("Units", rowNum, "ExpectedRent", UnitRules.rentProblem(rent)));
+            }
+            UnitRules.dewaProblem(dewaPremiseNo).ifPresent(msg ->
+                    errors.add(new ImportErrorDTO("Units", rowNum, "DewaPremiseNo", msg)));
+            String dewaKey = UnitRules.normaliseDewa(dewaPremiseNo);
+            if (dewaKey != null && UnitRules.dewaProblem(dewaKey).isEmpty() && !seenDewa.add(dewaKey)) {
+                errors.add(new ImportErrorDTO("Units", rowNum, "DewaPremiseNo",
+                        "DEWA premise number " + dewaKey + " is listed twice on this sheet"));
             }
         }
     }

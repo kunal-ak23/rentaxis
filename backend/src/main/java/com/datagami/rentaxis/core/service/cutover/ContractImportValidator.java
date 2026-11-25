@@ -417,6 +417,7 @@ public class ContractImportValidator {
 
     private Set<String> validateUnits(Sheet sheet, Set<String> propertyNames, List<ImportErrorDTO> errors) {
         Set<String> keys = new LinkedHashSet<>();
+        Set<String> seenDewa = new HashSet<>();
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
             if (row == null || SheetCells.isRowEmpty(row)) continue;
@@ -442,6 +443,15 @@ public class ContractImportValidator {
                     "Units", rowNum, "UnitType", errors);
             numericCell(SheetCells.getCellString(row, 4), "Units", rowNum, "SizeSqft", errors);
             numericCell(SheetCells.getCellString(row, 5), "Units", rowNum, "ExpectedRent", errors);
+            String dewa = SheetCells.getCellString(row, 6);
+            com.datagami.rentaxis.core.service.UnitRules.dewaProblem(dewa).ifPresent(msg ->
+                    errors.add(new ImportErrorDTO("Units", rowNum, "DewaPremiseNo", msg)));
+            String dewaKey = com.datagami.rentaxis.core.service.UnitRules.normaliseDewa(dewa);
+            if (dewaKey != null && com.datagami.rentaxis.core.service.UnitRules.dewaProblem(dewaKey).isEmpty()
+                    && !seenDewa.add(dewaKey)) {
+                errors.add(new ImportErrorDTO("Units", rowNum, "DewaPremiseNo",
+                        "DEWA premise number " + dewaKey + " is listed twice on this sheet"));
+            }
         }
         return keys;
     }

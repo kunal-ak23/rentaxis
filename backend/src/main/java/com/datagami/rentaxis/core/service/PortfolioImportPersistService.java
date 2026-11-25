@@ -222,6 +222,7 @@ public class PortfolioImportPersistService {
             String unitType = getCellString(row, 3);
             String sizeSqft = getCellString(row, 4);
             String expectedRent = getCellString(row, 5);
+            String dewaPremiseNo = getCellString(row, 6);
 
             Property property = propertyMap.get(propertyName.toLowerCase());
             Unit u = new Unit();
@@ -241,6 +242,7 @@ public class PortfolioImportPersistService {
             if (!expectedRent.isEmpty()) {
                 u.setExpectedRent(new BigDecimal(expectedRent));
             }
+            u.setDewaPremiseNumber(UnitRules.normaliseDewa(dewaPremiseNo));
 
             unitMap.put(propertyName.toLowerCase() + "|" + buildingName.toLowerCase() + "|" + unitNumber.toLowerCase(), unitRepository.save(u));
         }

@@ -1,0 +1,17 @@
+# Rental index on renewal (feature RENTAL_INDEX, spec 2026-11-25-rental-index-renewal-design.md).
+# DEWA premise number on units: stored for every tenant, flag-independent; unique per tenant when set.
+databaseChangeLog:
+  - changeSet:
+      id: 194-rental-index-units
+      author: claude
+      changes:
+        - addColumn:
+            tableName: units
+            columns:
+              - column: { name: dewa_premise_number, type: "varchar(12)" }
+        - sql:
+            sql: CREATE UNIQUE INDEX ux_units_tenant_dewa ON units (tenant_id, dewa_premise_number) WHERE dewa_premise_number IS NOT NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS ux_units_tenant_dewa
+        - dropColumn: { tableName: units, columnName: dewa_premise_number }

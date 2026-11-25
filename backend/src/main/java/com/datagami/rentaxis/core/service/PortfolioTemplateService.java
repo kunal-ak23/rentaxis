@@ -95,12 +95,12 @@ public class PortfolioTemplateService {
 
     private void createCutOverUnitsSheet(XSSFWorkbook workbook, CellStyle headerStyle) {
         XSSFSheet sheet = workbook.createSheet("Units");
-        String[] headers = {"PropertyName", "BuildingName", "UnitNumber", "UnitType", "SizeSqft", "ExpectedRent"};
+        String[] headers = {"PropertyName", "BuildingName", "UnitNumber", "UnitType", "SizeSqft", "ExpectedRent", "DewaPremiseNo"};
         createHeaderRow(sheet, headers, headerStyle);
         addDropdown(sheet, 1, 1000, 3, 3,
                 new String[]{"STUDIO", "BHK1", "BHK2", "BHK3", "PENTHOUSE", "RETAIL", "OFFICE"});
-        addRow(sheet, 1, "Sample Tower", "", "A-101", "BHK1", "850", "51000");
-        addRow(sheet, 2, "Sample Tower", "", "A-102", "OFFICE", "1200", "21000");
+        addRow(sheet, 1, "Sample Tower", "", "A-101", "BHK1", "850", "51000", "");
+        addRow(sheet, 2, "Sample Tower", "", "A-102", "OFFICE", "1200", "21000", "");
         autoSizeColumns(sheet, headers.length);
     }
 
@@ -228,7 +228,7 @@ public class PortfolioTemplateService {
 
     private void createUnitsSheet(XSSFWorkbook workbook, CellStyle headerStyle) {
         XSSFSheet sheet = workbook.createSheet("Units");
-        String[] headers = {"PropertyName", "BuildingName", "UnitNumber", "UnitType", "SizeSqft", "ExpectedRent"};
+        String[] headers = {"PropertyName", "BuildingName", "UnitNumber", "UnitType", "SizeSqft", "ExpectedRent", "DewaPremiseNo"};
         createHeaderRow(sheet, headers, headerStyle);
 
         // Dropdown: UnitType (column D)
@@ -236,9 +236,9 @@ public class PortfolioTemplateService {
         addDropdown(sheet, 1, 100, 3, 3, unitTypes);
 
         // Example rows
-        addRow(sheet, 1, "Marina Heights", "Tower A", "101", "BHK1", "850", "60000");
-        addRow(sheet, 2, "Marina Heights", "Tower A", "102", "BHK2", "1200", "85000");
-        addRow(sheet, 3, "Marina Heights", "Tower B", "201", "STUDIO", "500", "40000");
+        addRow(sheet, 1, "Marina Heights", "Tower A", "101", "BHK1", "850", "60000", "");
+        addRow(sheet, 2, "Marina Heights", "Tower A", "102", "BHK2", "1200", "85000", "");
+        addRow(sheet, 3, "Marina Heights", "Tower B", "201", "STUDIO", "500", "40000", "");
         addRow(sheet, 4, "Business Central", "", "G01", "OFFICE", "2000", "150000");
 
         autoSizeColumns(sheet, headers.length);
