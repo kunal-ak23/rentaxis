@@ -582,6 +582,22 @@ class LeaseRenewalIndexIT extends AbstractPostgresIT {
         assertThat(successorChecks(plain)).isEmpty();
     }
 
+    @Test
+    void draftEditWithEndBeforeStartReportsTheDateProblemNotAnArithmeticError() {
+        flagOn();
+        rate(today.minusMonths(1));
+        UUID lease = lease("120000");
+        LeaseDTO successor = renewal.renew(lease, amount("120000"));
+        CreateLeaseDTO dto = edit("125000", null);
+        dto.setEndDate(dto.getStartDate().minusDays(1));
+
+        // Same outcome as a draft without the index: the date order is not this check's business, and the
+        // measurement is skipped (no new check row) instead of dividing by zero days.
+        org.assertj.core.api.Assertions.assertThatCode(() -> leaseService.updateDraftLease(successor.getId(), dto))
+                .doesNotThrowAnyException();
+        assertThat(successorChecks(successor.getId())).hasSize(1);
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private void flagOn() {

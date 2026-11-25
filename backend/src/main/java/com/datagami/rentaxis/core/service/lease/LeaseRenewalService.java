@@ -516,6 +516,8 @@ public class LeaseRenewalService {
     public void checkDraftEdit(Lease draft, List<LeaseLineInput> lines, LocalDate newStart, LocalDate newEnd,
                                String reason) {
         if (draft == null || draft.getId() == null || draft.getRenewedFromLeaseId() == null) return;
+        // No usable term to annualise: leave the date problem to the term validation that follows.
+        if (newStart == null || newEnd == null || !newEnd.isAfter(newStart)) return;
         List<RenewalIndexCheck> prior = indexChecks.findBySuccessorLeaseIdOrderByDecidedAtDesc(draft.getId());
         if (prior.isEmpty()) return;
         Lease predecessor = leaseRepository.findByIdScopedToTenant(draft.getRenewedFromLeaseId()).orElse(null);
