@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/leasing";
 import { isLeaseChanged, sameExceptVersion } from "@/lib/leases/leaseVersion";
 import { serverText } from "@/components/finance/bankrec/serverText";
+import IndexOverrideReason, { indexOverrideCapOf } from "@/components/rentalIndex/IndexOverrideReason";
 
 /**
  * Editing a draft contract in place: its header fields and its particulars
@@ -103,6 +104,9 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
     const [saved, setSaved] = useState(false);
+    // Final review I1: the rental index cap the server named when it refused this edit for want of a reason.
+    const [indexCap, setIndexCap] = useState<string | null>(null);
+    const [indexReason, setIndexReason] = useState("");
 
     const editable = lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE";
 
@@ -117,6 +121,8 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
         formSource.current = lease;
         setHeader(toHeader(lease));
         setRows(toRows(lease.lines));
+        setIndexCap(null);
+        setIndexReason("");
     }, [lease]);
 
     const patch = (next: Partial<Header>) => {
@@ -178,14 +184,22 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
                 lines: toInputs(rows, { keepPeriods: false }),
                 // Break-it R2 F3: the version this form was loaded from; a newer draft is refused, not overwritten.
                 version: lease.version ?? null,
+                ...(indexCap !== null && indexReason.trim() ? { indexOverrideReason: indexReason.trim() } : {}),
             };
             const updated = await leaseApi.updateDraft(lease.id, body);
+            setIndexCap(null);
+            setIndexReason("");
             setSaved(true);
             onSaved?.(updated);
         } catch (e) {
             if (isLeaseChanged(e)) {
                 setErrors([serverText(tCommon, e) || (e as ApiError).message]);
                 onStale?.();
+                return;
+            }
+            const cap = indexOverrideCapOf(e);
+            if (cap !== null) {
+                setIndexCap(cap);
                 return;
             }
             setErrors(e instanceof ApiError ? [e.message] : [t("saveFailed")]);
@@ -290,6 +304,11 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
                         </ul>
                     )}
 
+                    {indexCap !== null && (
+                        <IndexOverrideReason cap={indexCap} value={indexReason} onChange={setIndexReason}
+                            idPrefix="lease-draft" />
+                    )}
+
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleSave}
@@ -306,6 +325,8 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
                                 setRows(toRows(lease.lines));
                                 setErrors([]);
                                 setSaved(false);
+                                setIndexCap(null);
+                                setIndexReason("");
                             }}
                             disabled={saving}
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer"
