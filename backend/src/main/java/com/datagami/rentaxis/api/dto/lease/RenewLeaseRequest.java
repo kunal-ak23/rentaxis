@@ -39,12 +39,23 @@ public record RenewLeaseRequest(LocalDate contractDate,
                                 /* Spec §4a: the new registration, when already known. */
                                 String ejariNumber,
                                 /* Spec §4d: charges added to this renewal (e.g. a renewal fee). */
-                                List<@Valid LeaseLineInput> additionalLines) {
+                                List<@Valid LeaseLineInput> additionalLines,
+                                /* Rental index (spec 2026-11-25 §14.1): why the new rent is above the cap, 1–500
+                                   characters; required only when it is, ignored otherwise. */
+                                String indexOverrideReason) {
 
     /** The shape before §4a/§4d. */
     public RenewLeaseRequest(LocalDate contractDate, LocalDate startDate, LocalDate endDate,
                              List<LeaseLineInput> lines, boolean carryDepositForward) {
-        this(contractDate, startDate, endDate, lines, carryDepositForward, null, null, null);
+        this(contractDate, startDate, endDate, lines, carryDepositForward, null, null, null, null);
+    }
+
+    /** The shape before the rental index. */
+    public RenewLeaseRequest(LocalDate contractDate, LocalDate startDate, LocalDate endDate,
+                             List<LeaseLineInput> lines, boolean carryDepositForward, RentChange rentChange,
+                             String ejariNumber, List<LeaseLineInput> additionalLines) {
+        this(contractDate, startDate, endDate, lines, carryDepositForward, rentChange, ejariNumber, additionalLines,
+                null);
     }
 
     /**

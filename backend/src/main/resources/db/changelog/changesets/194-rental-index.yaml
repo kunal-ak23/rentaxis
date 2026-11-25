@@ -57,3 +57,47 @@ databaseChangeLog:
             sql: CREATE INDEX ix_rir_lookup ON rental_index_rates (tenant_id, property_id, building_id, unit_type, checked_on DESC)
       rollback:
         - dropTable: { tableName: rental_index_rates }
+  # What one renewal was shown and decided against the rental index (spec §5, §14.1, §14.7): an immutable snapshot,
+  # written in the renew transaction when the index applied and a range was in force. Base, new rent and cap are on
+  # the same annual basis (§14.2). unit_document_path / unit_dld_percent are set when the range in force was this
+  # unit's own DLD result. A deleted draft successor leaves the check with no successor; the check goes with its
+  # predecessor lease (an import discard deletes both).
+  - changeSet:
+      id: 194-renewal-index-checks
+      author: claude
+      changes:
+        - createTable:
+            tableName: renewal_index_checks
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_renewal_index_checks, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renewal_index_checks_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renewal_index_checks_lease, referencedTableName: leases, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: successor_lease_id, type: uuid }
+              - column: { name: rate_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renewal_index_checks_rate, referencedTableName: rental_index_rates, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: base_rent, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: average, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: gap_percent, type: "numeric(12,4)", constraints: { nullable: false } }
+              - column: { name: allowed_percent, type: int, constraints: { nullable: false } }
+              - column: { name: cap_rent, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: new_rent, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: unit_document_path, type: varchar(500) }
+              - column: { name: unit_dld_percent, type: int }
+              - column: { name: above_cap, type: boolean, constraints: { nullable: false } }
+              - column: { name: override_reason, type: varchar(500) }
+              - column: { name: decided_by, type: uuid }
+              - column: { name: decided_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: renewal_index_checks
+            baseColumnNames: successor_lease_id
+            referencedTableName: leases
+            referencedColumnNames: id
+            constraintName: fk_renewal_index_checks_successor
+            onDelete: SET NULL
+        - sql:
+            sql: CREATE INDEX ix_renewal_index_checks_lease ON renewal_index_checks (tenant_id, lease_id)
+        - sql:
+            sql: CREATE INDEX ix_renewal_index_checks_successor ON renewal_index_checks (successor_lease_id)
+        - sql:
+            sql: ALTER TABLE renewal_index_checks ADD CONSTRAINT ck_renewal_index_checks_reason CHECK (NOT above_cap OR override_reason IS NOT NULL)
+      rollback:
+        - dropTable: { tableName: renewal_index_checks }
