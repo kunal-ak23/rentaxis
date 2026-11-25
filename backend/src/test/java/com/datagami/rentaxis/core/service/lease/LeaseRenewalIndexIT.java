@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.lease;
 
+import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
@@ -464,6 +465,123 @@ class LeaseRenewalIndexIT extends AbstractPostgresIT {
         assertThat(seen).isEmpty();
     }
 
+    // ---------------------------------------------------------------- final review M1: a deleted range
+
+    @Test
+    void checkSurvivesDeletedRange() {
+        flagOn();
+        RentalIndexRate r = rate(today.minusMonths(1));
+        UUID lease = lease("120000");
+        renewal.renew(lease, amount("130000", "Agreed"));
+
+        jdbc.update("delete from rental_index_rates where id = ?", r.getId());
+
+        assertThat(checkCount(lease)).isEqualTo(1);
+        java.util.Map<String, Object> row = jdbc.queryForMap(
+                "select rate_id, rate_source, rate_checked_on, cap_rent, override_reason from renewal_index_checks"
+                        + " where lease_id = ?", lease);
+        assertThat(row.get("rate_id")).isNull();
+        assertThat(row.get("rate_source")).isEqualTo("MANUAL");
+        assertThat(row.get("rate_checked_on").toString()).isEqualTo(today.minusMonths(1).toString());
+        assertThat((BigDecimal) row.get("cap_rent")).isEqualByComparingTo("126000");
+        assertThat(row.get("override_reason")).isEqualTo("Agreed");
+    }
+
+    // ---------------------------------------------------------------- final review I1: editing the successor draft
+
+    @Test
+    void draftEditWithinCapNeedsNoReasonAndIsRecorded() {
+        flagOn();
+        rate(today.minusMonths(1));
+        UUID lease = lease("120000");
+        LeaseDTO successor = renewal.renew(lease, amount("120000"));
+        assertThat(successorChecks(successor.getId())).hasSize(1);
+
+        leaseService.updateDraftLease(successor.getId(), edit("125000", null));
+
+        List<RenewalIndexCheck> rows = successorChecks(successor.getId());
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).getNewRent()).isEqualByComparingTo("125000");
+        assertThat(rows.get(0).isAboveCap()).isFalse();
+        assertThat(rows.get(0).getOverrideReason()).isNull();
+        assertThat(rows.get(0).getCapRent()).isEqualByComparingTo("126000");
+        assertThat(rows.get(0).getLeaseId()).isEqualTo(lease);
+        // The renewal's own check is never touched.
+        assertThat(rows.get(1).getNewRent()).isEqualByComparingTo("120000");
+    }
+
+    @Test
+    void draftEditAboveCapNeedsReasonAndStoresNewCheck() {
+        flagOn();
+        rate(today.minusMonths(1));
+        UUID lease = lease("120000");
+        LeaseDTO successor = renewal.renew(lease, amount("120000"));
+        UUID id = successor.getId();
+
+        assertThatThrownBy(() -> leaseService.updateDraftLease(id, edit("130000", null)))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo("renewal.indexOverrideRequired");
+                    assertThat((BigDecimal) e.getArgs().get("cap")).isEqualByComparingTo("126000");
+                });
+        assertThatThrownBy(() -> leaseService.updateDraftLease(id, edit("130000", "   ")))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("renewal.indexOverrideRequired"));
+        assertThatThrownBy(() -> leaseService.updateDraftLease(id, edit("130000", "z".repeat(501))))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("renewal.indexOverrideTooLong"));
+        // Refused edits change nothing: the draft still charges 120,000 and one check is on record.
+        assertThat(rentLines(id)).containsExactly(new BigDecimal("120000.00"));
+        assertThat(successorChecks(id)).hasSize(1);
+
+        leaseService.updateDraftLease(id, edit("130000", "  Renter agreed to the new fit-out  "));
+        List<RenewalIndexCheck> rows = successorChecks(id);
+        assertThat(rows).hasSize(2);
+        RenewalIndexCheck edited = rows.get(0);
+        assertThat(edited.isAboveCap()).isTrue();
+        assertThat(edited.getOverrideReason()).isEqualTo("Renter agreed to the new fit-out");
+        assertThat(edited.getNewRent()).isEqualByComparingTo("130000");
+        assertThat(edited.getBaseRent()).isEqualByComparingTo("120000");
+        assertThat(edited.getDecidedBy()).isNotNull();
+        assertThat(rows.get(1).isAboveCap()).isFalse();
+        assertThat(rentLines(id)).containsExactly(new BigDecimal("130000.00"));
+
+        // Saved again at the same rent (another field edited): the decision on record stands, no reason, no row.
+        leaseService.updateDraftLease(id, edit("130000", null));
+        assertThat(successorChecks(id)).hasSize(2);
+    }
+
+    @Test
+    void draftEditFlagOffUnchanged() {
+        flagOn();
+        rate(today.minusMonths(1));
+        UUID lease = lease("120000");
+        LeaseDTO successor = renewal.renew(lease, amount("120000"));
+        features.setEnabled(tenantId, TenantFeature.RENTAL_INDEX, false);
+
+        leaseService.updateDraftLease(successor.getId(), edit("200000", null));
+        assertThat(rentLines(successor.getId())).containsExactly(new BigDecimal("200000.00"));
+        assertThat(successorChecks(successor.getId())).hasSize(1);
+    }
+
+    @Test
+    void draftEditWithoutStoredCheckUnaffected() {
+        // A plain draft, and a successor renewed before the flag was on: neither has a check, neither is capped.
+        UUID lease = lease("120000");
+        LeaseDTO successor = renewal.renew(lease, amount("120000"));
+        flagOn();
+        rate(today.minusMonths(1));
+        leaseService.updateDraftLease(successor.getId(), edit("200000", null));
+        assertThat(rentLines(successor.getId())).containsExactly(new BigDecimal("200000.00"));
+        assertThat(successorChecks(successor.getId())).isEmpty();
+
+        Unit other = otherUnit("RI-PLAIN");
+        UUID plain = fx.draftLease(other, fx.renter(), rStart, rStart, rEnd, List.of(line("RENT", "120000")));
+        CreateLeaseDTO dto = fx.draftDto(other, fx.renter(), rStart, rEnd, List.of(line("RENT", "300000")));
+        leaseService.updateDraftLease(plain, dto);
+        assertThat(rentLines(plain)).containsExactly(new BigDecimal("300000.00"));
+        assertThat(successorChecks(plain)).isEmpty();
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private void flagOn() {
@@ -524,6 +642,21 @@ class LeaseRenewalIndexIT extends AbstractPostgresIT {
         Integer n = jdbc.queryForObject("select count(*) from leases where renewed_from_lease_id = ?",
                 Integer.class, leaseId);
         return n == null ? 0 : n;
+    }
+
+    private CreateLeaseDTO edit(String rent, String reason) {
+        CreateLeaseDTO dto = fx.draftDto(unit, fx.renter(), rStart, rEnd, List.of(line("RENT", rent)));
+        dto.setIndexOverrideReason(reason);
+        return dto;
+    }
+
+    private List<RenewalIndexCheck> successorChecks(UUID successorId) {
+        return tx.execute(s -> checks.findBySuccessorLeaseIdOrderByDecidedAtDesc(successorId));
+    }
+
+    private List<BigDecimal> rentLines(UUID leaseId) {
+        return jdbc.queryForList("select l.gross_amount from lease_lines l join charge_types t on t.id = l.charge_type_id"
+                + " where l.lease_id = ? and t.behaviour = 'RENT' order by l.seq_no", BigDecimal.class, leaseId);
     }
 
     private RenewalIndexCheck onlyCheck(UUID leaseId) {

@@ -1037,6 +1037,11 @@ public class LeaseService {
             lease.setRenter(renter);
         }
 
+        // Final review I1: a renewal's successor is held to the rental index cap it was renewed under.
+        if (renewalIndex != null && lease.getRenewedFromLeaseId() != null) {
+            renewalIndex.checkDraftEdit(lease, dto.getLines(), newStart, newEnd, dto.getIndexOverrideReason());
+        }
+
         applyHeader(lease, dto, lease.getUnit());
         Lease savedLease = leaseRepository.save(lease);
 
@@ -1058,6 +1063,11 @@ public class LeaseService {
         leaseRepository.flush();
         return mapToDTO(savedLease);
     }
+
+    /** Lazy: the renewal service depends on this one. Null in the unit tests' hand-built service. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @Lazy
+    private com.datagami.rentaxis.core.service.lease.LeaseRenewalService renewalIndex;
 
     // ---- lines ---------------------------------------------------------------
 

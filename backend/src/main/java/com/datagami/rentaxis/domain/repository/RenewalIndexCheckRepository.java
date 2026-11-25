@@ -10,4 +10,10 @@ import java.util.UUID;
 public interface RenewalIndexCheckRepository extends JpaRepository<RenewalIndexCheck, UUID> {
 
     List<RenewalIndexCheck> findByLeaseIdOrderByDecidedAtAsc(UUID leaseId);
+
+    /** The checks written for one successor draft, newest first (the draft-edit check compares with the first). */
+    List<RenewalIndexCheck> findBySuccessorLeaseIdOrderByDecidedAtDesc(UUID successorLeaseId);
+
+    /** Every check a lease took part in, as the lease renewed or as the successor drafted, newest first. */
+    List<RenewalIndexCheck> findByLeaseIdOrSuccessorLeaseIdOrderByDecidedAtDesc(UUID leaseId, UUID successorLeaseId);
 }

@@ -61,7 +61,9 @@ databaseChangeLog:
   # written in the renew transaction when the index applied and a range was in force. Base, new rent and cap are on
   # the same annual basis (§14.2). unit_document_path / unit_dld_percent are set when the range in force was this
   # unit's own DLD result. A deleted draft successor leaves the check with no successor; the check goes with its
-  # predecessor lease (an import discard deletes both).
+  # predecessor lease (an import discard deletes both). A deleted range leaves the check with no rate_id: every figure,
+  # and the range's source and checked-on date (rate_source, rate_checked_on), are copied onto the check. An edit of the
+  # successor draft that changes the measured rent writes a further check; none is ever updated.
   - changeSet:
       id: 194-renewal-index-checks
       author: claude
@@ -73,7 +75,9 @@ databaseChangeLog:
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renewal_index_checks_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
               - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renewal_index_checks_lease, referencedTableName: leases, referencedColumnNames: id, deleteCascade: true } }
               - column: { name: successor_lease_id, type: uuid }
-              - column: { name: rate_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renewal_index_checks_rate, referencedTableName: rental_index_rates, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: rate_id, type: uuid }
+              - column: { name: rate_source, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: rate_checked_on, type: date, constraints: { nullable: false } }
               - column: { name: base_rent, type: "numeric(14,2)", constraints: { nullable: false } }
               - column: { name: average, type: "numeric(14,2)", constraints: { nullable: false } }
               - column: { name: gap_percent, type: "numeric(12,4)", constraints: { nullable: false } }
@@ -86,6 +90,13 @@ databaseChangeLog:
               - column: { name: override_reason, type: varchar(500) }
               - column: { name: decided_by, type: uuid }
               - column: { name: decided_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: renewal_index_checks
+            baseColumnNames: rate_id
+            referencedTableName: rental_index_rates
+            referencedColumnNames: id
+            constraintName: fk_renewal_index_checks_rate
+            onDelete: SET NULL
         - addForeignKeyConstraint:
             baseTableName: renewal_index_checks
             baseColumnNames: successor_lease_id

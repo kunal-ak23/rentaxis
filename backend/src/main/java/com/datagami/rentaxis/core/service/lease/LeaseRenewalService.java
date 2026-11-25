@@ -101,6 +101,8 @@ public class LeaseRenewalService {
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
     private final AdditionalCharges charges;
+    /** Required (final review F3): the index reads RENT lines through it, so without it the cap would fail open. */
+    private final com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypes;
 
     /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
     private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
@@ -120,7 +122,8 @@ public class LeaseRenewalService {
                                LeaseChequeRegistrar chequeRegistrar,
                                LeaseAccessPolicy leaseAccessPolicy,
                                ApplicationEventPublisher events,
-                               AdditionalCharges charges) {
+                               AdditionalCharges charges,
+                               com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypes) {
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -131,6 +134,7 @@ public class LeaseRenewalService {
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.events = events;
         this.charges = charges;
+        this.chargeTypes = java.util.Objects.requireNonNull(chargeTypes, "chargeTypes");
     }
 
     // ------------------------------------------------------------------
@@ -312,10 +316,8 @@ public class LeaseRenewalService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private RentalIndexRateService rentalIndex;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.beans.factory.annotation.Autowired
     private RenewalIndexCheckRepository indexChecks;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypes;
     private Clock clock = Clock.systemDefaultZone();
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -431,7 +433,7 @@ public class LeaseRenewalService {
      */
     private BigDecimal rentOf(List<LeaseLineInput> lines) {
         BigDecimal sum = BigDecimal.ZERO;
-        if (lines == null || chargeTypes == null) return sum;
+        if (lines == null) return sum;
         Map<String, java.util.Optional<ChargeType>> seen = new java.util.HashMap<>();
         for (LeaseLineInput in : lines) {
             if (in == null || in.grossAmount() == null) continue;
@@ -483,6 +485,8 @@ public class LeaseRenewalService {
         c.setLeaseId(predecessor.getId());
         c.setSuccessorLeaseId(successorId);
         c.setRateId(rate.getId());
+        c.setRateSource(rate.getSource().name());
+        c.setRateCheckedOn(rate.getCheckedOn());
         c.setBaseRent(index.annualBase());
         c.setAverage(index.cap().average());
         c.setGapPercent(index.cap().gap());
@@ -497,6 +501,71 @@ public class LeaseRenewalService {
         c.setDecidedBy(currentUserId());
         c.setDecidedAt(Instant.now(clock));
         indexChecks.save(c);
+    }
+
+    /**
+     * Final review I1: an edit of a renewal's successor draft is held to the same cap as the renewal was (spec §14.1).
+     * Applies only when the draft has a stored check (the renewal was measured against a range) and RENTAL_INDEX is
+     * on. The edited RENT lines are measured exactly as {@code renew} measures them — {@link #rentOf} against the
+     * predecessor's {@link #renewingRent}, under the range in force today. When the measured rent or the cap differs
+     * from the newest check on record a new check row is written (never an update); above the cap that needs a
+     * reason ({@code renewal.indexOverrideRequired} / {@code renewal.indexOverrideTooLong}). Runs in the caller's
+     * transaction, so a later refusal of the edit rolls the row back with it.
+     */
+    @Transactional
+    public void checkDraftEdit(Lease draft, List<LeaseLineInput> lines, LocalDate newStart, LocalDate newEnd,
+                               String reason) {
+        if (draft == null || draft.getId() == null || draft.getRenewedFromLeaseId() == null) return;
+        List<RenewalIndexCheck> prior = indexChecks.findBySuccessorLeaseIdOrderByDecidedAtDesc(draft.getId());
+        if (prior.isEmpty()) return;
+        Lease predecessor = leaseRepository.findByIdScopedToTenant(draft.getRenewedFromLeaseId()).orElse(null);
+        if (predecessor == null) return;
+        IndexAssessment index = assess(predecessor, () -> renewingRent(predecessor), b -> rentOf(lines),
+                newStart, newEnd);
+        if (index == null || index.status() != IndexStatus.OK || index.cap() == null || index.annualNew() == null) {
+            return; // flag off, or no range in force today: the edit is judged as any draft edit
+        }
+        RenewalIndexCheck last = prior.get(0);
+        if (last.getNewRent().compareTo(index.annualNew()) == 0
+                && last.getCapRent().compareTo(index.cap().capRent()) == 0) {
+            return; // nothing measured changed: the decision on record stands
+        }
+        String override = requireIndexOverride(index, reason);
+        recordIndexCheck(predecessor, draft.getId(), index, override);
+    }
+
+    /** One stored check as the lease page shows it (spec §9, §14.7): staff only. */
+    public record IndexCheckView(UUID id, UUID leaseId, UUID successorLeaseId, Instant decidedAt, UUID decidedBy,
+                                 String decidedByName, BigDecimal baseRent, BigDecimal newRent, BigDecimal average,
+                                 BigDecimal gapPercent, int allowedPercent, BigDecimal capRent, boolean aboveCap,
+                                 String overrideReason, String rateSource, LocalDate rateCheckedOn,
+                                 boolean hasUnitDocument) {
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.UserRepository users;
+
+    /**
+     * Final review I2: the stored checks a lease took part in, as the lease renewed or as its successor, newest
+     * first. 404 for a lease the caller cannot read (another organisation's, or outside a manager's properties).
+     */
+    @Transactional(readOnly = true)
+    public List<IndexCheckView> indexChecksOf(UUID leaseId) {
+        Lease lease = leaseRepository.findByIdScopedToTenant(leaseId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Lease not found"));
+        leaseAccessPolicy.requireReadable(lease);
+        List<RenewalIndexCheck> rows = indexChecks.findByLeaseIdOrSuccessorLeaseIdOrderByDecidedAtDesc(leaseId, leaseId);
+        Map<UUID, String> names = new java.util.HashMap<>();
+        Set<UUID> who = new java.util.HashSet<>();
+        for (RenewalIndexCheck c : rows) if (c.getDecidedBy() != null) who.add(c.getDecidedBy());
+        if (users != null && !who.isEmpty()) {
+            for (com.datagami.rentaxis.domain.entity.User u : users.findAllById(who)) names.put(u.getId(), u.getName());
+        }
+        return rows.stream().map(c -> new IndexCheckView(c.getId(), c.getLeaseId(), c.getSuccessorLeaseId(),
+                c.getDecidedAt(), c.getDecidedBy(), names.get(c.getDecidedBy()), c.getBaseRent(), c.getNewRent(),
+                c.getAverage(), c.getGapPercent(), c.getAllowedPercent(), c.getCapRent(), c.isAboveCap(),
+                c.getOverrideReason(), c.getRateSource(), c.getRateCheckedOn(), c.getUnitDocumentPath() != null))
+                .toList();
     }
 
     private static UUID currentUserId() {
