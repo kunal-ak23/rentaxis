@@ -541,9 +541,18 @@ function LeasesList() {
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
+            } else {
+                // QA-01 review: every posted contract reaches this now; a refusal must say so.
+                let detail: string | null = null;
+                try {
+                    const body = await pdfRes.json();
+                    detail = body?.message || body?.error || null;
+                } catch {}
+                alert(detail || tl("contractDownloadFailed"));
             }
         } catch (err) {
             console.error(err);
+            alert(tl("contractDownloadFailed"));
         } finally {
             setActionLoading(null);
         }
@@ -692,8 +701,11 @@ function LeasesList() {
         if ((lease.status === 'DRAFT' || lease.status === 'PENDING_SIGNATURE') && canPostLeases) {
             items.push({ id: "post", label: tl("postLease"), testId: id("post"), icon: CheckCircle, href: `/dashboard/leases/${lease.id}` });
         }
-        if (lease.status === 'PENDING_SIGNATURE' && canManageLeases) {
+        // QA-01: a posted contract downloads too; the server renders it when no PDF was stored.
+        if ((lease.status === 'PENDING_SIGNATURE' && canManageLeases) || (lease.postedAt && canViewLeases)) {
             items.push({ id: "pdf", label: surface === "card" ? t("downloadContract") : "PDF", testId: id("pdf"), icon: Download, onSelect: () => handleDownloadContract(lease.id) });
+        }
+        if (lease.status === 'PENDING_SIGNATURE' && canManageLeases) {
             if (surface === "card") {
                 items.push({ id: "regenerate", label: t("regenerateContract"), testId: id("regenerate"), icon: RefreshCw, onSelect: () => handleGenerateContract(lease.id) });
             }

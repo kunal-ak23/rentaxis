@@ -9,6 +9,7 @@ export interface LeaseActionFacts { status: LeaseStatus; posted: boolean; hasCon
 export interface LeasePerms {
     canDraft: boolean; canPost: boolean; canRenew: boolean; canExtend: boolean; canCheques: boolean;
     canRaisePenalty: boolean; canGiveNotice: boolean; canPreviewTermination: boolean; canViewSettlement: boolean; canSeeBadDebts: boolean;
+    canViewLeases: boolean;
 }
 
 const DRAFTING: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE"];
@@ -57,6 +58,8 @@ export function leasePermsFor(role: UserRole | undefined): LeasePerms {
         canPreviewTermination: hasPermission(role, "canPreviewTermination"),
         canViewSettlement: hasPermission(role, "canViewSettlement"),
         canSeeBadDebts: hasPermission(role, "canAccessFinance"),
+        // The roles GET /leases/{id}/contract serves (less the renter, who has the portal).
+        canViewLeases: hasPermission(role, "canViewLeases"),
     };
 }
 
@@ -93,7 +96,8 @@ export function availableLeaseActions(f: LeaseActionFacts, p: LeasePerms): Lease
         terminate: live && p.canPreviewTermination,
         // BadDebtService refuses a contract still in drafting (break-it R4).
         writeOff: p.canSeeBadDebts && !drafting,
-        downloadContract: f.hasContract,
+        // QA-01: a posted contract always has one: the server renders it when no PDF was stored.
+        downloadContract: f.hasContract || (f.posted && p.canViewLeases),
         ledger: f.posted,
         // LeaseService: "Only DRAFT leases can be deleted" (break-it R4).
         delete: f.status === "DRAFT" && p.canDraft,

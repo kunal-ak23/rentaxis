@@ -77,7 +77,11 @@ describe("lease actions", () => {
         for (const { role, f } of matrix()) {
             const p = leasePermsFor(role);
             const legacy = legacyHeader(f, p);
-            for (const a of availableLeaseActions(f, p)) if (!NEW.includes(a) && !legacy.has(a)) extra.push(`${role} ${f.status} ${a}`);
+            for (const a of availableLeaseActions(f, p)) {
+                // QA-01: a posted contract downloads even with no stored PDF (the server renders it).
+                if (a === "downloadContract" && f.posted && p.canViewLeases) continue;
+                if (!NEW.includes(a) && !legacy.has(a)) extra.push(`${role} ${f.status} ${a}`);
+            }
         }
         expect(extra).toEqual([]);
     });
@@ -132,6 +136,15 @@ describe("lease actions", () => {
         expect(admin).not.toContain("settlement");
         expect(admin).not.toContain("giveNotice");
         expect(availableLeaseActions(f, leasePermsFor("RENTER"))).not.toContain("holdoverVacate");
+    });
+
+    it("offers Download contract on a posted contract with no stored PDF, to staff who can see contracts (QA-01)", () => {
+        const f = { status: "ACTIVE" as LeaseStatus, posted: true, hasContract: false, transferredOut: false };
+        for (const role of ["TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"] as UserRole[])
+            expect(availableLeaseActions(f, leasePermsFor(role))).toContain("downloadContract");
+        expect(availableLeaseActions(f, leasePermsFor("SECURITY_GUARD"))).not.toContain("downloadContract");
+        const draft = { status: "DRAFT" as LeaseStatus, posted: false, hasContract: false, transferredOut: false };
+        expect(availableLeaseActions(draft, leasePermsFor("TENANT_ADMIN"))).not.toContain("downloadContract");
     });
 
     it("puts Delete in the menu on a draft, never as a primary button", () => {

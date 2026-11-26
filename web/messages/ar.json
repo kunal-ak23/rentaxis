@@ -2665,6 +2665,8 @@
     "chequesMustEqual": "إجمالي الشيكات {cheques} بينما قيمة العقد {contract}",
     "unmappedRoles": "حسابات غير مربوطة",
     "dryRunTitle": "المراجعة قبل الترحيل",
+    "contractDownloadFailed": "تعذّر تنزيل العقد. حاول مرة أخرى.",
+    "documentDownloadFailed": "تعذّر تنزيل المستند. حاول مرة أخرى.",
     "dryRunOk": "جاهز للترحيل",
     "dryRunErrors": "لا يمكن ترحيل هذا العقد بعد",
     "postFailed": "فشل الترحيل",
