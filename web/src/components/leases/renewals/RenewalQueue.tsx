@@ -412,7 +412,8 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                     onExtended={() => { setExtending(null); reload(); }} />
             )}
             <GiveNoticeDialog open={!!noticeFor} busy={noticeBusy} error={noticeError} onClose={() => setNoticeFor(null)}
-                onConfirm={giveNotice} minDate={noticeFor?.contractDate ?? noticeFor?.startDate ?? null} />
+                onConfirm={giveNotice} minDate={noticeFor?.contractDate ?? noticeFor?.startDate ?? null}
+                maxMoveOut={noticeFor?.endDate ?? null} />
             <ContactRenterDialog lease={contacting} onClose={() => setContacting(null)} />
             {marking && (
                 <NotRenewingDialog lease={marking} onClose={() => setMarking(null)} onMarked={() => { setMarking(null); reload(); }} />

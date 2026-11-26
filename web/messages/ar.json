@@ -3130,6 +3130,7 @@
     "ledgerSettled": "مُسدّد",
     "settledBeforeAcquisition": "أودعه المالك السابق",
     "writeOffPending": "شطب الدين بانتظار الموافقة",
+    "depositNotYetDue": "ليس قبل {date}: لا يمكن تقديم الشيك قبل تاريخه",
     "owedOfFace": "من {face}",
     "payeeMismatch": "اسم المستفيد غير مطابق",
     "payeeMismatchConfirmedBy": "أكّده {name} في {date}",

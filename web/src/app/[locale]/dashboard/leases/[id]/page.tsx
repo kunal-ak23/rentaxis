@@ -1464,6 +1464,7 @@ export default function LeaseDetailPage() {
                 onConfirm={handleGiveNotice}
                 error={noticeError}
                 minDate={earliestEventDate}
+                maxMoveOut={lease?.endDate ?? null}
             />
 
             <ConfirmDialog

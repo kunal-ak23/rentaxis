@@ -178,3 +178,12 @@ export function registerActionsFor(
             return [];
     }
 }
+
+/**
+ * QA-24: the server refuses to deposit a post-dated cheque before the date written
+ * on it (ChequeService.deposit, "may not be presented before its date"). The
+ * button says so instead of offering a click that always fails.
+ */
+export function depositNotYetDue(chequeDate: string | null | undefined, todayIso: string): boolean {
+    return !!chequeDate && chequeDate > todayIso;
+}

@@ -1019,6 +1019,11 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                 </p>
                             )}
 
+                            {!!dry?.notices?.length && (
+                                <ul data-testid="wizard-dry-run-notices" className="text-xs text-info list-disc ms-4 space-y-1">
+                                    {dry.notices.map((n, i) => <li key={i}>{n}</li>)}
+                                </ul>
+                            )}
                             {dry && !dry.ok && (
                                 <div>
                                     <p className="text-xs text-error font-semibold mb-1">{t("dryRunErrors")}</p>

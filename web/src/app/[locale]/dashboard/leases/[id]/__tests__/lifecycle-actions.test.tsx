@@ -196,12 +196,12 @@ describe("Give notice — particulars (#27)", () => {
         fireEvent.click(await screen.findByTestId("lease-give-notice"));
         fireEvent.change(screen.getByLabelText(en.Leasing.noticeGivenBy), { target: { value: "LANDLORD" } });
         fireEvent.change(screen.getByLabelText(en.Leasing.noticeDate), { target: { value: "2026-09-01" } });
-        fireEvent.change(screen.getByLabelText(en.Leasing.intendedMoveOut), { target: { value: "2027-09-01" } });
+        fireEvent.change(screen.getByLabelText(en.Leasing.intendedMoveOut), { target: { value: "2026-12-01" } });
         expect(screen.getByText(en.Leasing.landlordNoticeHint)).toBeInTheDocument();
         fireEvent.click(screen.getByTestId("lease-give-notice-confirm"));
 
         await waitFor(() => expect(api.notice).toHaveBeenCalledWith("lease-1", {
-            givenBy: "LANDLORD", noticeDate: "2026-09-01", intendedMoveOutDate: "2027-09-01", notes: null,
+            givenBy: "LANDLORD", noticeDate: "2026-09-01", intendedMoveOutDate: "2026-12-01", notes: null,
         }));
     });
 

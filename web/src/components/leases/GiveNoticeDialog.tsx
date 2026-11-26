@@ -30,9 +30,11 @@ type Props = {
     error?: string | null;
     /** Earliest allowed notice date: the contract date (the server refuses earlier). */
     minDate?: string | null;
+    /** QA-28: latest allowed move-out, the contract's end (the server refuses later). */
+    maxMoveOut?: string | null;
 };
 
-export default function GiveNoticeDialog({ open, busy, onClose, onConfirm, error, minDate }: Props) {
+export default function GiveNoticeDialog({ open, busy, onClose, onConfirm, error, minDate, maxMoveOut }: Props) {
     const t = useTranslations("Leasing");
     const [noticeDate, setNoticeDate] = useState(businessTodayIso());
     const [givenBy, setGivenBy] = useState<NoticeParty>("RENTER");
@@ -50,7 +52,8 @@ export default function GiveNoticeDialog({ open, busy, onClose, onConfirm, error
 
     const today = businessTodayIso();
     const invalid = !noticeDate || noticeDate > today || (!!minDate && noticeDate < minDate)
-        || (!!moveOut && moveOut < noticeDate);
+        || (!!moveOut && moveOut < noticeDate)
+        || (!!moveOut && !!maxMoveOut && moveOut > maxMoveOut);
 
     return (
         <LeaseDialog
@@ -84,7 +87,7 @@ export default function GiveNoticeDialog({ open, busy, onClose, onConfirm, error
                 </div>
                 <div>
                     <label className={label} htmlFor="notice-move-out">{t("intendedMoveOut")}</label>
-                    <input id="notice-move-out" type="date" min={noticeDate || undefined} className={field} value={moveOut} onChange={e => setMoveOut(e.target.value)} />
+                    <input id="notice-move-out" type="date" min={noticeDate || undefined} max={maxMoveOut || undefined} className={field} value={moveOut} onChange={e => setMoveOut(e.target.value)} />
                 </div>
                 <div className="sm:col-span-2">
                     <label className={label} htmlFor="notice-notes">{t("noticeNotes")}</label>

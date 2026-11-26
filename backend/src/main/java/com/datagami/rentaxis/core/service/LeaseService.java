@@ -2178,6 +2178,12 @@ public class LeaseService {
         if (moveOut != null && moveOut.isBefore(noticeDate)) {
             throw new BusinessRuleViolationException("The intended move-out date cannot be before the notice date.");
         }
+        // QA-28: notice ends the contract early or at its end; staying on past the end
+        // is a renewal or a holdover, not a move-out date on this contract.
+        if (moveOut != null && lease.getEndDate() != null && moveOut.isAfter(lease.getEndDate())) {
+            throw new BusinessRuleViolationException("The intended move-out date cannot be after the contract ends ("
+                    + lease.getEndDate() + "). Renew the contract for a later move-out.");
+        }
 
         lease.setStatus(LeaseStatus.NOTICE_GIVEN);
         lease.setNoticeDate(noticeDate);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    depositNotYetDue,
     COLLECTABLE_LEASE_STATUSES,
     POSTED_LEASE_STATUSES,
     leaseIsCollectable,
@@ -146,5 +147,14 @@ describe("registerActionsFor a cheque settled before the acquisition", () => {
 
     it("defaults to false, unchanged from every case above", () => {
         expect(registerActionsFor("CLEARED", "PDC", true)).toEqual(["receipt"]);
+    });
+});
+
+describe("depositNotYetDue (QA-24)", () => {
+    it("is true only for a date after today", () => {
+        expect(depositNotYetDue("2026-12-01", "2026-11-27")).toBe(true);
+        expect(depositNotYetDue("2026-11-27", "2026-11-27")).toBe(false);
+        expect(depositNotYetDue("2026-11-01", "2026-11-27")).toBe(false);
+        expect(depositNotYetDue(null, "2026-11-27")).toBe(false);
     });
 });
