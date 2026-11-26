@@ -165,8 +165,12 @@ export function SelectPanel({
                         </button>
                     ))}
                 </div>
-                {/* Outside the listbox: an action, not an option. */}
-                {footer}
+                {/* Outside the listbox: an action, not an option. Escape from it closes the panel too. */}
+                {footer && (
+                    <div onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onDismiss(); } }}>
+                        {footer}
+                    </div>
+                )}
             </div>
         </>
     );
