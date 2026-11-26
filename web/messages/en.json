@@ -2774,6 +2774,8 @@
     "renter": "Tenant",
     "methodCheque": "Cheque",
     "methodOnline": "Online",
+    "methodCash": "Cash",
+    "methodBankTransfer": "Bank Transfer",
     "leaseStatus": {
       "DRAFT": "Draft",
       "PENDING_SIGNATURE": "Pending Signature",
@@ -5613,6 +5615,7 @@
     "unavailable": "Tower filter (towers could not be loaded)"
   },
   "Pickers": {
+    "addTenant": "Add tenant (opens in a new tab)",
     "selectVendor": "Select a vendor",
     "searching": "Searching…",
     "noMatches": "No matches",

@@ -2774,6 +2774,8 @@
     "renter": "المستأجر",
     "methodCheque": "شيك",
     "methodOnline": "إلكتروني",
+    "methodCash": "نقداً",
+    "methodBankTransfer": "تحويل بنكي",
     "leaseStatus": {
       "DRAFT": "مسودة",
       "PENDING_SIGNATURE": "بانتظار التوقيع",
@@ -5613,6 +5615,7 @@
     "unavailable": "عامل تصفية المبنى (تعذّر تحميل المباني)"
   },
   "Pickers": {
+    "addTenant": "إضافة مستأجر (في علامة تبويب جديدة)",
     "selectVendor": "اختر موردًا",
     "searching": "جارٍ البحث…",
     "noMatches": "لا توجد نتائج",

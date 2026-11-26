@@ -102,6 +102,23 @@ describe("UnitPicker", () => {
 });
 
 describe("RenterPicker", () => {
+    // QA-03: the contract wizard can reach Add tenant from an empty search.
+    it("offers + Add tenant under the results when asked, and only then", async () => {
+        api.searchRenters.mockResolvedValue([]);
+        const onAddNew = vi.fn();
+        withIntl("en", <RenterPicker value="" onChange={vi.fn()} testId="renter" onAddNew={onAddNew} />);
+        fireEvent.click(screen.getByTestId("renter"));
+        expect(await screen.findByText("No matches")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("renter-add-new"));
+        expect(onAddNew).toHaveBeenCalledTimes(1);
+        cleanup();
+
+        withIntl("en", <RenterPicker value="" onChange={vi.fn()} testId="renter" />);
+        fireEvent.click(screen.getByTestId("renter"));
+        await screen.findByText("No matches");
+        expect(screen.queryByTestId("renter-add-new")).toBeNull();
+    });
+
     it("labels renters in Arabic under the ar locale", async () => {
         api.searchRenters.mockResolvedValue([renter({})]);
         withIntl("ar", <RenterPicker value="" onChange={vi.fn()} testId="renter" />);

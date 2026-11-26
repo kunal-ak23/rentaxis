@@ -80,6 +80,8 @@ type PanelProps = {
     onDismiss: () => void;
     /** A status line under the clear row ("No matches", "Searching…", …), or null. */
     message: ReactNode;
+    /** QA-03: an action under the rows, e.g. "+ Add tenant". */
+    footer?: ReactNode;
 };
 
 export function SelectPanel({
@@ -95,6 +97,7 @@ export function SelectPanel({
     onSelectIndex,
     onDismiss,
     message,
+    footer,
 }: PanelProps) {
     const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -162,6 +165,8 @@ export function SelectPanel({
                         </button>
                     ))}
                 </div>
+                {/* Outside the listbox: an action, not an option. */}
+                {footer}
             </div>
         </>
     );

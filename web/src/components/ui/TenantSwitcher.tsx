@@ -154,7 +154,7 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
                     <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
                         <OrgAvatar name={orgName} initials={orgInitials} logoSrc={orgLogo} className="shrink-0" />
                         <div className={cn("flex-col items-start text-start flex-1 min-w-0 leading-tight", responsive ? "hidden xl:flex" : "flex")}>
-                            <span className="text-[12px] font-semibold text-[var(--ink-900)] truncate w-full">
+                            <span dir="auto" className="text-[12px] font-semibold text-[var(--ink-900)] truncate w-full">
                                 {orgName}
                             </span>
                             <span className="text-[10px] text-[var(--ink-500)] truncate w-full">
@@ -220,7 +220,7 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
                                         activeTenant?.id === t.id ? "bg-primary/5 text-primary" : "text-foreground hover:bg-input"
                                     )}
                                 >
-                                    <span className="truncate">{t.name}</span>
+                                    <span dir="auto" className="truncate">{t.name}</span>
                                     {activeTenant?.id === t.id && <Check size={14} className="text-primary shrink-0" />}
                                 </button>
                             ))}

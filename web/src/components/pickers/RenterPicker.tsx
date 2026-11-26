@@ -20,10 +20,12 @@ type Props = {
     excludeIds?: string[];
     /** Id of the trigger, for a `<label htmlFor>`. */
     id?: string;
+    /** QA-03: offers "+ Add tenant" under the results. */
+    onAddNew?: () => void;
 };
 
 /** Server-searched renter select: label is the localized name, sublabel the email (or phone). */
-export function RenterPicker({ value, onChange, placeholder, className, testId, disabled, excludeIds, id }: Props) {
+export function RenterPicker({ value, onChange, placeholder, className, testId, disabled, excludeIds, id, onAddNew }: Props) {
     const locale = useLocale();
     const t = useTranslations("Pickers");
     const excludeKey = (excludeIds ?? []).join("\u0000");
@@ -54,6 +56,16 @@ export function RenterPicker({ value, onChange, placeholder, className, testId, 
             testId={testId}
             disabled={disabled}
             id={id}
+            footer={onAddNew && (
+                <button
+                    type="button"
+                    data-testid={testId ? `${testId}-add-new` : "renter-picker-add-new"}
+                    onClick={onAddNew}
+                    className="w-full text-start px-3 py-2 text-xs font-semibold text-primary border-t border-border hover:bg-input/50 cursor-pointer"
+                >
+                    + {t("addTenant")}
+                </button>
+            )}
         />
     );
 }
