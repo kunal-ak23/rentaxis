@@ -322,3 +322,47 @@ describe("PropertiesPage create project errors", () => {
         expect(await screen.findByText("A property named 'Marina Tower' already exists")).toBeTruthy();
     });
 });
+
+describe("PropertiesPage add project validation (QA-06)", () => {
+    it("marks the English project name as required", async () => {
+        render(<PropertiesPage />);
+        fireEvent.click(await screen.findByTestId("properties-more"));
+        fireEvent.click(screen.getByRole("menuitem", { name: en.MasterData.addProject }));
+        expect((screen.getByPlaceholderText("Project Name (EN)") as HTMLInputElement).required).toBe(true);
+    });
+
+    it("shows a friendly message instead of the raw backend validation text", async () => {
+        postPropertiesResponse = jsonStub(false, {
+            error: true,
+            message: "Validation failed: nameEn: Property name (English) is required",
+        });
+
+        render(<PropertiesPage />);
+        fireEvent.click(await screen.findByTestId("properties-more"));
+        fireEvent.click(screen.getByRole("menuitem", { name: en.MasterData.addProject }));
+        fireEvent.change(screen.getByPlaceholderText("Project Name (EN)"), { target: { value: " " } });
+        fireEvent.click(screen.getByRole("button", { name: en.MasterData.create }));
+
+        expect(await screen.findByText(en.MasterData.projectNameRequired)).toBeTruthy();
+        expect(screen.queryByText(/Validation failed:/)).toBeNull();
+    });
+});
+
+describe("PropertiesPage occupancy with no units (QA-08)", () => {
+    it("shows a muted dash, not a red 0%, for a project with no units", async () => {
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes("/v1/properties")) {
+                return jsonStub(true, [{ ...SAMPLE_STATS[0], propertyCount: 0, vacancies: 0 }]) as unknown as Response;
+            }
+            return jsonStub(true, null) as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<PropertiesPage />);
+        await screen.findAllByText("Marina Tower");
+        expect(screen.queryByText("0%")).toBeNull();
+        const dashes = screen.getAllByText("—");
+        expect(dashes.length).toBeGreaterThan(0);
+        for (const d of dashes) expect(d.className).not.toContain("text-error");
+    });
+});

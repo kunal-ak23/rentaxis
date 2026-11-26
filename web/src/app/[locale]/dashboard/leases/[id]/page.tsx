@@ -54,6 +54,7 @@ import LeaseIndexChecks from "@/components/rentalIndex/LeaseIndexChecks";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
 import RaisePenaltyDialog, { PENALTY_REASONS } from "@/components/penalties/RaisePenaltyDialog";
+import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
 import JournalVoucherDialog from "@/components/penalties/JournalVoucherDialog";
 import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import HoldoverVacateDialog from "@/components/leases/HoldoverVacateDialog";
@@ -236,6 +237,8 @@ export default function LeaseDetailPage() {
     const [vacateOpen, setVacateOpen] = useState(false);
     const [noticeError, setNoticeError] = useState<string | null>(null);
     const [penaltyOpen, setPenaltyOpen] = useState(false);
+    // QA-25: "Record payment" opens the cash receipt here, on the contract.
+    const [cashReceiptOpen, setCashReceiptOpen] = useState(false);
     const [voucherOpen, setVoucherOpen] = useState(false);
     const [penaltyKey, setPenaltyKey] = useState(0);
     const [noticeBusy, setNoticeBusy] = useState(false);
@@ -625,7 +628,7 @@ export default function LeaseDetailPage() {
         post: { label: t("postLease"), testId: "lease-post", icon: CheckCircle, onSelect: () => { void openPost(); } },
         recordPayment: {
             label: tA("recordPayment"), testId: "lease-record-payment", icon: Banknote,
-            href: `/dashboard/collections?tab=all&leaseId=${lease.id}&receive=1`,
+            onSelect: () => setCashReceiptOpen(true),
         },
         renew: { label: t("renew"), testId: "lease-renew", icon: Sparkles, onSelect: () => setRenewOpen(true) },
         settlement: { label: tSettlement("title"), testId: "lease-settle", icon: Banknote, href: `/dashboard/leases/${leaseId}/settlement` },
@@ -846,7 +849,10 @@ export default function LeaseDetailPage() {
                     {/* QA-16: the contract value leaves the refundable deposit out (it is held, not earned). */}
                     <Ribbon label={t("contractValue")} value={fmtAmount(lease.contractValue ?? round2(totals.net - totals.deposit))} />
                     <Ribbon label={t("contractValueInclVat")} value={fmtAmount(totals.contractInclVat)} />
-                    <Ribbon label={t("paymentTerms")} value={String(cheques.length || lease.paymentTerms || 0)} />
+                    {/* QA-35: only live post-dated cheques — not cash/transfer rows, replaced or cancelled ones. */}
+                    <Ribbon label={t("paymentTerms")} testId="lease-ribbon-cheque-count" value={String(cheques.length
+                        ? cheques.filter(c => c.mode === "PDC" && !c.replacedById && c.status !== "CANCELLED").length
+                        : (lease.paymentTerms || 0))} />
                     {/* PR #359 R1: a credit addendum cut the rent — the contract as signed and what is charged now. */}
                     {lease.currentRentAmount != null && lease.rentAmount != null
                         && Math.abs(lease.currentRentAmount - lease.rentAmount) >= 0.005 && (
@@ -1425,6 +1431,16 @@ export default function LeaseDetailPage() {
                     }}
                 />
             )}
+
+            <ReceiveCashDialog
+                open={cashReceiptOpen}
+                initialLeaseId={leaseId}
+                onClose={() => setCashReceiptOpen(false)}
+                onDone={() => {
+                    setCashReceiptOpen(false);
+                    void loadLease();
+                }}
+            />
 
             <RaisePenaltyDialog
                 open={penaltyOpen}

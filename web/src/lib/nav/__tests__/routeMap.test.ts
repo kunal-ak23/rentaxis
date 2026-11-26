@@ -101,6 +101,8 @@ describe("contract ?tab= deep links", () => {
         ["maintenance", "activity", "maintenance"], ["interactions", "activity", "interactions"], ["overview", "overview", null],
         ["payments", "payments", null], ["activity", "activity", null], [null, "overview", null], ["nonsense", "overview", null],
         ["constructor", "overview", null], ["__proto__", "overview", null],
+        // QA-19: the tab labels as ids.
+        ["cheques", "payments", "cheques"], ["attachments", "documents", "attachments"],
     ])("?tab=%s → %s / %s", (tab, want, section) => {
         expect(resolveLeaseTab(tab, null)).toEqual({ tab: want, section });
     });

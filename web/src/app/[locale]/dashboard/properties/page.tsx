@@ -48,8 +48,8 @@ type PropertyStats = {
 function getOccupancy(s: PropertyStats) {
     const totalUnits = s.propertyCount;
     const occupiedUnits = totalUnits - s.vacancies;
-    const occupancyPct = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
-    return occupancyPct;
+    if (totalUnits <= 0) return null;
+    return Math.round((occupiedUnits / totalUnits) * 100);
 }
 
 function getOccupancyColor(pct: number) {
@@ -220,7 +220,13 @@ function PropertiesPageInner() {
             });
         } catch (err) {
             console.error(err);
-            setProjectFormError(err instanceof ApiError ? err.message : t("projectCreateFailed"));
+            setProjectFormError(
+                err instanceof ApiError
+                    ? (err.message.startsWith("Validation failed:")
+                        ? (err.message.includes("nameEn") ? t("projectNameRequired") : t("projectCreateFailed"))
+                        : err.message)
+                    : t("projectCreateFailed")
+            );
         }
     };
 
@@ -599,7 +605,7 @@ function PropertiesPageInner() {
                         <form onSubmit={handleProjectSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameEn")}</label>
-                                <input placeholder={t("projectNamePlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
+                                <input required placeholder={t("projectNamePlaceholder")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("nameAr")}</label>
@@ -1221,14 +1227,18 @@ function PropertiesPageInner() {
                                                         <span className={cn(s.vacancies > 0 ? "text-warning" : "text-success", "font-medium")}>{s.vacancies}</span>
                                                     </td>
                                                     <td className="px-5 py-3.5 text-end">
-                                                        <span className={cn(
-                                                            "text-xs font-semibold px-2 py-0.5 rounded-md",
-                                                            occupancyPct >= 80 ? "bg-success/10 text-success" :
-                                                            occupancyPct >= 50 ? "bg-warning/10 text-warning" :
-                                                            "bg-error/10 text-error"
-                                                        )}>
-                                                            {occupancyPct}%
-                                                        </span>
+                                                        {occupancyPct === null ? (
+                                                            <span className="text-xs text-muted">—</span>
+                                                        ) : (
+                                                            <span className={cn(
+                                                                "text-xs font-semibold px-2 py-0.5 rounded-md",
+                                                                occupancyPct >= 80 ? "bg-success/10 text-success" :
+                                                                occupancyPct >= 50 ? "bg-warning/10 text-warning" :
+                                                                "bg-error/10 text-error"
+                                                            )}>
+                                                                {occupancyPct}%
+                                                            </span>
+                                                        )}
                                                     </td>
                                                     <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{formatCurrency(s.revenueAtCapacity)}</td>
                                                     <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{formatCurrency(s.actualRevenue)}</td>
@@ -1304,15 +1314,21 @@ function PropertiesPageInner() {
                                                 <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
                                                     {t("occupancy")}
                                                 </span>
-                                                <span className={cn("text-xs font-bold tabular-nums", getOccupancyTextColor(occupancyPct))}>
-                                                    {occupancyPct}%
-                                                </span>
+                                                {occupancyPct === null ? (
+                                                    <span className="text-xs font-bold text-muted">—</span>
+                                                ) : (
+                                                    <span className={cn("text-xs font-bold tabular-nums", getOccupancyTextColor(occupancyPct))}>
+                                                        {occupancyPct}%
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="w-full h-1.5 bg-input rounded-full overflow-hidden">
-                                                <div
-                                                    className={cn("h-full rounded-full transition-all", getOccupancyColor(occupancyPct))}
-                                                    style={{ width: `${occupancyPct}%` }}
-                                                />
+                                                {occupancyPct !== null && (
+                                                    <div
+                                                        className={cn("h-full rounded-full transition-all", getOccupancyColor(occupancyPct))}
+                                                        style={{ width: `${occupancyPct}%` }}
+                                                    />
+                                                )}
                                             </div>
                                         </div>
 

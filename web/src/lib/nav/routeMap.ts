@@ -112,6 +112,9 @@ export const LEGACY_LEASE_TABS: Record<string, { tab: LeaseTab; section: LeaseSe
     contract: { tab: "documents", section: "contract" },
     maintenance: { tab: "activity", section: "maintenance" },
     interactions: { tab: "activity", section: "interactions" },
+    // QA-19: the tabs' labels (Cheques · Attachments) used as ids in a deep link.
+    cheques: { tab: "payments", section: "cheques" },
+    attachments: { tab: "documents", section: "attachments" },
 };
 
 export const LEASE_SECTIONS_BY_TAB: Record<LeaseTab, LeaseSectionId[]> = {

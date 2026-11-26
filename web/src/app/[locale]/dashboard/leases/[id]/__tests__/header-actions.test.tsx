@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../messages/en.json";
@@ -28,6 +28,13 @@ vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-
 vi.mock("@/components/leases/LeaseInteractionsPanel", () => ({ default: () => null }));
 vi.mock("@/components/leases/LeaseAssignmentCard", () => ({ default: () => <div data-testid="assignment-card" /> }));
 vi.mock("@/components/leases/BadDebtCard", () => ({ default: () => <div data-testid="bad-debt-card" /> }));
+const cash = vi.hoisted(() => ({ props: null as null | { open: boolean; initialLeaseId?: string | null; onClose: () => void; onDone: (c: unknown) => void } }));
+vi.mock("@/components/cheques/ReceiveCashDialog", () => ({
+    default: (props: { open: boolean; initialLeaseId?: string | null; onClose: () => void; onDone: (c: unknown) => void }) => {
+        cash.props = props;
+        return props.open ? <div data-testid="receive-cash-dialog" data-lease={props.initialLeaseId ?? ""} /> : null;
+    },
+}));
 
 const api = vi.hoisted(() => ({
     get: vi.fn(),
@@ -111,7 +118,8 @@ describe("contract header", () => {
         expect(primaryIds()).toEqual(["lease-record-payment", "lease-renew"]);
         expect(menuIds()).toEqual(["lease-extend", "lease-amend", "lease-add-charge", "lease-transfer",
             "lease-assignment", "lease-reduce", "lease-raise-penalty", "lease-journal-voucher", "lease-give-notice", "lease-terminate", "lease-write-off", "lease-download-contract", "lease-ledger"]);
-        expect(screen.getByTestId("lease-record-payment")).toHaveAttribute("href", "/dashboard/collections?tab=all&leaseId=lease-1&receive=1");
+        // QA-25: Record payment opens the cash receipt on the contract instead of leaving it.
+        expect(screen.getByTestId("lease-record-payment")).not.toHaveAttribute("href");
         expect(screen.getByTestId("lease-more-actions-menu")).not.toBeVisible();
         fireEvent.click(screen.getByTestId("lease-more-actions"));
         expect(screen.getByTestId("lease-more-actions-menu")).toBeVisible();
@@ -175,5 +183,38 @@ describe("contract header", () => {
         renderPage();
         await screen.findByTestId("lease-actions");
         expect(menuIds()).toContain("lease-download-contract");
+    });
+
+    it("records a payment in a dialog on the contract and reloads it when done (QA-25)", async () => {
+        role = "TENANT_ADMIN";
+        onLease("ACTIVE");
+        renderPage();
+        fireEvent.click(await screen.findByTestId("lease-record-payment"));
+        const dialog = await screen.findByTestId("receive-cash-dialog");
+        expect(dialog).toHaveAttribute("data-lease", "lease-1");
+        expect(push).not.toHaveBeenCalled();
+        const before = api.get.mock.calls.length;
+        await act(async () => { cash.props!.onDone({}); });
+        expect(screen.queryByTestId("receive-cash-dialog")).toBeNull();
+        await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(before));
+    });
+
+    it("counts only live post-dated cheques in Number of cheques (QA-35)", async () => {
+        const row = (id: string, extra: Partial<Cheque>) => ({
+            id, leaseId: "lease-1", seqNo: Number(id.slice(1)), amount: 1000, mode: "PDC", status: "REGISTERED",
+            replacesId: null, replacedById: null, chequeDate: "2026-02-01", chequeNumber: id, ...extra,
+        }) as unknown as Cheque;
+        api.cheques.mockImplementation(async () => [
+            row("c1", {}),
+            row("c2", { status: "CLEARED" }),
+            row("c3", { status: "BOUNCED", replacedById: "c4" }),   // replaced: its successor counts
+            row("c4", { replacesId: "c3" }),
+            row("c5", { status: "CANCELLED" }),
+            row("c6", { mode: "CASH", status: "CLEARED" }),
+            row("c7", { mode: "TRANSFER", status: "CLEARED" }),
+        ]);
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId("lease-ribbon-cheque-count")).toHaveTextContent("3"));
+        expect(screen.getByTestId("lease-ribbon-cheque-count")).toHaveTextContent(en.Leasing.paymentTerms);
     });
 });

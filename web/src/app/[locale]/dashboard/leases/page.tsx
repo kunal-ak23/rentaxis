@@ -138,6 +138,8 @@ function LeasesList() {
     const openContract = (id: string) => (workspace ? workspace.open(`/dashboard/leases/${id}`, "record") : router.push(`/dashboard/leases/${id}`));
     const [leases, setLeases] = useState<Lease[]>([]);
     const [wizardOpen, setWizardOpen] = useState(false);
+    // QA-17: bumped when the wizard creates a draft or closes, so the pill counts reload.
+    const [pillCountsVersion, setPillCountsVersion] = useState(0);
     const [viewMode, setViewMode] = useState<'table' | 'cards' | 'board'>('table');
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -291,7 +293,7 @@ function LeasesList() {
             })
             .catch(() => {});
         return () => { alive = false; };
-    }, [propertyFilter, buildingFilter, canViewLeases]);
+    }, [propertyFilter, buildingFilter, canViewLeases, pillCountsVersion]);
 
     useEffect(() => {
         if (leases.length > 0) {
@@ -1017,8 +1019,8 @@ function LeasesList() {
             {wizardOpen && (
                 <LeaseWizard
                     open={wizardOpen}
-                    onClose={() => setWizardOpen(false)}
-                    onCreated={() => { fetchLeases(); }}
+                    onClose={() => { setWizardOpen(false); setPillCountsVersion(v => v + 1); }}
+                    onCreated={() => { fetchLeases(); setPillCountsVersion(v => v + 1); }}
                 />
             )}
 
