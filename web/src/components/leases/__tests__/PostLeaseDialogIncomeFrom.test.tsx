@@ -73,6 +73,17 @@ describe("PostLeaseDialog income from", () => {
         expect(leaseApi.post).not.toHaveBeenCalled();
     });
 
+    it("keeps Post disabled while a back-dated contract's income choice is still loading", async () => {
+        leaseApi.dryRunPost.mockResolvedValue(DRY);
+        leaseApi.incomeFrom.mockReturnValue(new Promise(() => {}));
+        renderDialog({ startDate: "2026-10-01", contractDate: "2026-11-13" });
+
+        await screen.findByTestId("post-dry-run-ok");
+        expect(screen.getByTestId("post-lease-confirm")).toBeDisabled();
+        fireEvent.click(screen.getByTestId("post-lease-confirm"));
+        expect(leaseApi.post).not.toHaveBeenCalled();
+    });
+
     it("asks nothing for a contract that is not back-dated", async () => {
         leaseApi.dryRunPost.mockResolvedValue(DRY);
         leaseApi.post.mockResolvedValue({});
