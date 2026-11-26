@@ -70,11 +70,12 @@ describe("AuthenticatedLayout — failed session refetch (QA-38)", () => {
         expect(router.push).not.toHaveBeenCalled();
         expect(screen.getByTestId("page-body")).toBeInTheDocument();
 
+        // The wait doubles: 5 s, then 10 s.
         await act(async () => { vi.advanceTimersByTime(SESSION_RECHECK_MS); });
         await flush();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
         expect(router.push).not.toHaveBeenCalled();
-
-        await act(async () => { vi.advanceTimersByTime(SESSION_RECHECK_MS); });
+        await act(async () => { vi.advanceTimersByTime(SESSION_RECHECK_MS * 2); });
         await flush();
         expect(fetchMock).toHaveBeenCalledTimes(3);
         expect(router.push).toHaveBeenCalledWith("/auth/login?callbackUrl=%2F");
@@ -86,6 +87,16 @@ describe("AuthenticatedLayout — failed session refetch (QA-38)", () => {
         await flush();
         expect(router.push).toHaveBeenCalledTimes(1);
         expect(router.push.mock.calls[0][0]).toMatch(/^\/auth\/login\?callbackUrl=/);
+    });
+
+    it("shows the loading state, not a blank page, while a first-load session is checked", async () => {
+        fetchMock.mockResolvedValue(new Response(JSON.stringify(signedIn), { status: 200 }));
+        auth.data = null;
+        auth.status = "unauthenticated";
+        const { container } = render(<AuthenticatedLayout><Page /></AuthenticatedLayout>);
+        await flush();
+        expect(router.push).not.toHaveBeenCalled();
+        expect(container.textContent).toContain("Loading");
     });
 
     it("sends a visitor with no session at all to sign in", async () => {

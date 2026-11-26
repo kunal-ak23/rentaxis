@@ -4,7 +4,7 @@ import MvpSidebar from "@/components/ui/MvpSidebar";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useRouter } from "@/i18n/routing";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { TopHeader } from "@/components/ui/TopHeader";
 import TourProvider from "@/components/tour/TourProvider";
@@ -23,6 +23,8 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 /** How long to wait before asking the server again when a session check could not reach it (QA-38). */
 export const SESSION_RECHECK_MS = 5000;
+/** The longest wait between checks: the delay doubles from SESSION_RECHECK_MS up to this. */
+export const SESSION_RECHECK_MAX_MS = 60000;
 
 /**
  * QA-38: next-auth v4 reports "unauthenticated" whenever a session refetch
@@ -74,9 +76,14 @@ export default function AuthenticatedLayout({
     if (liveSession && liveSession !== lastSession) setLastSession(liveSession);
     const session = liveSession ?? (status === "unauthenticated" ? lastSession : null);
     const [recheck, setRecheck] = useState(0);
+    // Checks since the session was last seen; the wait between them doubles.
+    const attempts = useRef(0);
 
     useEffect(() => {
-        if (status !== "unauthenticated") return;
+        if (status !== "unauthenticated") {
+            attempts.current = 0;
+            return;
+        }
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
         void serverSaysSignedOut().then(signedOut => {
@@ -90,7 +97,9 @@ export default function AuthenticatedLayout({
             // The cookie is still good: have next-auth fetch it again. Either way,
             // look again shortly; a restored session ends this effect first.
             if (signedOut === false) refetchSessionFromServer();
-            timer = setTimeout(() => setRecheck(n => n + 1), SESSION_RECHECK_MS);
+            const wait = Math.min(SESSION_RECHECK_MS * 2 ** attempts.current, SESSION_RECHECK_MAX_MS);
+            attempts.current += 1;
+            timer = setTimeout(() => setRecheck(n => n + 1), wait);
         });
         return () => {
             cancelled = true;
@@ -129,7 +138,9 @@ export default function AuthenticatedLayout({
         && !/^\/(en|ar)\/superadmin(\/|$)/.test(pathname) && decision === "allow";
     const rail = buildNav({ role, isEnabled, tenantSlug, booksLive: true });
 
-    if (status === "loading") {
+    // A session being checked (QA-38) with no earlier one to show waits like a
+    // first load does, rather than leaving the page blank.
+    if (status === "loading" || (status === "unauthenticated" && !session)) {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
