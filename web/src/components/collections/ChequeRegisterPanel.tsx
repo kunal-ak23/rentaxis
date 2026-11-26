@@ -19,7 +19,8 @@ import ReplaceChequeDialog from "@/components/cheques/ReplaceChequeDialog";
 import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
 import ClearBatchDialog from "@/components/cheques/ClearBatchDialog";
 import UnappliedPaymentsTile from "@/components/cheques/UnappliedPaymentsTile";
-import { registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
+import { businessTodayIso } from "@/lib/businessDate";
+import { depositNotYetDue, registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
 import { chequeLabel } from "@/components/cheques/chequeLabel";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { fmtAmount, type Page } from "@/lib/api/ledger";
@@ -582,8 +583,11 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                             type="button"
                                                             data-testid={`cheque-row-action-${a}-${c.id}`}
                                                             // PR #397 R1-P3-1: Replace waits while a write-off of the row awaits approval.
-                                                            disabled={a === "replace" && !!c.writeOffPending}
-                                                            title={a === "replace" && c.writeOffPending ? t("writeOffPending") : undefined}
+                                                            disabled={(a === "replace" && !!c.writeOffPending)
+                                                                || (a === "deposit" && depositNotYetDue(c.chequeDate, businessTodayIso()))}
+                                                            title={a === "replace" && c.writeOffPending ? t("writeOffPending")
+                                                                : a === "deposit" && depositNotYetDue(c.chequeDate, businessTodayIso())
+                                                                    ? t("depositNotYetDue", { date: fmtIsoDate(c.chequeDate, locale) }) : undefined}
                                                             onClick={() => openAction(c, a)}
                                                             className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >

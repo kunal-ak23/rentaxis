@@ -3130,6 +3130,7 @@
     "ledgerSettled": "Settled",
     "settledBeforeAcquisition": "Banked by previous owner",
     "writeOffPending": "A write-off is pending approval",
+    "depositNotYetDue": "Not before {date}: a cheque cannot be presented before its date",
     "owedOfFace": "of {face}",
     "payeeMismatch": "Payee name does not match",
     "payeeMismatchConfirmedBy": "Confirmed by {name} on {date}",

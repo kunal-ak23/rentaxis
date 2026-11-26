@@ -20,7 +20,8 @@ import type {
     InstallmentDistribution,
     LeaseStatus,
 } from "@/lib/api/leasing";
-import { registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
+import { businessTodayIso } from "@/lib/businessDate";
+import { depositNotYetDue, registerActionsFor, type RegisterAction } from "@/components/cheques/registerActions";
 import { TYPEABLE_MODES, chequeRowsAreValid, chequeRowsErrors } from "@/components/cheques/chequeRowRules";
 import { fmtIsoDate, round2 } from "./leaseMath";
 import { idsInYear, MAX_COMBINED_RECEIPTS, receiptYears } from "@/lib/receipts/receiptYears";
@@ -850,12 +851,14 @@ export default function ChequeGrid({
                                             {actionsOf(c).map(a => {
                                                 // PR #397 R1-P3-1: Replace waits while a write-off of the row awaits approval.
                                                 const held = a === "replace" && !!c.writeOffPending;
+                                                const early = a === "deposit" && depositNotYetDue(c.chequeDate, businessTodayIso());
                                                 return (
                                                     <button
                                                         key={a}
                                                         type="button"
-                                                        disabled={held}
-                                                        title={held ? tc("writeOffPending") : undefined}
+                                                        disabled={held || early}
+                                                        title={held ? tc("writeOffPending")
+                                                            : early ? tc("depositNotYetDue", { date: fmtIsoDate(c.chequeDate, locale) }) : undefined}
                                                         data-testid={`cheque-action-${a}-${i}`}
                                                         onClick={() => onRowAction?.(c, a)}
                                                         className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"

@@ -93,7 +93,7 @@ class LeaseNoticeDetailsIT extends AbstractPostgresIT {
     @Test
     void aLandlordsNoticeKeepsItsDateAndMoveOut() {
         LocalDate served = LocalDate.now().minusDays(2);
-        LocalDate moveOut = LocalDate.now().plusMonths(12);
+        LocalDate moveOut = LocalDate.now().plusMonths(6);
 
         LeaseDTO after = leaseService.giveNotice(leaseId,
                 new GiveNoticeRequest("Owner moving in", served, NoticeParty.LANDLORD, moveOut), null);
@@ -143,5 +143,20 @@ class LeaseNoticeDetailsIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("move-out");
         assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /** QA-28: a move-out after the contract's end is a renewal or a holdover, not notice. */
+    @Test
+    void aMoveOutAfterTheContractEndIsRefused() {
+        LocalDate end = leaseService.getLeaseById(leaseId).getEndDate();
+        assertThatThrownBy(() -> leaseService.giveNotice(leaseId,
+                new GiveNoticeRequest(null, LocalDate.now(), NoticeParty.RENTER, end.plusDays(1)), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("after the contract ends");
+        assertThat(leaseService.getLeaseById(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+
+        LeaseDTO onTheEnd = leaseService.giveNotice(leaseId,
+                new GiveNoticeRequest(null, LocalDate.now(), NoticeParty.RENTER, end), null);
+        assertThat(onTheEnd.getIntendedMoveOutDate()).isEqualTo(end);
     }
 }

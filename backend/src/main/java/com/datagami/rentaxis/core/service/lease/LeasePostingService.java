@@ -504,6 +504,23 @@ public class LeasePostingService {
      */
     static final String NO_CHEQUE_GRID = "The lease has no cheque grid; generate the instalments before posting.";
 
+    /**
+     * QA-23: a post-dated cheque with no payee bank posts (cut-over and imported
+     * grids carry none), but the review says so: the bank is half of what tells one
+     * renter's cheque 100201 from another's, and the deposit slip needs it.
+     */
+    static List<String> missingBankNotices(List<Cheque> cheques) {
+        List<String> rows = cheques.stream()
+                .filter(c -> c.getStatus() == ChequeStatus.DRAFT && c.getMode() == ChequeMode.PDC)
+                .filter(c -> c.getPayeeBank() == null || c.getPayeeBank().isBlank())
+                .map(c -> "#" + c.getSeqNo())
+                .toList();
+        if (rows.isEmpty()) return List.of();
+        return List.of("Post-dated cheque" + (rows.size() == 1 ? " " : "s ") + String.join(", ", rows)
+                + (rows.size() == 1 ? " has" : " have") + " no payee bank. Add the bank the cheque is drawn on"
+                + " so it can be told apart from the same number on another bank.");
+    }
+
     @Transactional(readOnly = true)
     public PostLeaseDryRunResponse dryRun(UUID leaseId) {
         Lease lease = leaseRepository.findByIdScopedToTenant(leaseId)
@@ -542,6 +559,7 @@ public class LeasePostingService {
         } else {
             plan = validate(lease, lines, cheques);
         }
+        notices.addAll(missingBankNotices(cheques));
         List<String> errors = new ArrayList<>(transferProblems);
         // First, because it is the only one of these that is not about the contract's
         // own contents: no amount of fixing the grid makes this door the right one.

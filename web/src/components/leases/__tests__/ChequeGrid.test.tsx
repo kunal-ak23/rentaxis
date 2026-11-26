@@ -267,6 +267,17 @@ describe("ChequeGrid row actions", () => {
         expect(onRowAction).toHaveBeenCalledWith(deposited, "bounce");
     });
 
+    // QA-24: the server refuses to present a cheque before its date; the button says so.
+    it("disables Deposit on a registered cheque dated after today, with the date as the hint", () => {
+        const future = cheque({ id: "c1", seqNo: 1, status: "REGISTERED", chequeDate: "2999-03-01" });
+        const due = cheque({ id: "c2", seqNo: 2, status: "REGISTERED", chequeDate: "2000-03-01" });
+        renderGrid({ cheques: [future, due], editable: false, onRowAction: vi.fn(), contractValueInclVat: 27400 });
+
+        expect(screen.getByTestId("cheque-action-deposit-0")).toBeDisabled();
+        expect(screen.getByTestId("cheque-action-deposit-0").getAttribute("title")).toContain("2999");
+        expect(screen.getByTestId("cheque-action-deposit-1")).toBeEnabled();
+    });
+
     it("offers only Release on an ONLINE_PENDING row and 'receive' for a CASH REGISTERED one", () => {
         const online = cheque({ id: "c1", seqNo: 1, status: "ONLINE_PENDING", mode: "ONLINE" });
         renderGrid({ cheques: [online], editable: false, onRowAction: vi.fn(), contractValueInclVat: 13700 });
