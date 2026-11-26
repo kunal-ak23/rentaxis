@@ -144,6 +144,9 @@ describe("Termination page", () => {
 
         // 5,000 − 30,000: the cheque is banked instead of handed back.
         expect(screen.getByTestId("terminate-receivable-after")).toHaveTextContent("-25,000.00");
+        // QA-31: a negative figure says who owes whom and where it is settled.
+        expect(screen.getByText(en.Termination.receivableAfterCreditHint)).toBeInTheDocument();
+        expect(screen.queryByText(en.Termination.receivableAfterHint)).toBeNull();
         // No second round trip for a decision the client can price itself.
         expect(api.preview).toHaveBeenCalledTimes(1);
     });

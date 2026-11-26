@@ -250,4 +250,28 @@ describe("Give notice — particulars (#27)", () => {
         expect(summary).toHaveTextContent("Notice given by Landlord on 01/09/2026");
         expect(summary).toHaveTextContent("move-out 01/09/2027");
     });
+
+    // QA-37: after termination the header no longer shows the notice's future move-out.
+    it("shows the termination date instead of the intended move-out once terminated", async () => {
+        api.get.mockImplementation(async () => ({
+            ...lease("TERMINATED"), noticeDate: "2026-09-01", noticeGivenBy: "RENTER",
+            intendedMoveOutDate: "2027-06-30", terminatedOn: "2026-11-26",
+        }));
+        renderPage();
+
+        const summary = await screen.findByTestId("lease-notice-summary");
+        expect(summary).toHaveTextContent("terminated on 26/11/2026");
+        expect(summary).not.toHaveTextContent("move-out");
+    });
+
+    it("says 'terminates on' for a termination dated ahead", async () => {
+        api.get.mockImplementation(async () => ({
+            ...lease("TERMINATED"), noticeDate: "2026-09-01", noticeGivenBy: "RENTER",
+            intendedMoveOutDate: null, terminatedOn: "2999-01-31",
+        }));
+        renderPage();
+
+        const summary = await screen.findByTestId("lease-notice-summary");
+        expect(summary).toHaveTextContent("terminates on 31/01/2999");
+    });
 });
