@@ -113,6 +113,8 @@ class DraftSaveKeepsChequesIT extends AbstractPostgresIT {
         UUID typed = jdbc.queryForObject(
                 "select id from cheques where lease_id = ? order by seq_no limit 1", UUID.class, id);
         jdbc.update("update cheques set payer_name = 'PAID BY EMPLOYER LLC' where id = ?", typed);
+        jdbc.update("update cheques set payer_name = null where lease_id = ? and seq_no = "
+                + "(select max(seq_no) from cheques where lease_id = ?)", id, id);
         UUID renterId = jdbc.queryForObject("select renter_id from leases where id = ?", UUID.class, id);
         RenterDTO r = renterService.getRenterById(renterId);
 

@@ -446,10 +446,6 @@ public class RenterService {
         String oldNameEn = renter.getNameEn();
         renter.setNameEn(dto.getNameEn());
         renter.setNameAr(dto.getNameAr());
-        if (oldNameEn != null && dto.getNameEn() != null && !dto.getNameEn().isBlank()
-                && !oldNameEn.equals(dto.getNameEn())) {
-            chequeRepository.renamePayer(renter.getId(), ChequeStatus.DRAFT, oldNameEn, dto.getNameEn());
-        }
         // M3: mirrors the portal login's own normalisation when one is linked, so
         // the two never read differently for a case/whitespace-only difference;
         // trimmed-to-null otherwise (never stores whitespace-only as "an email").
@@ -460,7 +456,14 @@ public class RenterService {
             renter.setPrimaryLanguage(dto.getPrimaryLanguage());
         }
 
-        return mapToDTO(renterRepository.save(renter));
+        Renter saved = renterRepository.save(renter);
+        // After the save: the bulk update clears the persistence context.
+        if (oldNameEn != null && dto.getNameEn() != null && !dto.getNameEn().isBlank()
+                && !oldNameEn.equals(dto.getNameEn())) {
+            chequeRepository.renamePayer(saved.getTenantId(), saved.getId(), ChequeStatus.DRAFT,
+                    oldNameEn, dto.getNameEn());
+        }
+        return mapToDTO(saved);
     }
 
     private RenterDTO mapToDTO(Renter renter) {

@@ -104,12 +104,14 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * correction must reach its payer names. Only rows still carrying the old name:
      * a payer typed on one cheque is left alone.
      */
-    @Modifying(flushAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
         update Cheque c set c.payerName = :newName
-        where c.renter.id = :renterId and c.status = :status and c.payerName = :oldName
+        where c.tenantId = :tenantId and c.renter.id = :renterId and c.status = :status
+          and (c.payerName = :oldName or c.payerName is null)
         """)
-    int renamePayer(@Param("renterId") UUID renterId, @Param("status") ChequeStatus status,
+    int renamePayer(@Param("tenantId") UUID tenantId, @Param("renterId") UUID renterId,
+                    @Param("status") ChequeStatus status,
                     @Param("oldName") String oldName, @Param("newName") String newName);
 
     /**
