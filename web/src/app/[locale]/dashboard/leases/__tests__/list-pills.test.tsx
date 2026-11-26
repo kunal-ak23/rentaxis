@@ -48,7 +48,7 @@ function lease(id: string, status: LeaseStatus, unit: string): LeaseDetail {
         agreementDate: null, rentVatApplicable: true, contractDate: "2026-01-01", totalDays: 365,
         gracePeriodDays: 0, firstDueDate: null, renterAcceptedAt: null,
         renewedFromLeaseId: null, chainId: "chain-a", receivableAccountId: null,
-        incomeAccountId: null, postingJournalId: null, postedAt: "2026-01-01T00:00:00Z",
+        incomeAccountId: null, postingJournalId: null, postedAt: status === "DRAFT" || status === "PENDING_SIGNATURE" ? null : "2026-01-01T00:00:00Z",
         contractValue: 60000, terminatedOn: null, terminationJournalId: null, terminationNotes: null,
         lines: [],
     };
@@ -195,7 +195,7 @@ describe("filters and row menus", () => {
         expect(menu).not.toBeVisible();
         expect(within(row).getByTestId("lease-list-terminate-l-active")).not.toBeVisible();
         expect(Array.from(menu.querySelectorAll('[role="menuitem"]')).map(e => e.getAttribute("data-testid")))
-            .toEqual(["lease-action-view-l-active", "lease-list-terminate-l-active", "lease-action-docs-l-active"]);
+            .toEqual(["lease-action-view-l-active", "lease-action-pdf-l-active", "lease-list-terminate-l-active", "lease-action-docs-l-active"]);
         const draft = screen.getByTestId("lease-actions-menu-panel-l-draft");
         expect(Array.from(draft.querySelectorAll('[role="menuitem"]')).map(e => e.getAttribute("data-testid"))).toEqual([
             "lease-action-view-l-draft", "lease-action-edit-l-draft", "lease-action-generate-l-draft", "lease-action-post-l-draft",
