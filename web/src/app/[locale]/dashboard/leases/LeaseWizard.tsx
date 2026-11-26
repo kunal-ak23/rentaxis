@@ -552,11 +552,19 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
      * the user asked for them on cheque 1. The Review step's suggestion and "Use this
      * schedule" use exactly this.
      */
+    // QA-15: regenerating (count changed, or Review's "Use this schedule")
+    // keeps the bank the grid already carries instead of blanking every row.
+    // QA-15: regenerating keeps the bank the grid carries. Only when every row that
+    // has one agrees: the server applies one bank to all rows, so a grid with
+    // several banks comes back blank (visible) rather than all one bank (silent).
+    const gridBanks = new Set(cheques.map(c => c.payeeBank?.trim()).filter((b): b is string => !!b));
+    const gridBank = gridBanks.size === 1 ? [...gridBanks][0] : undefined;
     const chequeRequest = (): GenerateChequesRequest => ({
         installments: generatorCount,
         firstDueDate: terms.firstDueDate || terms.startDate || null,
         distribution: terms.installmentDistribution,
         foldDepositsAndFeesIntoFirst: foldOneTime,
+        ...(gridBank ? { payeeBank: gridBank } : {}),
     });
     const applySchedule = async (req: GenerateChequesRequest) => {
         if (!lease) return;

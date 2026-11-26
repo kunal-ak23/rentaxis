@@ -100,6 +100,21 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     void deleteByLease_IdAndStatus(UUID leaseId, ChequeStatus status);
 
     /**
+     * QA-14 review: a draft grid now survives a draft save, so a renter-name
+     * correction must reach its payer names. Only rows still carrying the old name:
+     * a payer typed on one cheque is left alone.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+        update Cheque c set c.payerName = :newName
+        where c.tenantId = :tenantId and c.renter.id = :renterId and c.status = :status
+          and (c.payerName = :oldName or c.payerName is null)
+        """)
+    int renamePayer(@Param("tenantId") UUID tenantId, @Param("renterId") UUID renterId,
+                    @Param("status") ChequeStatus status,
+                    @Param("oldName") String oldName, @Param("newName") String newName);
+
+    /**
      * How many of the lease's cheques have moved past {@code DRAFT}. Deleting a
      * draft lease refuses on a non-zero count: those rows are paper in hand or
      * money in transit, and the FK on {@code cheques.lease_id} would otherwise

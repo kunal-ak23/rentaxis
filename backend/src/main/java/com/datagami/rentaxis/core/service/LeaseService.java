@@ -1006,6 +1006,8 @@ public class LeaseService {
         // Review A C1: a fee/VAT/discount-only edit rewrites lease_lines and leaves the
         // leases row's own columns alone, so @Version would not move on its own.
         bumpVersion(lease);
+        // QA-14: what the draft cheque grid was cut from, before this edit touches it.
+        String chequeBasisBefore = chequeBasis(lease);
 
         // F14-58: an edit is judged like the draft it replaces — the renewal must
         // start after its predecessor, and the unit must be free for the (possibly
@@ -1055,13 +1057,48 @@ public class LeaseService {
         // instalments that no longer sum to the contract. Drop them and let the
         // user regenerate. Only DRAFT ones: a cheque that has been registered
         // belongs to a lease that is no longer editable anyway.
-        deleteDraftCheques(savedLease.getId());
+        // QA-14: only when something the grid was cut from changed. A save that
+        // leaves the money alone (ledger, narration, Ejari, grace) keeps the
+        // cheque numbers and banks the user typed.
+        if (!chequeBasisBefore.equals(chequeBasis(savedLease))) {
+            deleteDraftCheques(savedLease.getId());
+        }
 
         recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
 
         // The version the editor saves with next time: the row's once flushed.
         leaseRepository.flush();
         return mapToDTO(savedLease);
+    }
+
+    /**
+     * QA-14: everything a draft cheque grid is generated from: the parties, the
+     * term and schedule, the payment methods, and each line's charge, amounts,
+     * VAT and period. Ledgers, narrations, Ejari and grace are not in it: changing
+     * them leaves every cheque's date and amount as they were.
+     */
+    private String chequeBasis(Lease lease) {
+        StringBuilder sb = new StringBuilder()
+                .append(lease.getUnit() == null ? null : lease.getUnit().getId()).append('|')
+                .append(lease.getRenter() == null ? null : lease.getRenter().getId()).append('|')
+                .append(lease.getStartDate()).append('|').append(lease.getEndDate()).append('|')
+                .append(lease.getContractDate()).append('|').append(lease.getPaymentTerms()).append('|')
+                .append(lease.getFirstDueDate()).append('|').append(lease.getInstallmentDistribution()).append('|')
+                .append(lease.getPaymentMethod()).append('|').append(lease.getDepositPaymentMethod()).append('|')
+                .append(lease.isRentVatApplicable());
+        for (LeaseLine line : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())) {
+            sb.append('#').append(line.getChargeType() == null ? null : line.getChargeType().getId())
+                    .append('|').append(plain(line.getGrossAmount()))
+                    .append('|').append(plain(line.getDiscountAmount()))
+                    .append('|').append(plain(line.getRentFreeAmount()))
+                    .append('|').append(line.isVatApplicable())
+                    .append('|').append(line.getPeriodStart()).append('|').append(line.getPeriodEnd());
+        }
+        return sb.toString();
+    }
+
+    private static String plain(java.math.BigDecimal v) {
+        return v == null ? "null" : v.stripTrailingZeros().toPlainString();
     }
 
     /** Lazy: the renewal service depends on this one. Null in the unit tests' hand-built service. */

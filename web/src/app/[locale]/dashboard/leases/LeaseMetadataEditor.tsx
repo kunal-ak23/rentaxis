@@ -287,13 +287,13 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
                     />
 
                     {/*
-                        Saving the lines drops the draft cheque grid server-side —
-                        the rows were cut from the old figures and would otherwise
-                        collect a total the contract no longer says.
+                        Saving a change to what the cheques were cut from (amounts,
+                        dates, charges, schedule) drops the draft cheque grid
+                        server-side; any other edit keeps it (QA-14).
                     */}
                     <p className="rounded-xl bg-warning/10 border border-warning/20 px-4 py-2.5 text-[11px] text-warning flex items-start gap-2">
                         <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                        {t("chequesClearedNotice")}
+                        {t("chequesClearOnSaveNotice")}
                     </p>
 
                     {bannerErrors.length > 0 && (
