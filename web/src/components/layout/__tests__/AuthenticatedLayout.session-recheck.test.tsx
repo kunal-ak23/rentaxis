@@ -7,8 +7,7 @@ vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl()
 vi.mock("next/navigation", () => ({ usePathname: () => "/en/dashboard/leases" }));
 type S = { user: { id: string; role: string; tenantId?: string } } | null;
 const auth = { data: null as S, status: "authenticated" as string };
-const update = vi.fn();
-vi.mock("next-auth/react", () => ({ useSession: () => ({ data: auth.data, status: auth.status, update }) }));
+vi.mock("next-auth/react", () => ({ useSession: () => ({ data: auth.data, status: auth.status }) }));
 const router = { push: vi.fn(), replace: vi.fn() };
 vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
@@ -43,19 +42,21 @@ const flush = () => act(async () => { await Promise.resolve(); await Promise.res
 beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockReset();
-    update.mockReset();
     router.push.mockReset();
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("AuthenticatedLayout — failed session refetch (QA-38)", () => {
-    it("keeps the page and restores the session when the cookie is still good", async () => {
+    it("keeps the page and asks next-auth to refetch when the cookie is still good", async () => {
         fetchMock.mockResolvedValue(new Response(JSON.stringify(signedIn), { status: 200 }));
-        update.mockResolvedValue(signedIn);
+        const storage = vi.fn();
+        window.addEventListener("storage", storage);
         renderThenLoseSession();
         await flush();
+        window.removeEventListener("storage", storage);
         expect(router.push).not.toHaveBeenCalled();
-        expect(update).toHaveBeenCalledTimes(1);
+        expect(storage).toHaveBeenCalledTimes(1);
+        expect((storage.mock.calls[0][0] as StorageEvent).key).toBe("nextauth.message");
         expect(screen.getByTestId("page-body")).toBeInTheDocument();
     });
 
@@ -85,7 +86,6 @@ describe("AuthenticatedLayout — failed session refetch (QA-38)", () => {
         await flush();
         expect(router.push).toHaveBeenCalledTimes(1);
         expect(router.push.mock.calls[0][0]).toMatch(/^\/auth\/login\?callbackUrl=/);
-        expect(update).not.toHaveBeenCalled();
     });
 
     it("sends a visitor with no session at all to sign in", async () => {

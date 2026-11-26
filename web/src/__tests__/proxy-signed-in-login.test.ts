@@ -21,7 +21,12 @@ describe("proxy — login page with a live session (QA-39)", () => {
     it("sends a signed-in user on the login page to the dashboard of that locale", async () => {
         getTokenMock.mockResolvedValue({ id: "u1", role: "TENANT_ADMIN", tenantId: "t1" });
         expect(location(await get("/ar/auth/login"))).toBe("/ar/dashboard");
-        expect(location(await get("/en/auth/register"))).toBe("/en/dashboard");
+    });
+
+    it("lets set-password's welcome hand-off and the register page through", async () => {
+        getTokenMock.mockResolvedValue({ id: "u1", role: "TENANT_ADMIN", tenantId: "t1" });
+        expect((await get("/en/auth/login?welcome=1")).headers.get("location")).toBeNull();
+        expect((await get("/en/auth/register")).headers.get("location")).toBeNull();
     });
 
     it("honours a safe callbackUrl and refuses an off-site one", async () => {

@@ -42,6 +42,20 @@ export async function serverSaysSignedOut(): Promise<boolean | null> {
     }
 }
 
+/**
+ * Make next-auth fetch the session again and publish it to every useSession().
+ * Its own update() does nothing once the session is null, and focus/poll
+ * refetches skip a null session too; only a cross-tab "session" broadcast
+ * refetches unconditionally (next-auth v4 react `broadcast.receive` ->
+ * `_getSession({ event: "storage" })`). This raises that event in this tab.
+ */
+export function refetchSessionFromServer(): void {
+    window.dispatchEvent(new StorageEvent("storage", {
+        key: "nextauth.message",
+        newValue: JSON.stringify({ event: "session", data: { trigger: "getSession" }, timestamp: Date.now() }),
+    }));
+}
+
 /** Roles that get workspace tabs (spec §12); renters, guards and promoters have a handful of pages. */
 const WORKSPACE_ROLES: ReadonlySet<UserRole> = new Set<UserRole>(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER"]);
 
@@ -51,7 +65,7 @@ export default function AuthenticatedLayout({
     children: React.ReactNode;
 }) {
     const pathname = usePathname();
-    const { data: liveSession, status, update } = useSession();
+    const { data: liveSession, status } = useSession();
     const router = useRouter();
     // QA-38: keep showing the page with the last good session while a failed
     // refetch is checked, so a network blip neither blanks the page (losing
@@ -73,22 +87,16 @@ export default function AuthenticatedLayout({
                 router.push(`/auth/login?callbackUrl=${encodeURIComponent(back)}`);
                 return;
             }
-            if (signedOut === false) {
-                // The cookie is still good: put the session back, and look again
-                // if that refetch fails too.
-                void update().then(restored => {
-                    if (!cancelled && !restored) timer = setTimeout(() => setRecheck(n => n + 1), SESSION_RECHECK_MS);
-                });
-                return;
-            }
-            // Server not reachable: ask again shortly.
+            // The cookie is still good: have next-auth fetch it again. Either way,
+            // look again shortly; a restored session ends this effect first.
+            if (signedOut === false) refetchSessionFromServer();
             timer = setTimeout(() => setRecheck(n => n + 1), SESSION_RECHECK_MS);
         });
         return () => {
             cancelled = true;
             if (timer) clearTimeout(timer);
         };
-    }, [status, router, update, recheck]);
+    }, [status, router, recheck]);
 
     // Review fix 5: a super admin with no organisation selected who opens the
     // dashboard home (e.g. straight after sign-in) lands on the organisation

@@ -67,8 +67,8 @@ function forwardToBackend(requestHeaders: Headers): NextResponse {
 
 /** `/login`, `/en/login`, `/ar/login`: a short URL people type; no page lives there (QA-39). */
 const LOGIN_ALIAS = /^\/(?:(en|ar)\/)?login\/?$/;
-/** The sign-in and sign-up pages: a signed-in visitor is sent on (QA-39). */
-const SIGNED_OUT_PAGE = /^\/(?:(en|ar)\/)?auth\/(?:login|register)\/?$/;
+/** The sign-in page: a signed-in visitor is sent on (QA-39). */
+const SIGNED_OUT_PAGE = /^\/(?:(en|ar)\/)?auth\/login\/?$/;
 
 /**
  * QA-39: the login page never looked for an existing session, so a signed-in
@@ -83,7 +83,9 @@ async function signedOutPageRedirect(req: NextRequest): Promise<NextResponse | n
         return NextResponse.redirect(new URL(`/${alias[1] ?? 'en'}/auth/login${search}`, origin), 307);
     }
     const page = SIGNED_OUT_PAGE.exec(pathname);
-    if (!page) return null;
+    // ?welcome=1 is set-password's hand-off to a newly activated account: it must
+    // reach the form even when the browser still holds another account's session.
+    if (!page || req.nextUrl.searchParams.has('welcome')) return null;
     const token = await getToken({ req });
     if (!token || token.revoked === true || !token.id) return null;
     const back = safeCallbackUrl(req.nextUrl.searchParams.get('callbackUrl'), origin);
