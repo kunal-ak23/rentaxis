@@ -1839,6 +1839,7 @@
     "preferredEndDate": "تاريخ الانتهاء (اختياري)",
     "preferredEndDateHint": "اتركه فارغًا لحجز مفتوح المدة.",
     "periodicDatesRequired": "اختر تاريخ البدء وتاريخ الانتهاء: رسوم هذا الموقف باليوم أو بالشهر.",
+    "preferredDateRequired": "تاريخ البدء",
     "preferredEndDateRequired": "تاريخ الانتهاء",
     "quoteNeedsDates": "اختر تاريخ البدء والانتهاء لمعرفة الرسوم.",
     "endBeforeStart": "لا يمكن أن يكون تاريخ الانتهاء قبل تاريخ البدء."
