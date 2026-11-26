@@ -568,16 +568,20 @@ public class LeasePostingService {
                     g.pdrReversalTotal(), g.unearned(), g.unearnedVat(), transferEstimate.carriedBalance(),
                     g.moveDate().plusDays(1), depositCarried);
         }
+        // QA-16: a deposit is held, not earned, and never carries VAT: shown on its own.
+        BigDecimal deposit = lines.stream()
+                .filter(l -> l.getChargeType() != null && l.getChargeType().getBehaviour() == ChargeBehaviour.DEPOSIT)
+                .map(LeaseLine::getNetAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new PostLeaseDryRunResponse(
                 errors.isEmpty(),
                 errors,
-                plan.contractValue(),
-                plan.contractValueInclVat(),
+                plan.contractValue().subtract(deposit),
+                plan.contractValueInclVat().subtract(deposit),
                 plan.chequeTotal(),
                 depositCarried,
                 new PostLeaseDryRunResponse.JournalPlan(1, plan.pairs().size() * 2, cheques.size() + carried.size(),
                         transferJournals),
-                carried, notices);
+                carried, notices, deposit);
     }
 
     /**
@@ -1064,7 +1068,9 @@ public class LeasePostingService {
                     + (gap.signum() > 0 ? " still to collect)." : " too much)."));
         } else if (!noRows && chequeTotal.compareTo(expected) != 0) {
             otherErrors.add("Cheque grid totals " + money(chequeTotal)
-                    + " but contract value" + (gross.compareTo(net) == 0 ? " is " : " incl. VAT is ")
+                    // QA-16: gross includes the refundable deposit, which the screens no
+                    // longer call "contract value"; it is the amount the cheques collect.
+                    + " but the amount to collect" + (gross.compareTo(net) == 0 ? " is " : " incl. VAT is ")
                     + money(gross) + ".");
         }
         otherErrors.addAll(instalmentVatErrors(lease, lines, cheques, checks.periodLockApplies()));

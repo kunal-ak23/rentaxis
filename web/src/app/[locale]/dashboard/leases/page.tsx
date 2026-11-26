@@ -1076,7 +1076,7 @@ function LeasesList() {
                                         <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("property")}</th>
                                         <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("startDate")}</th>
                                         <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("endDate")}</th>
-                                        <th className="text-end px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{tl("contractValue")}</th>
+                                        <th className="text-end px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{tl("contractValueExclDeposit")}</th>
                                         <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{tl("chain")}</th>
                                         <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("status")}</th>
                                         <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</th>

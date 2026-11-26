@@ -133,7 +133,7 @@ describe("AmendLinesDialog", () => {
         // now 10,500.00 short and the server refuses.
         const badge = screen.getByTestId("amend-match");
         expect(badge).toHaveAttribute("data-match", "false");
-        expect(badge).toHaveTextContent("Cheques total 63,000.00 but contract value is 73,500.00");
+        expect(badge).toHaveTextContent("Cheques total 63,000.00 but the amount to collect is 73,500.00");
         expect(badge).toHaveTextContent("An amendment redistributes the contract value between the lines");
         expect(confirm).toBeDisabled();
     });

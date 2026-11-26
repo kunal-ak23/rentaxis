@@ -107,7 +107,9 @@ class LeaseLinesIT extends AbstractPostgresIT {
 
         assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
         // The contract is worth every line, not just the rent.
-        assertThat(lease.getContractValue()).isEqualByComparingTo("56000");
+        // QA-16: the refundable deposit is held, not earned: the contract value is
+        // rent + fee, and the deposit is carried on its own.
+        assertThat(lease.getContractValue()).isEqualByComparingTo("53000");
         // rentAmount and depositAmount are mirrors of the RENT / DEPOSIT lines.
         assertThat(lease.getRentAmount()).isEqualByComparingTo("51000");
         assertThat(lease.getDepositAmount()).isEqualByComparingTo("3000");

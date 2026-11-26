@@ -169,6 +169,35 @@ class ContractGenerationServiceTest {
         assertThat(service.buildSection3Total(lease)).contains("TOTAL").contains("56,000.00");
     }
 
+    /**
+     * QA-16: a refundable deposit is held, not earned. With one on the lines the
+     * PDF states the contract value without it and labels the 56,000 as the total
+     * payable, so the contract never presents the deposit as part of its value.
+     */
+    @Test
+    void section3StatesTheContractValueWithoutTheRefundableDeposit() {
+        Lease lease = leaseWith(new BigDecimal("51000"), new BigDecimal("3000"), false);
+        stubLines(
+                leaseLine(1, "Rent", ChargeBehaviour.RENT, new BigDecimal("51000"), false),
+                leaseLine(2, "Admin Fee", ChargeBehaviour.FEE, new BigDecimal("2000"), false),
+                leaseLine(3, "Security Deposit", ChargeBehaviour.DEPOSIT, new BigDecimal("3000"), false));
+
+        String total = service.buildSection3Total(lease);
+        assertThat(total).contains("CONTRACT VALUE (excl. refundable deposit)").contains("53,000.00");
+        assertThat(total).contains("TOTAL PAYABLE (incl. refundable deposit)").contains("56,000.00");
+        assertThat(total.indexOf("53,000.00")).isLessThan(total.indexOf("56,000.00"));
+    }
+
+    /** Without a deposit the total is the contract value: one plain TOTAL row, as before. */
+    @Test
+    void section3WithoutADepositKeepsOnePlainTotal() {
+        Lease lease = leaseWith(new BigDecimal("50000"), BigDecimal.ZERO, false);
+        stubLines(leaseLine(1, "Rent", ChargeBehaviour.RENT, new BigDecimal("50000"), false));
+
+        assertThat(service.buildSection3Total(lease)).contains(">TOTAL<").doesNotContain("CONTRACT VALUE")
+                .doesNotContain("PAYABLE");
+    }
+
     /** A discounted line contributes its net, which is what the renter owes. */
     @Test
     void section3UsesTheNetAmountNotTheGross() {
@@ -254,7 +283,8 @@ class ContractGenerationServiceTest {
 
         int idxC1 = html.indexOf("18,050.00");
         int idxC2 = html.indexOf("13,750.00");
-        int idxBooking = html.indexOf("BOOKING RECEIVED");
+        // QA-18: the narration is no longer printed; the booking row is found by its amount.
+        int idxBooking = html.indexOf("1,000.00");
         assertThat(idxC1).isPositive();
         assertThat(idxC2).isPositive();
         assertThat(idxBooking).isPositive();
@@ -281,6 +311,18 @@ class ContractGenerationServiceTest {
 
         assertThat(html).contains("18,050.00");
         assertThat(html).doesNotContain("13,750.00");
+    }
+
+    /** QA-18: "In Favour Of" is the payee (the landlord), not the cheque's narration. */
+    @Test
+    void section4PrintsThePayeeInFavourOf() {
+        Cheque c = chq(1, LocalDate.of(2026, 12, 1), "100201", "PDC", new BigDecimal("21250"),
+                "Rent - 1st Installment");
+        c.setPayeeBank("Specimen Bank of the Gulf");
+        String html = service.buildSection4Rows(draftLease(), List.of(c), "QA Walkthrough & Sons");
+
+        assertThat(html).contains("<td>QA Walkthrough &amp; Sons</td><td>Specimen Bank of the Gulf</td>")
+                .doesNotContain("Rent - 1st Installment");
     }
 
     @Test
@@ -481,7 +523,8 @@ class ContractGenerationServiceTest {
         // Every instrument, with its number, its bank and its money.
         assertThat(html).contains("18,050.00").contains("13,750.00").contains("1,000.00");
         assertThat(html).contains("000001").contains("ENBD");
-        assertThat(html).contains("RENT - 1ST INSTALLMENT").contains("BOOKING RECEIVED");
+        // QA-18: "In Favour Of" carries the payee, not the narration.
+        assertThat(html).doesNotContain("RENT - 1ST INSTALLMENT").doesNotContain("BOOKING RECEIVED");
 
         // Σ of the printed rows is the register's total: 18,050 + 13,750 + 1,000.
         String section4 = service.buildSection4Rows(lease, buildRegister());
@@ -542,18 +585,17 @@ class ContractGenerationServiceTest {
         assertThat(html).contains("60,300.00");
         assertThat(html).contains("AED Sixty Thousand Three Hundred Only");
 
-        // Section 4 rows
-        assertThat(html).contains("RENT - 1ST INSTALLMENT");
-        assertThat(html).contains("RENT - 2ND INSTALLMENT");
-        assertThat(html).contains("BOOKING RECEIVED");
+        // Section 4 rows (QA-18: the narration is not printed, only the payee)
+        assertThat(html).doesNotContain("RENT - 1ST INSTALLMENT");
         assertThat(html).contains("18,050.00");
         assertThat(html).contains("13,750.00");
         assertThat(html).contains("1,000.00");
 
         // Booking row sorted last (after the regular installments)
-        int idxFirstInstallment = html.indexOf("RENT - 1ST INSTALLMENT");
-        int idxSecondInstallment = html.indexOf("RENT - 2ND INSTALLMENT");
-        int idxBooking = html.indexOf("BOOKING RECEIVED");
+        String section4 = service.buildSection4Rows(lease, buildRegister());
+        int idxFirstInstallment = section4.indexOf("18,050.00");
+        int idxSecondInstallment = section4.indexOf("13,750.00");
+        int idxBooking = section4.indexOf("1,000.00");
         assertThat(idxFirstInstallment).isPositive();
         assertThat(idxSecondInstallment).isPositive();
         assertThat(idxBooking).isPositive();

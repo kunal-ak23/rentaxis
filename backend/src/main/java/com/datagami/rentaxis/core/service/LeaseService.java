@@ -1659,8 +1659,15 @@ public class LeaseService {
         return contractValueOf(leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId));
     }
 
+    /**
+     * QA-16: the contract value is what the renter pays for the tenancy. A refundable
+     * deposit is held, never earned, so it is left out; the cheque grid still
+     * collects it ({@link LeaseDTO#getDepositAmount()} carries it on its own).
+     */
     private static BigDecimal contractValueOf(List<LeaseLine> lines) {
-        return lines.stream().map(LeaseLine::getNetAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return lines.stream()
+                .filter(l -> l.getChargeType() == null || l.getChargeType().getBehaviour() != ChargeBehaviour.DEPOSIT)
+                .map(LeaseLine::getNetAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**

@@ -59,7 +59,7 @@ import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import HoldoverVacateDialog from "@/components/leases/HoldoverVacateDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import VatScheduleTab from "@/components/leases/VatScheduleTab";
-import { defaultInstallmentsFor, fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
+import { defaultInstallmentsFor, fmtIsoDate, round2, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
     type ChargeType, type Cheque, type ChequeWrite, type GiveNoticeInput, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
@@ -837,8 +837,9 @@ export default function LeaseDetailPage() {
                 <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <Ribbon label={t("startDate")} value={fmtIsoDate(lease.startDate, locale)} />
                     <Ribbon label={t("endDate")} value={fmtIsoDate(lease.endDate, locale)} />
-                    <Ribbon label={t("contractValue")} value={fmtAmount(lease.contractValue ?? totals.net)} />
-                    <Ribbon label={t("contractValueInclVat")} value={fmtAmount(totals.inclVat)} />
+                    {/* QA-16: the contract value leaves the refundable deposit out (it is held, not earned). */}
+                    <Ribbon label={t("contractValue")} value={fmtAmount(lease.contractValue ?? round2(totals.net - totals.deposit))} />
+                    <Ribbon label={t("contractValueInclVat")} value={fmtAmount(totals.contractInclVat)} />
                     <Ribbon label={t("paymentTerms")} value={String(cheques.length || lease.paymentTerms || 0)} />
                     {/* PR #359 R1: a credit addendum cut the rent — the contract as signed and what is charged now. */}
                     {lease.currentRentAmount != null && lease.rentAmount != null

@@ -994,6 +994,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                         <Summary label={t("contractValue")} value={fmtAmount(dry.contractValue)} />
                                         <Summary label={t("vat")} value={fmtAmount(dry.contractValueInclVat - dry.contractValue)} />
                                         <Summary label={t("contractValueInclVat")} value={fmtAmount(dry.contractValueInclVat)} />
+                                        {(dry.depositTotal ?? 0) > 0 && (
+                                            <Summary label={t("depositHeldNotIncome")} value={fmtAmount(dry.depositTotal ?? 0)} />
+                                        )}
                                         <Summary label={t("chequeTotal")} value={fmtAmount(dry.chequeTotal)} />
                                         {dry.depositCarriedForward > 0 && (
                                             <Summary label={t("depositCarriedForward")} value={fmtAmount(dry.depositCarriedForward)} />

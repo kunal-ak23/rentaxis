@@ -1291,6 +1291,8 @@ export type PostLeaseDryRunResponse = {
   contractValue: number;
   contractValueInclVat: number;
   chequeTotal: number;
+  /** QA-16: the refundable deposits on the lines, kept out of contractValue; the cheques still collect them. */
+  depositTotal?: number;
   depositCarriedForward: number;
   journals: {
     tco: number; tcoLines: number; pdr: number;

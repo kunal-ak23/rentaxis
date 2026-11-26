@@ -10,6 +10,7 @@ import com.datagami.rentaxis.core.service.lease.LeaseVat;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.AmountInWordsUtil;
 import com.datagami.rentaxis.domain.entity.*;
+import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
@@ -375,7 +376,7 @@ public class ContractGenerationService {
         // Build dynamic sections
         String section3Rows = buildSection3Rows(lease);
         String section3Total = buildSection3Total(lease);
-        String section4Rows = buildSection4Rows(lease, cheques);
+        String section4Rows = buildSection4Rows(lease, cheques, org.getName());
 
         // Grand total = every line's net, face amounts. Reading the lines rather
         // than rentAmount + depositAmount + lease_charges is not a refactor: fees
@@ -580,8 +581,12 @@ public class ContractGenerationService {
         BigDecimal totalWithVat = BigDecimal.ZERO;
 
         List<Object[]> rows = new ArrayList<>();
+        BigDecimal deposit = BigDecimal.ZERO;
         for (LeaseLine l : chargeLines(lease)) {
             rows.add(new Object[]{nz(l.getNetAmount()), vatOn(l)});
+            if (l.getChargeType() != null && l.getChargeType().getBehaviour() == ChargeBehaviour.DEPOSIT) {
+                deposit = deposit.add(nz(l.getNetAmount()));
+            }
         }
         for (Object[] r : rows) {
             BigDecimal amt = (BigDecimal) r[0];
@@ -594,9 +599,20 @@ public class ContractGenerationService {
             totalWithVat = totalWithVat.add(amt.add(vatAmount));
         }
 
-        return "<tr>"
+        // QA-16: a refundable deposit is held, not earned. With one on the lines,
+        // the contract value is stated without it and the total is what the
+        // tenant pays in all (deposits carry no VAT).
+        String contractValueRow = deposit.signum() == 0 ? "" : "<tr>"
                 + "<td class=\"center\"></td>"
-                + "<td style=\"font-weight:bold;\">TOTAL</td>"
+                + "<td style=\"font-weight:bold;\">CONTRACT VALUE (excl. refundable deposit)</td>"
+                + "<td class=\"num\" style=\"font-weight:bold;\">" + formatAmount(totalAmount.subtract(deposit)) + "</td>"
+                + "<td class=\"center\"></td>"
+                + "<td class=\"num\" style=\"font-weight:bold;\">" + formatAmount(totalVat) + "</td>"
+                + "<td class=\"num\" style=\"font-weight:bold;\">" + formatAmount(totalWithVat.subtract(deposit)) + "</td>"
+                + "</tr>";
+        return contractValueRow + "<tr>"
+                + "<td class=\"center\"></td>"
+                + "<td style=\"font-weight:bold;\">" + (deposit.signum() == 0 ? "TOTAL" : "TOTAL PAYABLE (incl. refundable deposit)") + "</td>"
                 + "<td class=\"num\" style=\"font-weight:bold;\">" + formatAmount(totalAmount) + "</td>"
                 + "<td class=\"center\"></td>"
                 + "<td class=\"num\" style=\"font-weight:bold;\">" + formatAmount(totalVat) + "</td>"
@@ -788,6 +804,16 @@ public class ContractGenerationService {
      * otherwise jump to the top of a date-sorted list.</p>
      */
     public String buildSection4Rows(Lease lease, List<Cheque> cheques) {
+        String payee = lease.getTenantId() == null ? null
+                : landlordOrgRepository.findById(lease.getTenantId()).map(LandlordOrg::getName).orElse(null);
+        return buildSection4Rows(lease, cheques, payee);
+    }
+
+    /**
+     * QA-18: {@code payee} is who the cheques are made out to — the landlord
+     * organisation — printed under "In Favour Of".
+     */
+    public String buildSection4Rows(Lease lease, List<Cheque> cheques, String payee) {
         if (cheques == null || cheques.isEmpty()) return "";
 
         boolean draftContract = lease == null
@@ -809,22 +835,21 @@ public class ContractGenerationService {
         StringBuilder sb = new StringBuilder();
         int sNo = 1;
         for (Cheque c : printable) {
-            appendSection4Row(sb, sNo++, c);
+            appendSection4Row(sb, sNo++, c, payee);
         }
         return sb.toString();
     }
 
     /**
-     * One row. "In Favour Of" carries the instrument's narration — "Rent - 1st
-     * Installment | SD" — which is what the grid folded the deposits and fees into
-     * and therefore what the cheque is actually for.
+     * One row. "In Favour Of" is the payee the cheque is made out to (QA-18), as on
+     * a UAE post-dated cheque schedule; the narration stays on the cheque grid.
      */
-    private void appendSection4Row(StringBuilder sb, int sNo, Cheque c) {
+    private void appendSection4Row(StringBuilder sb, int sNo, Cheque c, String payee) {
         sb.append("<tr>")
                 .append("<td class=\"center\">").append(sNo).append("</td>")
                 .append("<td>").append(escapeUserText(c.getChequeNumber())).append("</td>")
                 .append("<td>").append(c.getChequeDate() != null ? formatDate(c.getChequeDate()) : "").append("</td>")
-                .append("<td>").append(escapeUserText(c.getNarration())).append("</td>")
+                .append("<td>").append(escapeUserText(payee)).append("</td>")
                 .append("<td>").append(escapeUserText(c.getPayeeBank())).append("</td>")
                 .append("<td class=\"num\">").append(formatAmount(nz(c.getAmount()))).append("</td>")
                 .append("</tr>");

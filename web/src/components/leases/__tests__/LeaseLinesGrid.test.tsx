@@ -123,7 +123,18 @@ describe("LeaseLinesGrid", () => {
         expect(screen.getByTestId("lease-lines-total-discount")).toHaveTextContent("2,500.00");
         expect(screen.getByTestId("lease-lines-total-net")).toHaveTextContent("69,500.00");
         expect(screen.getByTestId("lease-lines-total-vat")).toHaveTextContent("2,975.00");
-        expect(screen.getByTestId("lease-lines-contract-value")).toHaveTextContent("72,475.00");
+        // QA-16: the 10,000 deposit is held, not income: the contract value leaves it
+        // out and the grid shows it, and the total the cheques collect, on their own rows.
+        expect(screen.getByTestId("lease-lines-contract-value")).toHaveTextContent("62,475.00");
+        expect(screen.getByTestId("lease-lines-deposit")).toHaveTextContent("10,000.00");
+        expect(screen.getByTestId("lease-lines-total-to-collect")).toHaveTextContent("72,475.00");
+    });
+
+    it("shows no deposit or collect rows when the lines carry no deposit (QA-16)", () => {
+        renderReadOnly([row({ key: 0, chargeTypeId: "ct-rent", grossAmount: 60000 })]);
+        expect(screen.getByTestId("lease-lines-contract-value")).toHaveTextContent("60,000.00");
+        expect(screen.queryByTestId("lease-lines-deposit-row")).toBeNull();
+        expect(screen.queryByTestId("lease-lines-total-to-collect")).toBeNull();
     });
 
     it("narrows the credit-account picker by the charge type's behaviour", () => {
