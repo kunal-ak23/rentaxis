@@ -549,7 +549,13 @@ export default function LeaseDetailPage() {
     };
 
     const downloadBlob = async (url: string, name: string, failText: string) => {
-        const res = await fetch(url);
+        let res: Response;
+        try {
+            res = await fetch(url);
+        } catch {
+            setError(failText);
+            return;
+        }
         if (!res.ok) {
             // QA-01 review: a refusal (no contract yet, or one that cannot be produced) says so.
             let detail: string | null = null;
