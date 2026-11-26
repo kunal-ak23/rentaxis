@@ -342,7 +342,7 @@ export default function TerminateLeasePage() {
                                 <Figure
                                     label={t("receivableAfter")}
                                     value={fmtAmount(receivableAfter)}
-                                    hint={t("receivableAfterHint")}
+                                    hint={t(receivableAfter < 0 ? "receivableAfterCreditHint" : "receivableAfterHint")}
                                     testId="terminate-receivable-after"
                                     tone={receivableAfter > 0 ? "warning" : "default"}
                                 />

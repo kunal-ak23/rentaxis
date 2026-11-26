@@ -696,7 +696,10 @@ export default function LeaseDetailPage() {
                                     party: t(`noticeParty.${lease.noticeGivenBy ?? "RENTER"}`),
                                     date: fmtIsoDate(lease.noticeDate, locale),
                                 })}
-                                {lease.intendedMoveOutDate && ` · ${t("noticeMoveOut", { date: fmtIsoDate(lease.intendedMoveOutDate, locale) })}`}
+                                {/* QA-37: once terminated, the termination date replaces the notice's intended move-out. */}
+                                {lease.terminatedOn
+                                    ? ` · ${t("noticeTerminatedOn", { date: fmtIsoDate(lease.terminatedOn, locale) })}`
+                                    : lease.intendedMoveOutDate && ` · ${t("noticeMoveOut", { date: fmtIsoDate(lease.intendedMoveOutDate, locale) })}`}
                             </p>
                         )}
                         <div className="flex items-center gap-3 flex-wrap mt-1 text-[11px]">
