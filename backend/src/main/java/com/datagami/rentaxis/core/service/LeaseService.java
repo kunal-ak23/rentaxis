@@ -1062,6 +1062,8 @@ public class LeaseService {
         // cheque numbers and banks the user typed.
         if (!chequeBasisBefore.equals(chequeBasis(savedLease))) {
             deleteDraftCheques(savedLease.getId());
+        } else {
+            refreshDraftChequePayer(savedLease);
         }
 
         recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
@@ -1939,6 +1941,20 @@ public class LeaseService {
      * derived delete, so the rows are loaded first and the tenant filter applies
      * to them exactly as it would to a read.
      */
+    /**
+     * A kept grid carries the payer name it was cut with. The renter's name can be
+     * corrected on the renter record since, so bring the DRAFT rows up to date
+     * rather than print yesterday's name on the cheques.
+     */
+    private void refreshDraftChequePayer(Lease lease) {
+        String payer = lease.getRenter() == null ? null : lease.getRenter().getNameEn();
+        for (Cheque c : chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())) {
+            if (c.getStatus() == ChequeStatus.DRAFT && !java.util.Objects.equals(c.getPayerName(), payer)) {
+                c.setPayerName(payer);
+            }
+        }
+    }
+
     private void deleteDraftCheques(UUID leaseId) {
         chequeRepository.deleteByLease_IdAndStatus(leaseId, ChequeStatus.DRAFT);
         chequeRepository.flush();

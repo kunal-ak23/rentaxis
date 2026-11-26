@@ -554,7 +554,11 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
      */
     // QA-15: regenerating (count changed, or Review's "Use this schedule")
     // keeps the bank the grid already carries instead of blanking every row.
-    const gridBank = cheques.find(c => c.payeeBank?.trim())?.payeeBank?.trim();
+    // QA-15: regenerating keeps the bank the grid carries. Only when every row that
+    // has one agrees: the server applies one bank to all rows, so a grid with
+    // several banks comes back blank (visible) rather than all one bank (silent).
+    const gridBanks = new Set(cheques.map(c => c.payeeBank?.trim()).filter((b): b is string => !!b));
+    const gridBank = gridBanks.size === 1 ? [...gridBanks][0] : undefined;
     const chequeRequest = (): GenerateChequesRequest => ({
         installments: generatorCount,
         firstDueDate: terms.firstDueDate || terms.startDate || null,

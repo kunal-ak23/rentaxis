@@ -192,6 +192,15 @@ describe("M8: the wizard's regenerate and Use this schedule honour a separate on
         expect(api.generateCheques.mock.calls[0][1]).not.toHaveProperty("payeeBank");
     });
 
+    // Review on #477: the server sets one bank on every row, so mixed banks are not collapsed.
+    it("sends no payee bank when the grid holds more than one", async () => {
+        await toChequesStep([cheque(1), { ...cheque(2), payeeBank: "ADCB" }]);
+        api.generateCheques.mockResolvedValue({ cheques: [cheque(1)], version: 2 });
+        fireEvent.click(screen.getByTestId("wizard-regenerate-confirm"));
+        await waitFor(() => expect(api.generateCheques).toHaveBeenCalledTimes(1));
+        expect(api.generateCheques.mock.calls[0][1]).not.toHaveProperty("payeeBank");
+    });
+
     // Client request (2026-10-28): the deposit and each fee get a cheque of their own
     // unless the user asks for them on cheque 1.
     it("keeps one-time charges on their own cheques by default", async () => {

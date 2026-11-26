@@ -100,6 +100,21 @@ class DraftSaveKeepsChequesIT extends AbstractPostgresIT {
         assertThat(draftCheques(id)).isEqualTo(4);
     }
 
+    /** Review on #477: a kept grid must not print a renter name corrected since. */
+    @Test
+    void aKeptGridTakesTheRenterNameCorrectedSince() {
+        UUID id = draftWithGrid();
+        jdbc.update("update renters set name_en = 'CORRECTED NAME' where id = "
+                + "(select renter_id from leases where id = ?)", id);
+
+        leaseService.updateDraftLease(id, fixtures.draftDto(START, END, List.of(
+                line("RENT", "51000"), line("SECURITY_DEPOSIT", "3000"))));
+
+        assertThat(draftCheques(id)).isEqualTo(4);
+        assertThat(jdbc.queryForList("select distinct payer_name from cheques where lease_id = ?",
+                String.class, id)).containsExactly("CORRECTED NAME");
+    }
+
     @Test
     void aChangedAmountStillDropsTheGrid() {
         UUID id = draftWithGrid();
