@@ -2,7 +2,6 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.service.AccountImportService;
 import com.datagami.rentaxis.core.service.AccountService;
-import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.domain.entity.Account;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -50,8 +49,7 @@ class AccountRequestBindingTest {
 
     private final MockMvc mvc = MockMvcBuilders
             .standaloneSetup(new AccountController(service, mock(AccountImportService.class),
-                    mock(PropertyAccountService.class),
-                    mock(com.datagami.rentaxis.core.service.lease.ChargeTypeService.class),
+                    mock(com.datagami.rentaxis.core.service.OrgDefaultsSeeder.class),
                     mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class)))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
