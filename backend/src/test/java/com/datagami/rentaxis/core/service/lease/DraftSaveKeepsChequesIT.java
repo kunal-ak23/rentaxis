@@ -21,6 +21,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import com.datagami.rentaxis.api.dto.RenterDTO;
+import com.datagami.rentaxis.api.dto.UpdateRenterDTO;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -49,6 +51,7 @@ class DraftSaveKeepsChequesIT extends AbstractPostgresIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.RenterService renterService;
 
     private LeaseTestFixtures fixtures;
 
@@ -100,19 +103,31 @@ class DraftSaveKeepsChequesIT extends AbstractPostgresIT {
         assertThat(draftCheques(id)).isEqualTo(4);
     }
 
-    /** Review on #477: a kept grid must not print a renter name corrected since. */
+    /**
+     * Review on #477: a grid that survives saves must not print a renter name corrected
+     * since, and must keep a payer typed on one cheque.
+     */
     @Test
-    void aKeptGridTakesTheRenterNameCorrectedSince() {
+    void aRenterNameCorrectionReachesTheDraftGridButNotATypedPayer() {
         UUID id = draftWithGrid();
-        jdbc.update("update renters set name_en = 'CORRECTED NAME' where id = "
-                + "(select renter_id from leases where id = ?)", id);
+        UUID typed = jdbc.queryForObject(
+                "select id from cheques where lease_id = ? order by seq_no limit 1", UUID.class, id);
+        jdbc.update("update cheques set payer_name = 'PAID BY EMPLOYER LLC' where id = ?", typed);
+        UUID renterId = jdbc.queryForObject("select renter_id from leases where id = ?", UUID.class, id);
+        RenterDTO r = renterService.getRenterById(renterId);
 
-        leaseService.updateDraftLease(id, fixtures.draftDto(START, END, List.of(
-                line("RENT", "51000"), line("SECURITY_DEPOSIT", "3000"))));
+        UpdateRenterDTO dto = new UpdateRenterDTO();
+        dto.setNameEn("CORRECTED NAME");
+        dto.setNameAr(r.getNameAr());
+        dto.setEmail(r.getEmail());
+        dto.setPhone(r.getPhone());
+        renterService.updateRenter(renterId, dto);
 
-        assertThat(draftCheques(id)).isEqualTo(4);
-        assertThat(jdbc.queryForList("select distinct payer_name from cheques where lease_id = ?",
-                String.class, id)).containsExactly("CORRECTED NAME");
+        assertThat(jdbc.queryForList(
+                "select payer_name from cheques where lease_id = ? and id <> ?", String.class, id, typed))
+                .hasSize(3).containsOnly("CORRECTED NAME");
+        assertThat(jdbc.queryForObject("select payer_name from cheques where id = ?", String.class, typed))
+                .isEqualTo("PAID BY EMPLOYER LLC");
     }
 
     @Test

@@ -10,7 +10,9 @@ import com.datagami.rentaxis.core.util.Search;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.User;
+import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.datagami.rentaxis.api.exception.NotFoundException;
@@ -34,6 +36,7 @@ public class RenterService {
     private final UserRepository userRepository;
     private final TokenRevocationService tokenRevocation;
     private final org.springframework.transaction.support.TransactionTemplate transactions;
+    private final ChequeRepository chequeRepository;
 
     /** Narrows a property manager's lists; absent in unit tests that build the service by hand. */
     private PropertyScope propertyScope;
@@ -440,8 +443,13 @@ public class RenterService {
             }
         }
 
+        String oldNameEn = renter.getNameEn();
         renter.setNameEn(dto.getNameEn());
         renter.setNameAr(dto.getNameAr());
+        if (oldNameEn != null && dto.getNameEn() != null && !dto.getNameEn().isBlank()
+                && !oldNameEn.equals(dto.getNameEn())) {
+            chequeRepository.renamePayer(renter.getId(), ChequeStatus.DRAFT, oldNameEn, dto.getNameEn());
+        }
         // M3: mirrors the portal login's own normalisation when one is linked, so
         // the two never read differently for a case/whitespace-only difference;
         // trimmed-to-null otherwise (never stores whitespace-only as "an email").
