@@ -340,7 +340,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {loading ? (
                     Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} className="h-[280px] bg-surface rounded-xl border border-border p-6 animate-pulse">
+                        <div key={i} className="h-[360px] bg-surface rounded-xl border border-border p-6 animate-pulse">
                             <div className="flex justify-between items-start mb-8">
                                 <div className="w-10 h-10 bg-background rounded-xl" />
                                 <div className="w-16 h-5 bg-background rounded-lg" />
@@ -360,7 +360,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                     return (
                     <CardFlip
                         key={u.id}
-                        className="h-[280px] transition-all duration-200"
+                        className="h-[360px] transition-all duration-200"
                         front={
                             <div className="h-full flex flex-col justify-between">
                                 <div className="flex justify-between items-start gap-2">
@@ -398,11 +398,13 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                         }
                         back={
                             <div className="h-full flex flex-col">
-                                <h4 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
+                                <h4 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-2 flex items-center gap-2">
                                     <Info size={12} />
                                     Property Details
                                 </h4>
-                                <div className="space-y-4 flex-1">
+                                {/* The card is a fixed height: the details scroll so the ledger link and Edit Details stay reachable. */}
+                                <div className="space-y-2 flex-1 min-h-0 overflow-y-auto">
+
                                     <div className="bg-surface/50 rounded-xl p-3 border border-border">
                                         <div className="flex items-center gap-2 mb-1">
                                             <Users size={12} className="text-primary/40" />
@@ -441,7 +443,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                                             <p className="text-xs font-bold text-foreground">{formatCurrencyCompact(u.actualRent)}</p>
                                         </div>
                                     </div>
-                                    <div className="bg-surface/50 rounded-xl p-3 border border-border">
+                                    <div className="bg-surface/50 rounded-xl px-3 py-2 border border-border">
                                         <span className="text-[9px] font-bold text-muted uppercase">{t("dewaPremiseNumber")}</span>
                                         {dewaEditId === u.id ? (
                                             <div className="mt-1">
