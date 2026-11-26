@@ -28,6 +28,7 @@ public class LandlordOrgService {
     private final ContractGenerationService contractGenerationService;
     private final TenantArtifactCleanupService tenantArtifactCleanupService;
     private final TokenRevocationService tokenRevocation;
+    private final OrgDefaultsSeeder defaultsSeeder;
 
     public LandlordOrgService(LandlordOrgRepository repository,
                                UserRepository userRepository,
@@ -35,7 +36,8 @@ public class LandlordOrgService {
                                JdbcTemplate jdbcTemplate,
                                ContractGenerationService contractGenerationService,
                                TenantArtifactCleanupService tenantArtifactCleanupService,
-                               TokenRevocationService tokenRevocation) {
+                               TokenRevocationService tokenRevocation,
+                               OrgDefaultsSeeder defaultsSeeder) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
@@ -43,6 +45,7 @@ public class LandlordOrgService {
         this.contractGenerationService = contractGenerationService;
         this.tenantArtifactCleanupService = tenantArtifactCleanupService;
         this.tokenRevocation = tokenRevocation;
+        this.defaultsSeeder = defaultsSeeder;
     }
 
     public static final String ORG_NAME_TAKEN =
@@ -62,7 +65,12 @@ public class LandlordOrgService {
         LandlordOrg org = new LandlordOrg();
         org.setName(name);
         org.setSlug(freeSlug(LandlordOrg.slugOf(name)));
-        LandlordOrg saved = repository.save(org);
+        LandlordOrg saved = repository.saveAndFlush(org);
+        // QA-02: chart of accounts, property account templates and charge types, so the
+        // new organisation can draft a contract (and its properties get ledger accounts)
+        // without anyone finding "Seed Default Accounts" first. Same transaction: an
+        // organisation is never left half provisioned.
+        defaultsSeeder.seedFor(saved.getId());
 
         // Notify all SUPER_ADMINs
         try {

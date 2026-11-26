@@ -2,8 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.service.AccountImportService;
 import com.datagami.rentaxis.core.service.AccountService;
-import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
-import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
+import com.datagami.rentaxis.core.service.OrgDefaultsSeeder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
@@ -26,17 +25,15 @@ public class AccountController {
 
     private final AccountService service;
     private final AccountImportService importService;
-    private final PropertyAccountService propertyAccountService;
-    private final ChargeTypeService chargeTypeService;
+    private final OrgDefaultsSeeder defaultsSeeder;
     private final com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy;
 
     public AccountController(AccountService service, AccountImportService importService,
-                             PropertyAccountService propertyAccountService, ChargeTypeService chargeTypeService,
+                             OrgDefaultsSeeder defaultsSeeder,
                              com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy) {
         this.service = service;
         this.importService = importService;
-        this.propertyAccountService = propertyAccountService;
-        this.chargeTypeService = chargeTypeService;
+        this.defaultsSeeder = defaultsSeeder;
         this.leaseAccessPolicy = leaseAccessPolicy;
     }
 
@@ -169,19 +166,14 @@ public class AccountController {
      * calls is idempotent, so re-seeding an established tenant adds whatever is
      * missing and leaves everything else alone.</p>
      *
-     * <p>The second call lives here rather than inside
-     * {@code AccountService.seedDefaultAccounts()} on purpose:
-     * {@code PropertyAccountService} already depends on {@code AccountService}
-     * (it resolves template parents by code), so wiring the reverse edge would
-     * make the two beans a constructor cycle. The seed entry point is the one
-     * place that legitimately knows about both.
+     * <p>The three calls live in {@link OrgDefaultsSeeder}, which provisioning
+     * also uses for a new organisation.</p>
      */
     @PostMapping("/seed")
     public ResponseEntity<List<Account>> seedDefaultAccounts() {
-        List<Account> seeded = service.seedDefaultAccounts();
-        propertyAccountService.seedDefaultTemplateAndDefaults();
-        chargeTypeService.seedDefaults();
-        return ResponseEntity.ok(seeded);
+        // Provisioning seeds a new organisation the same way (QA-02); this stays for
+        // organisations made before that, and to add defaults introduced since.
+        return ResponseEntity.ok(defaultsSeeder.seedCurrent());
     }
 
     @PutMapping("/{id}")
