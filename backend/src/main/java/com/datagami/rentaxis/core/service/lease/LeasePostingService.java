@@ -568,16 +568,20 @@ public class LeasePostingService {
                     g.pdrReversalTotal(), g.unearned(), g.unearnedVat(), transferEstimate.carriedBalance(),
                     g.moveDate().plusDays(1), depositCarried);
         }
+        // QA-16: a deposit is held, not earned, and never carries VAT: shown on its own.
+        BigDecimal deposit = lines.stream()
+                .filter(l -> l.getChargeType() != null && l.getChargeType().getBehaviour() == ChargeBehaviour.DEPOSIT)
+                .map(LeaseLine::getNetAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new PostLeaseDryRunResponse(
                 errors.isEmpty(),
                 errors,
-                plan.contractValue(),
-                plan.contractValueInclVat(),
+                plan.contractValue().subtract(deposit),
+                plan.contractValueInclVat().subtract(deposit),
                 plan.chequeTotal(),
                 depositCarried,
                 new PostLeaseDryRunResponse.JournalPlan(1, plan.pairs().size() * 2, cheques.size() + carried.size(),
                         transferJournals),
-                carried, notices);
+                carried, notices, deposit);
     }
 
     /**

@@ -25,6 +25,11 @@ import java.util.List;
  * printed on last year's contract: a deposit partly refunded or partly forfeited
  * during the term carries forward at what is left of it, and the accountant
  * approving the renewal is the person who needs to notice the difference.</p>
+ *
+ * <p>QA-16: {@code contractValue} and {@code contractValueInclVat} leave the
+ * refundable deposits out ({@code depositTotal}): a deposit is held, not earned.
+ * The cheques still collect it, so the post gate compares {@code chequeTotal}
+ * with {@code contractValueInclVat + depositTotal}.</p>
  */
 public record PostLeaseDryRunResponse(boolean ok,
                                       List<String> errors,
@@ -36,7 +41,15 @@ public record PostLeaseDryRunResponse(boolean ok,
                                       /* F15-13: the instruments a transfer brings onto this grid when it posts. */
                                       List<CarriedCheque> carriedCheques,
                                       /* PR #369 R1 P3-8: what the post will do that is not an error (e.g. a prepaid transfer's VAT timing). */
-                                      List<String> notices) {
+                                      List<String> notices,
+                                      BigDecimal depositTotal) {
+
+    public PostLeaseDryRunResponse(boolean ok, List<String> errors, BigDecimal contractValue, BigDecimal contractValueInclVat,
+                                   BigDecimal chequeTotal, BigDecimal depositCarriedForward, JournalPlan journals,
+                                   List<CarriedCheque> carriedCheques, List<String> notices) {
+        this(ok, errors, contractValue, contractValueInclVat, chequeTotal, depositCarriedForward, journals, carriedCheques,
+                notices, BigDecimal.ZERO);
+    }
 
     public PostLeaseDryRunResponse(boolean ok, List<String> errors, BigDecimal contractValue, BigDecimal contractValueInclVat,
                                    BigDecimal chequeTotal, BigDecimal depositCarriedForward, JournalPlan journals,

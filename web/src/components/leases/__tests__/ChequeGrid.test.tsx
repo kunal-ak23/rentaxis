@@ -48,7 +48,7 @@ describe("ChequeGrid footer", () => {
         });
         const badge = screen.getByTestId("cheque-grid-match");
         expect(badge).toHaveAttribute("data-match", "false");
-        expect(badge).toHaveTextContent("Cheques total 27,400.00 but contract value is 30,000.00");
+        expect(badge).toHaveTextContent("Cheques total 27,400.00 but the amount to collect is 30,000.00");
         expect(screen.getByTestId("cheque-grid-total")).toHaveTextContent("27,400.00");
     });
 

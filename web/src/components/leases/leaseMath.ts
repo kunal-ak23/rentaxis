@@ -298,19 +298,25 @@ export type LineTotals = {
     discount: number;
     net: number;
     vat: number;
-    /** Contract value including VAT — what the cheque grid must add up to. */
+    /** Everything the lines charge, including VAT and deposits — what the cheque grid must add up to. */
     inclVat: number;
+    /** QA-16: the refundable deposits among the lines: held, never income. */
+    deposit: number;
+    /** QA-16: the contract value including VAT, without the deposits. */
+    contractInclVat: number;
 };
 
 export function totalsOf(rows: LineRow[], chargeTypes: ChargeType[]): LineTotals {
-    let gross = 0, discount = 0, net = 0, vat = 0;
+    let gross = 0, discount = 0, net = 0, vat = 0, deposit = 0;
     for (const r of rows) {
         gross = round2(gross + (r.grossAmount || 0));
         discount = round2(discount + (r.discountAmount || 0));
         net = round2(net + netOf(r));
         vat = round2(vat + vatOf(r, chargeTypes));
+        if (behaviourOf(r, chargeTypes) === "DEPOSIT") deposit = round2(deposit + netOf(r));
     }
-    return { gross, discount, net, vat, inclVat: round2(net + vat) };
+    const inclVat = round2(net + vat);
+    return { gross, discount, net, vat, inclVat, deposit, contractInclVat: round2(inclVat - deposit) };
 }
 
 /**

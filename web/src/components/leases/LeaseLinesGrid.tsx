@@ -393,13 +393,32 @@ export default function LeaseLinesGrid({
                             <td className={tdNum} data-testid="lease-lines-total-vat">{fmtAmount(totals.vat)}</td>
                             {editable && <td className={td} />}
                         </tr>
+                        {/* QA-16: a refundable deposit is held, not earned: the contract value leaves it out. */}
                         <tr className="bg-warning/10 font-bold border-t border-border">
                             <td className={td} colSpan={5}>
                                 {t("contractValueInclVat")}
                             </td>
-                            <td className={tdNum} data-testid="lease-lines-contract-value">{fmtAmount(totals.inclVat)}</td>
+                            <td className={tdNum} data-testid="lease-lines-contract-value">{fmtAmount(totals.contractInclVat)}</td>
                             <td className={td} colSpan={editable ? 3 : 2} />
                         </tr>
+                        {totals.deposit > 0 && (
+                            <>
+                                <tr className="border-t border-border" data-testid="lease-lines-deposit-row">
+                                    <td className={td} colSpan={5}>
+                                        {t("depositHeldNotIncome")}
+                                    </td>
+                                    <td className={tdNum} data-testid="lease-lines-deposit">{fmtAmount(totals.deposit)}</td>
+                                    <td className={td} colSpan={editable ? 3 : 2} />
+                                </tr>
+                                <tr className="font-semibold border-t border-border">
+                                    <td className={td} colSpan={5}>
+                                        {t("totalToCollect")}
+                                    </td>
+                                    <td className={tdNum} data-testid="lease-lines-total-to-collect">{fmtAmount(totals.inclVat)}</td>
+                                    <td className={td} colSpan={editable ? 3 : 2} />
+                                </tr>
+                            </>
+                        )}
                     </tfoot>
                 </table>
             </div>

@@ -160,6 +160,9 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
                             <Row label={t("contractValue")} value={fmtAmount(dry.contractValue)} />
                             <Row label={t("vat")} value={fmtAmount(dry.contractValueInclVat - dry.contractValue)} />
                             <Row label={t("contractValueInclVat")} value={fmtAmount(dry.contractValueInclVat)} />
+                            {(dry.depositTotal ?? 0) > 0 && (
+                                <Row label={t("depositHeldNotIncome")} value={fmtAmount(dry.depositTotal ?? 0)} testId="post-deposit-total" />
+                            )}
                             <Row label={t("chequeTotal")} value={fmtAmount(dry.chequeTotal)} testId="post-cheque-total" />
                             {dry.depositCarriedForward > 0 && (
                                 <Row label={t("depositCarriedForward")} value={fmtAmount(dry.depositCarriedForward)} />
