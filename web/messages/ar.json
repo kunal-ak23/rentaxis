@@ -2774,6 +2774,8 @@
     "renter": "المستأجر",
     "methodCheque": "شيك",
     "methodOnline": "إلكتروني",
+    "methodCash": "نقداً",
+    "methodBankTransfer": "تحويل بنكي",
     "leaseStatus": {
       "DRAFT": "مسودة",
       "PENDING_SIGNATURE": "بانتظار التوقيع",

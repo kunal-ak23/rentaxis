@@ -143,7 +143,6 @@ export function SelectPanel({
                         {clearLabel}
                     </button>
                     {message && <p className="px-3 py-3 text-[11px] text-muted text-center">{message}</p>}
-                    {footer}
                     {rows.map((o, i) => (
                         <button
                             key={o.value}
@@ -166,6 +165,8 @@ export function SelectPanel({
                         </button>
                     ))}
                 </div>
+                {/* Outside the listbox: an action, not an option. */}
+                {footer}
             </div>
         </>
     );
