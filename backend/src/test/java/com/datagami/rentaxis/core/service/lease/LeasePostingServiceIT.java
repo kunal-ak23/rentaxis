@@ -351,7 +351,7 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
 
         assertThatThrownBy(() -> posting.post(leaseId))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("Cheque grid totals 51,000.00 but contract value is 53,000.00");
+                .hasMessageContaining("Cheque grid totals 51,000.00 but the amount to collect is 53,000.00");
 
         assertThat(journalEntryRows()).isZero();
         assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.DRAFT);
@@ -729,7 +729,7 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
         assertThat(dry.errors()).hasSize(3);
         assertThat(dry.errors().get(0)).isEqualTo("Line 2 (ADMIN_FEE) has no credit account.");
         assertThat(dry.errors().get(1)).contains("ADMIN_FEE").contains("PDC_RECEIVABLE");
-        assertThat(dry.errors().get(2)).isEqualTo("Cheque grid totals 51,000.00 but contract value is 53,000.00.");
+        assertThat(dry.errors().get(2)).isEqualTo("Cheque grid totals 51,000.00 but the amount to collect is 53,000.00.");
         assertThat(dry.contractValue()).isEqualByComparingTo("53000");
         assertThat(dry.contractValueInclVat()).isEqualByComparingTo("53000");
         assertThat(dry.chequeTotal()).isEqualByComparingTo("51000");
@@ -824,7 +824,7 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
                 line("RENT", "51000"),
                 line("ADMIN_FEE", "1000")), "Fee halved"))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("Cheque grid totals 53,000.00 but contract value is 52,000.00");
+                .hasMessageContaining("Cheque grid totals 53,000.00 but the amount to collect is 52,000.00");
 
         // Nothing moved: the original TCO is still the posted one, no TCR exists,
         // and the lines are the ones that were posted.

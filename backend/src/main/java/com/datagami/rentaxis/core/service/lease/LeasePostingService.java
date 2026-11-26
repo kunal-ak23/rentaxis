@@ -1068,7 +1068,9 @@ public class LeasePostingService {
                     + (gap.signum() > 0 ? " still to collect)." : " too much)."));
         } else if (!noRows && chequeTotal.compareTo(expected) != 0) {
             otherErrors.add("Cheque grid totals " + money(chequeTotal)
-                    + " but contract value" + (gross.compareTo(net) == 0 ? " is " : " incl. VAT is ")
+                    // QA-16: gross includes the refundable deposit, which the screens no
+                    // longer call "contract value"; it is the amount the cheques collect.
+                    + " but the amount to collect" + (gross.compareTo(net) == 0 ? " is " : " incl. VAT is ")
                     + money(gross) + ".");
         }
         otherErrors.addAll(instalmentVatErrors(lease, lines, cheques, checks.periodLockApplies()));

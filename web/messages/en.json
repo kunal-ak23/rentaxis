@@ -2630,6 +2630,7 @@
     "discount": "Discount Amount",
     "netAmount": "Net Amount",
     "contractValue": "Contract Value",
+    "contractValueExclDeposit": "Contract Value (excl. deposit)",
     "chequeGrid": "Cheque Grid",
     "generateCheques": "Generate Cheques",
     "generateChequeNumbers": "Generate Cheque Numbers",

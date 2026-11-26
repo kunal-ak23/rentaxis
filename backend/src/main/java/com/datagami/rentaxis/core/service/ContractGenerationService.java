@@ -811,8 +811,7 @@ public class ContractGenerationService {
 
     /**
      * QA-18: {@code payee} is who the cheques are made out to — the landlord
-     * organisation — printed under "In Favour Of"; what each cheque is for (its
-     * narration) has its own Particulars column.
+     * organisation — printed under "In Favour Of".
      */
     public String buildSection4Rows(Lease lease, List<Cheque> cheques, String payee) {
         if (cheques == null || cheques.isEmpty()) return "";
@@ -842,9 +841,8 @@ public class ContractGenerationService {
     }
 
     /**
-     * One row. "In Favour Of" is the payee the cheque is made out to (QA-18); the
-     * narration — "Rent - 1st Installment | SD", what the grid folded the deposits
-     * and fees into — is what the cheque is for, under Particulars.
+     * One row. "In Favour Of" is the payee the cheque is made out to (QA-18), as on
+     * a UAE post-dated cheque schedule; the narration stays on the cheque grid.
      */
     private void appendSection4Row(StringBuilder sb, int sNo, Cheque c, String payee) {
         sb.append("<tr>")
@@ -852,7 +850,6 @@ public class ContractGenerationService {
                 .append("<td>").append(escapeUserText(c.getChequeNumber())).append("</td>")
                 .append("<td>").append(c.getChequeDate() != null ? formatDate(c.getChequeDate()) : "").append("</td>")
                 .append("<td>").append(escapeUserText(payee)).append("</td>")
-                .append("<td>").append(escapeUserText(c.getNarration())).append("</td>")
                 .append("<td>").append(escapeUserText(c.getPayeeBank())).append("</td>")
                 .append("<td class=\"num\">").append(formatAmount(nz(c.getAmount()))).append("</td>")
                 .append("</tr>");

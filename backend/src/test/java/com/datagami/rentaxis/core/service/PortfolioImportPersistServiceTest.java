@@ -203,7 +203,7 @@ class PortfolioImportPersistServiceTest {
         PortfolioImportPersistService.PersistResult result = service.persistWorkbook(wb, job);
         org.mockito.Mockito.when(leasePoster.postPortfolioLease(any(), any())).thenThrow(
                 new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
-                        "Cheque grid totals 38,000.00 but contract value is 42,800.00."));
+                        "Cheque grid totals 38,000.00 but the amount to collect is 42,800.00."));
 
         service.postRequested(result, job);
 
@@ -214,7 +214,7 @@ class PortfolioImportPersistServiceTest {
             assertThat(w.getSheet()).isEqualTo("Leases");
             assertThat(w.getRow()).isEqualTo(2);
             assertThat(w.getMessage()).isEqualTo(
-                    "Imported as draft: Cheque grid totals 38,000.00 but contract value is 42,800.00.");
+                    "Imported as draft: Cheque grid totals 38,000.00 but the amount to collect is 42,800.00.");
         });
     }
 

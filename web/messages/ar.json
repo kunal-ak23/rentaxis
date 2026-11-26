@@ -2630,6 +2630,7 @@
     "discount": "مبلغ الخصم",
     "netAmount": "صافي المبلغ",
     "contractValue": "قيمة العقد",
+    "contractValueExclDeposit": "قيمة العقد (بدون التأمين)",
     "chequeGrid": "جدول الشيكات",
     "generateCheques": "توليد الشيكات",
     "generateChequeNumbers": "توليد أرقام الشيكات",
