@@ -45,6 +45,10 @@ public class Unit extends BaseTenantEntity {
     @Column(name = "size_sqft")
     private BigDecimal sizeSqft;
 
+    /** DEWA premise number, digits only (6-12); unique per tenant when set. */
+    @Column(name = "dewa_premise_number", length = 12)
+    private String dewaPremiseNumber;
+
     @Enumerated(EnumType.STRING)
     private UnitStatus status = UnitStatus.VACANT;
 

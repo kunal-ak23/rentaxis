@@ -50,6 +50,7 @@ import { stillDueOf, writtenOffTotals } from "@/components/leases/writtenOff";
 import TransferLeaseDialog from "@/components/leases/TransferLeaseDialog";
 import LeaseHistoryStrip from "@/components/leases/LeaseHistoryStrip";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
+import LeaseIndexChecks from "@/components/rentalIndex/LeaseIndexChecks";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
 import RaisePenaltyDialog, { PENALTY_REASONS } from "@/components/penalties/RaisePenaltyDialog";
@@ -911,6 +912,8 @@ export default function LeaseDetailPage() {
                                             {t("ejariOriginal", { number: lease.ejariNumber })}
                                         </p>
                                     )}
+                                    {/* Final review I2 (spec 2026-11-25 §9): the stored rental index checks; staff only. */}
+                                    <LeaseIndexChecks leaseId={lease.id} refreshKey={lease.version} />
                                 </Card>
 
                                 {renter && (

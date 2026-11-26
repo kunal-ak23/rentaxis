@@ -20,6 +20,8 @@ export const PERMISSIONS = {
     // silently widen or narrow the other.
     canViewPropertyManagers: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateUnits: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // PUT /units/{id}/dewa-premise-number: UnitController @PreAuthorize SUPER_ADMIN, TENANT_ADMIN, PROPERTY_MANAGER (property-scoped).
+    canSetUnitDewaPremise: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     // Draft-lease create/update/delete. NOT widened to ACCOUNTANT for
     // accounting-v2: LeaseController's POST /leases, PUT /{id} and DELETE /{id}
     // are all @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN')") — an
@@ -36,6 +38,9 @@ export const PERMISSIONS = {
     canViewLeases: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
     canViewRenterRatings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT'] as UserRole[],
     canAdjustRenterRatings: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // RentalIndexController: staff read, admins and property managers write.
+    canViewRentalIndex: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT'] as UserRole[],
+    canManageRentalIndex: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canManageRenters: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     // The accounting-v2 ledger pages: chart of accounts, journals, general ledger,
     // tenant ledger, trial balance. ACCOUNTANT is admitted because every controller

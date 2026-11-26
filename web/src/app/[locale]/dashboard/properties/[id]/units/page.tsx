@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, use, useSyncExternalStore } from "react"
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, ArrowLeft, Activity, Loader2, BookOpen } from "lucide-react";
+import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, ArrowLeft, Activity, Loader2, BookOpen, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import CardFlip from "@/components/ui/card-flip";
 import { Link } from "@/i18n/routing";
@@ -19,6 +19,8 @@ import { idParam, stripInvalidIdParams } from "@/lib/urlIds";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { dewaProblem, normaliseDewa } from "@/lib/units/dewa";
+import { serverText } from "@/components/finance/bankrec/serverText";
 
 /** The units page's own page size, for the pages-loop below (S16-02). */
 const UNITS_PAGE_SIZE = 200;
@@ -50,6 +52,7 @@ type Unit = {
     expectedRent: number;
     actualRent: number;
     currentTenantName?: string;
+    dewaPremiseNumber?: string | null;
 };
 
 /** The badge/back-panel text for a unit's occupancy, translated. */
@@ -85,6 +88,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
     const t = useTranslations("MasterData");
     const tCommon = useTranslations("Common");
     const { data: session } = useSession();
+    const canSetDewa = hasPermission(session?.user?.role as UserRole | undefined, "canSetUnitDewaPremise");
     const canViewLedger = hasPermission(session?.user?.role as UserRole | undefined, "canAccessFinance");
     // S16-02: the tower (Building) filter, in the URL so a link/bookmark keeps
     // it — same pattern as the Contracts list's URL-persisted filters:
@@ -130,8 +134,15 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
         actualRent: 0,
         status: "VACANT",
         currentTenantName: "",
+        dewaPremiseNumber: "",
         property: { id: propertyId }
     });
+
+    // Inline DEWA edit: one unit at a time.
+    const [dewaEditId, setDewaEditId] = useState<string | null>(null);
+    const [dewaDraft, setDewaDraft] = useState("");
+    const [dewaError, setDewaError] = useState<string | null>(null);
+    const [dewaSaving, setDewaSaving] = useState(false);
 
     // R1 P3-1: a request counter, so a tower/property change that reorders
     // responses never lets a stale page overwrite what a newer one already set.
@@ -186,11 +197,18 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
         ev.preventDefault();
         setSubmitting(true);
         setFormError(null);
+        if (dewaProblem(formData.dewaPremiseNumber)) {
+            setFormError(tCommon("errors.unit.dewaInvalid"));
+            setSubmitting(false);
+            return;
+        }
         try {
+            const { dewaPremiseNumber, ...rest } = formData;
+            const dewa = normaliseDewa(dewaPremiseNumber);
             const res = await fetch("/api/proxy/v1/units", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(dewa ? { ...rest, dewaPremiseNumber: dewa } : rest)
             });
             await throwIfNotOk(res);
             setShowForm(false);
@@ -203,13 +221,39 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                 actualRent: 0,
                 status: "VACANT",
                 currentTenantName: "",
+                dewaPremiseNumber: "",
                 property: { id: propertyId }
             });
         } catch (err) {
             console.error(err);
-            setFormError(err instanceof ApiError ? err.message : "Failed to create property. Please try again.");
+            setFormError(err instanceof ApiError ? serverText(tCommon, err) : "Failed to create property. Please try again.");
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const saveDewa = async (unitId: string) => {
+        if (dewaProblem(dewaDraft)) {
+            setDewaError(tCommon("errors.unit.dewaInvalid"));
+            return;
+        }
+        const value = normaliseDewa(dewaDraft);
+        setDewaSaving(true);
+        setDewaError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/units/${unitId}/dewa-premise-number`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ dewaPremiseNumber: value === "" ? null : value }),
+            });
+            await throwIfNotOk(res);
+            const saved: Unit = await res.json();
+            setUnits(prev => prev.map(u => (u.id === unitId ? { ...u, dewaPremiseNumber: saved.dewaPremiseNumber ?? null } : u)));
+            setDewaEditId(null);
+        } catch (err) {
+            setDewaError(serverText(tCommon, err));
+        } finally {
+            setDewaSaving(false);
         }
     };
 
@@ -275,6 +319,10 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                                     <NumberInput placeholder="Sq. Ft." className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.sizeSqft} onChange={(v) => setFormData({ ...formData, sizeSqft: v })} />
                                 </div>
                             </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("dewaPremiseNumber")}</label>
+                                <input data-testid="unit-dewa" dir="ltr" inputMode="numeric" placeholder={t("dewaPremiseHint")} className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.dewaPremiseNumber} onChange={ev => setFormData({ ...formData, dewaPremiseNumber: ev.target.value })} />
+                            </div>
                             {formError && (
                                 <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">
                                     {formError}
@@ -292,7 +340,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {loading ? (
                     Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} className="h-[280px] bg-surface rounded-xl border border-border p-6 animate-pulse">
+                        <div key={i} className="h-[360px] bg-surface rounded-xl border border-border p-6 animate-pulse">
                             <div className="flex justify-between items-start mb-8">
                                 <div className="w-10 h-10 bg-background rounded-xl" />
                                 <div className="w-16 h-5 bg-background rounded-lg" />
@@ -312,7 +360,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                     return (
                     <CardFlip
                         key={u.id}
-                        className="h-[280px] transition-all duration-200"
+                        className="h-[360px] transition-all duration-200"
                         front={
                             <div className="h-full flex flex-col justify-between">
                                 <div className="flex justify-between items-start gap-2">
@@ -350,11 +398,13 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                         }
                         back={
                             <div className="h-full flex flex-col">
-                                <h4 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
+                                <h4 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-2 flex items-center gap-2">
                                     <Info size={12} />
                                     Property Details
                                 </h4>
-                                <div className="space-y-4 flex-1">
+                                {/* The card is a fixed height: the details scroll so the ledger link and Edit Details stay reachable. */}
+                                <div className="space-y-2 flex-1 min-h-0 overflow-y-auto">
+
                                     <div className="bg-surface/50 rounded-xl p-3 border border-border">
                                         <div className="flex items-center gap-2 mb-1">
                                             <Users size={12} className="text-primary/40" />
@@ -392,6 +442,30 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                                             </div>
                                             <p className="text-xs font-bold text-foreground">{formatCurrencyCompact(u.actualRent)}</p>
                                         </div>
+                                    </div>
+                                    <div className="bg-surface/50 rounded-xl px-3 py-2 border border-border">
+                                        <span className="text-[9px] font-bold text-muted uppercase">{t("dewaPremiseNumber")}</span>
+                                        {dewaEditId === u.id ? (
+                                            <div className="mt-1">
+                                                <div className="flex items-center gap-2">
+                                                    <input data-testid={`unit-dewa-input-${u.id}`} dir="ltr" inputMode="numeric" autoFocus aria-label={t("dewaPremiseNumber")} className="min-w-0 flex-1 bg-input border border-border px-2 py-1 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={dewaDraft} onChange={ev => setDewaDraft(ev.target.value)} />
+                                                    <button type="button" data-testid={`unit-dewa-save-${u.id}`} disabled={dewaSaving} onClick={() => saveDewa(u.id)} className="px-2 py-1 rounded-lg bg-primary text-primary-foreground text-[10px] font-bold cursor-pointer disabled:opacity-50">{t("dewaSave")}</button>
+                                                    <button type="button" aria-label={t("cancel")} onClick={() => setDewaEditId(null)} className="p-1 text-muted cursor-pointer"><X size={12} /></button>
+                                                </div>
+                                                {dewaError && <p data-testid={`unit-dewa-error-${u.id}`} className="text-[10px] text-error mt-1">{dewaError}</p>}
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-xs font-bold text-foreground">
+                                                    {u.dewaPremiseNumber
+                                                        ? <span dir="ltr" data-testid={`unit-dewa-value-${u.id}`}>{u.dewaPremiseNumber}</span>
+                                                        : <span data-testid={`unit-dewa-value-${u.id}`} className="text-muted font-medium">{t("dewaNotSet")}</span>}
+                                                </p>
+                                                {canSetDewa && (
+                                                    <button type="button" data-testid={`unit-dewa-edit-${u.id}`} aria-label={t("dewaEdit")} onClick={() => { setDewaEditId(u.id); setDewaDraft(u.dewaPremiseNumber ?? ""); setDewaError(null); }} className="p-1 text-muted hover:text-foreground cursor-pointer"><Pencil size={12} /></button>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 {canViewLedger && (

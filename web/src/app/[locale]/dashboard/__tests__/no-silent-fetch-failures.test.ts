@@ -70,9 +70,12 @@ describe("dashboard pages handle failed loads", () => {
         expect(used.size, "expected pages to use the shared Common strings").toBeGreaterThan(3);
 
         for (const key of used) {
-            expect(en, `en.Common.${key}`).toHaveProperty(key);
-            expect(ar, `ar.Common.${key}`).toHaveProperty(key);
-            expect(ar[key], `ar.Common.${key} is still English`).not.toBe(en[key]);
+            // Keys may be nested ("errors.unit.dewaInvalid"): resolve them as a dotted path.
+            const at = (o: Record<string, unknown>) =>
+                key.split(".").reduce<unknown>((v, k) => (v as Record<string, unknown> | undefined)?.[k], o);
+            expect(at(en), `en.Common.${key}`).toBeTypeOf("string");
+            expect(at(ar), `ar.Common.${key}`).toBeTypeOf("string");
+            expect(at(ar), `ar.Common.${key} is still English`).not.toBe(at(en));
         }
     });
 });

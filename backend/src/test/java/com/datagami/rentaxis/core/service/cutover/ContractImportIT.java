@@ -180,6 +180,33 @@ class ContractImportIT extends AbstractPostgresIT {
     // ------------------------------------------------------------------
 
     @Test
+    void aDewaPremiseNumberAlreadyOnAnExistingUnitIsARowErrorAndNothingIsPersisted() throws Exception {
+        tx.executeWithoutResult(s -> {
+            com.datagami.rentaxis.domain.entity.Property held = new com.datagami.rentaxis.domain.entity.Property();
+            held.setNameEn("Existing Tower " + UUID.randomUUID());
+            held.setEmirate(com.datagami.rentaxis.domain.entity.enums.Emirate.DUBAI);
+            held = propertyRepo.save(held);
+            com.datagami.rentaxis.domain.entity.Unit existing = new com.datagami.rentaxis.domain.entity.Unit();
+            existing.setProperty(held);
+            existing.setUnitNumber("E-1");
+            existing.setDewaPremiseNumber("123456789");
+            unitRepo.save(existing);
+        });
+        try (Workbook wb = template()) {
+            set(wb, "Units", 1, 6, "123456789");
+            List<ImportErrorDTO> errors = validate(wb);
+            assertThat(errors).anySatisfy(e -> {
+                assertThat(e.getSheet()).isEqualTo("Units");
+                assertThat(e.getRow()).isEqualTo(2);
+                assertThat(e.getField()).isEqualTo("DewaPremiseNo");
+                assertThat(e.getMessage()).contains("already on unit E-1");
+            });
+            Integer unitCount = tx.execute(s -> unitRepo.findAll().size());
+            assertThat(unitCount).isEqualTo(1);
+        }
+    }
+
+    @Test
     void theCutOverTemplateImportsAsDraftLeasesInOneBatch() throws Exception {
         try (Workbook wb = template()) {
             assertThat(validate(wb)).isEmpty();

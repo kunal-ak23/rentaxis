@@ -391,3 +391,5 @@ databaseChangeLog:
       file: db/changelog/changesets/192-booking-income-account.yaml
   - include:
       file: db/changelog/changesets/193-booking-fee-snapshot.yaml
+  - include:
+      file: db/changelog/changesets/194-rental-index.yaml

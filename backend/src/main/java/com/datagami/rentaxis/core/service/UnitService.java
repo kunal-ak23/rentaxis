@@ -46,8 +46,12 @@ public class UnitService {
         if (r.property() == null) {
             throw new BusinessRuleViolationException("property.id is required");
         }
+        String dewa = UnitRules.normaliseDewa(r.dewaPremiseNumber());
+        requireValidDewa(dewa);
         Property property = refs.propertyOrNull(r.property());
         Building building = r.building() == null ? null : refs.building(r.building().id(), property);
+        propertyScope.requireCanAccessProperty(property.getId());
+        requireDewaFree(dewa, property.getTenantId(), null);
 
         // Break-it R3 ops3 F1: one unit number once per building (or per property
         // for a unit in no building), compared normalised.
@@ -62,13 +66,65 @@ public class UnitService {
         u.setUnitNumber(number);
         if (r.type() != null) u.setType(r.type());
         u.setSizeSqft(r.sizeSqft());
+        u.setDewaPremiseNumber(dewa);
         if (r.status() != null) u.setStatus(r.status());
         if (r.expectedRent() != null) u.setExpectedRent(r.expectedRent());
         if (r.actualRent() != null) u.setActualRent(r.actualRent());
         u.setCurrentTenantName(r.currentTenantName());
         Unit saved = repository.save(u);
-        flushTranslatingNumberClash(number, property, building);
+        flushTranslatingNumberClash(number, property, building, dewa);
         return Loaded.with(saved, Unit::getProperty, Unit::getBuilding);
+    }
+
+    /**
+     * Sets, changes or clears (blank or null) a unit's DEWA premise number. Digits only,
+     * 6 to 12; one number belongs to one unit in the tenant.
+     */
+    @Transactional
+    public Unit setDewaPremiseNumber(UUID unitId, String raw) {
+        Unit unit = repository.findById(unitId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Unit not found"));
+        propertyScope.requireCanAccessUnit(unit, "Unit not found");
+        String dewa = UnitRules.normaliseDewa(raw);
+        requireValidDewa(dewa);
+        requireDewaFree(dewa, unit.getTenantId(), unit.getId());
+        unit.setDewaPremiseNumber(dewa);
+        Unit saved = repository.save(unit);
+        try {
+            repository.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            if (isDewaIndexViolation(e)) throw dewaTaken(dewa);
+            throw e;
+        }
+        return Loaded.with(saved, Unit::getProperty, Unit::getBuilding);
+    }
+
+    public static final String DEWA_TAKEN = "unit.dewaTaken";
+
+    private static void requireValidDewa(String normalised) {
+        UnitRules.dewaProblem(normalised).ifPresent(msg -> {
+            throw new BusinessRuleViolationException(msg, UnitRules.DEWA_INVALID, java.util.Map.of());
+        });
+    }
+
+    private void requireDewaFree(String dewa, UUID tenantId, UUID exceptUnitId) {
+        if (dewa == null) return;
+        boolean taken = repository.findByTenantIdAndDewaPremiseNumber(tenantId, dewa).stream()
+                .anyMatch(o -> !o.getId().equals(exceptUnitId));
+        if (taken) throw dewaTaken(dewa);
+    }
+
+    private static BusinessRuleViolationException dewaTaken(String dewa) {
+        return new BusinessRuleViolationException("DEWA premise number " + dewa + " is already on another unit",
+                DEWA_TAKEN, java.util.Map.of("dewaPremiseNumber", dewa));
+    }
+
+    private static boolean isDewaIndexViolation(Throwable e) {
+        int depth = 0;
+        for (Throwable t = e; t != null && depth++ < 16; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains("ux_units_tenant_dewa")) return true;
+        }
+        return false;
     }
 
     /** The normalised unit numbers already taken in the scope a new unit in {@code building} (or none) joins. */
@@ -103,10 +159,13 @@ public class UnitService {
      * meets changeset 157's unique index here, and gets the same readable refusal
      * rather than a constraint name.
      */
-    private void flushTranslatingNumberClash(String number, Property property, Building building) {
+    private void flushTranslatingNumberClash(String number, Property property, Building building, String dewa) {
         try {
             repository.flush();
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            if (isDewaIndexViolation(e)) {
+                throw dewaTaken(dewa);
+            }
             if (isNumberIndexViolation(e)) {
                 throw numberTaken(number, property, building, null);
             }

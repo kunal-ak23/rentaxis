@@ -38,6 +38,12 @@ public class CreateLeaseDTO {
      */
     private Long version;
 
+    /**
+     * Final review I1: on an update of a renewal's successor draft, why its rent goes above the rental index cap
+     * (spec 2026-11-25 §14.1); required only then, 1–500 characters. Ignored on create.
+     */
+    private String indexOverrideReason;
+
     @NotNull
     private UUID unitId;
 

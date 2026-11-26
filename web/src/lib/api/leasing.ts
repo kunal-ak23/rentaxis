@@ -406,6 +406,8 @@ export type RenewLeaseInput = {
   ejariNumber?: string | null;
   /** Spec §4d: charges added to the renewal, e.g. a renewal fee. */
   additionalLines?: LeaseLineInput[] | null;
+  /** Required by the server when the new rent is above the rental index cap; send only when entered. */
+  indexOverrideReason?: string | null;
 };
 
 /** RenewalPreviewDTO (spec §4a/§4c). */
@@ -423,6 +425,21 @@ export type RenewalPreview = {
   exceedsWarn: boolean;
   /** PR #358 R1 P2-3: the current lease's rent discount, which does not renew. */
   droppedDiscount?: number | null;
+  /** Rental index fields: all null/absent when the feature is off. */
+  indexStatus?: "OK" | "NO_INDEX" | "NOT_DUBAI" | "NO_EMIRATE" | "NOT_RESIDENTIAL" | null;
+  indexMin?: number | null;
+  indexMax?: number | null;
+  indexAverage?: number | null;
+  indexGapPercent?: number | null;
+  indexAllowedPercent?: number | null;
+  indexCapRent?: number | null;
+  indexAboveCap?: boolean | null;
+  indexRateId?: string | null;
+  indexSource?: string | null;
+  indexCheckedOn?: string | null;
+  indexUnitResult?: boolean | null;
+  noticeDeadline?: string | null;
+  noticePassed?: boolean | null;
 };
 
 /** ChequeRowInput — one row of a lease's cheque grid, or an extension's registered cheques. */
@@ -1798,6 +1815,8 @@ export type BulkRenewInput = {
   /** Also cut each draft's cheque grid with the draft editor's defaults. */
   generateGrid: boolean;
   additionalLines?: LeaseLineInput[] | null;
+  /** One shared reason for every contract above its rental index cap; send only when entered. */
+  indexOverrideReason?: string | null;
 };
 
 /** A batch row's refusal, in the single act's words (`code`/`args` for `serverText`). */
@@ -1813,6 +1832,11 @@ export type BulkRenewRow = BatchRefusal & {
   newRent: number | null;
   changePercent: number | null;
   chequeRows: number;
+  /** Rental index, null on a failed row or when the feature is off. */
+  indexAllowedPercent?: number | null;
+  indexCapRent?: number | null;
+  indexAboveCap?: boolean | null;
+  indexStatus?: string | null;
 };
 
 /** `LeaseBatch.TerminateRequest` (scale #17): null date = each contract's own end date. */

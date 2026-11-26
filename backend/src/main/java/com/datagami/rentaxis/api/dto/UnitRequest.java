@@ -31,5 +31,13 @@ public record UnitRequest(
         BigDecimal actualRent,
         String currentTenantName,
         IdRef property,
-        IdRef building) {
+        IdRef building,
+        String dewaPremiseNumber) {
+
+    /** The shape before the DEWA premise number: callers that do not set it. */
+    public UnitRequest(String unitNumber, UnitType type, BigDecimal sizeSqft, UnitStatus status,
+                       BigDecimal expectedRent, BigDecimal actualRent, String currentTenantName,
+                       IdRef property, IdRef building) {
+        this(unitNumber, type, sizeSqft, status, expectedRent, actualRent, currentTenantName, property, building, null);
+    }
 }

@@ -368,6 +368,7 @@ public class ContractImportPersistService {
             String unitType = SheetCells.getCellString(row, 3);
             String sizeSqft = SheetCells.getCellString(row, 4);
             String expectedRent = SheetCells.getCellString(row, 5);
+            String dewaPremiseNo = SheetCells.getCellString(row, 6);
             Property property = propertyByName.get(propertyName.toLowerCase(Locale.ROOT));
 
             Building building = null;
@@ -402,6 +403,7 @@ public class ContractImportPersistService {
             if (!unitType.isEmpty()) u.setType(enumOf(UnitType.class, unitType));
             if (!sizeSqft.isEmpty()) u.setSizeSqft(new BigDecimal(sizeSqft));
             if (!expectedRent.isEmpty()) u.setExpectedRent(new BigDecimal(expectedRent));
+            u.setDewaPremiseNumber(com.datagami.rentaxis.core.service.UnitRules.normaliseDewa(dewaPremiseNo));
 
             Unit savedUnit = unitRepository.save(u);
             batches.linkEntity(batch.getId(), ImportedEntityType.UNIT, savedUnit.getId());

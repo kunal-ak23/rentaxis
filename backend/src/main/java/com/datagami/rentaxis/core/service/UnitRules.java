@@ -112,6 +112,26 @@ public final class UnitRules {
         return MoneyAmounts.problem(rent, false, false, RENT_MAX);
     }
 
+    /** Error code when a DEWA premise number is not 6 to 12 digits. */
+    public static final String DEWA_INVALID = "unit.dewaInvalid";
+
+    /** The DEWA premise number as stored: spaces stripped; blank or null is null (not set). */
+    public static String normaliseDewa(String raw) {
+        if (raw == null) return null;
+        String s = raw.replaceAll("\\s+", "");
+        return s.isEmpty() ? null : s;
+    }
+
+    /** Why this DEWA premise number is refused (after {@link #normaliseDewa}), or empty. Null passes. */
+    public static java.util.Optional<String> dewaProblem(String raw) {
+        String s = normaliseDewa(raw);
+        if (s == null) return java.util.Optional.empty();
+        if (!s.matches("^[0-9]{6,12}$")) {
+            return java.util.Optional.of("DEWA premise number must be 6 to 12 digits");
+        }
+        return java.util.Optional.empty();
+    }
+
     private static void addIfPresent(List<String> into, String problem, String prefix) {
         if (problem != null) into.add(prefix == null ? problem : prefix + problem);
     }

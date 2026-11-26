@@ -37,6 +37,16 @@ public class UnitController {
         return ResponseEntity.ok(service.createUnit(request));
     }
 
+    /** Body of {@code PUT /units/{id}/dewa-premise-number}; null or blank clears the number. */
+    public record DewaPremiseRequest(String dewaPremiseNumber) {
+    }
+
+    @PutMapping("/{id}/dewa-premise-number")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<Unit> setDewaPremiseNumber(@PathVariable UUID id, @RequestBody DewaPremiseRequest request) {
+        return ResponseEntity.ok(service.setDewaPremiseNumber(id, request == null ? null : request.dewaPremiseNumber()));
+    }
+
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<Unit>> getAllUnits() {

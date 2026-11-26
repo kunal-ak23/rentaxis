@@ -26,6 +26,9 @@ import NotRenewingDialog from "./NotRenewingDialog";
 import ContactRenterDialog from "./ContactRenterDialog";
 import RatingBadge from "@/components/renters/rating/RatingBadge";
 import { useRenterRatingEnabled } from "@/components/renters/rating/useRenterRatingEnabled";
+import { useRentalIndexEnabled } from "@/components/rentalIndex/useRentalIndexEnabled";
+import { wholeAed } from "@/components/rentalIndex/format";
+import { rentalIndexApi, type LeaseCap } from "@/lib/api/rentalIndex";
 import { renterRatingsApi, type RatingGrade } from "@/lib/api/renterRatings";
 
 /** The list endpoint takes at most 200 renter ids per call. */
@@ -54,6 +57,8 @@ export default function RenewalQueue({ filters, onStage, perms }: {
     const tCommon = useTranslations("Common");
     const tRating = useTranslations("RenterRating");
     const ratingOn = useRenterRatingEnabled();
+    const indexOn = useRentalIndexEnabled();
+    const tIdx = useTranslations("RentalIndex");
     const locale = useLocale();
     const router = useRouter();
     const [rows, setRows] = useState<LeaseDetail[]>([]);
@@ -78,6 +83,8 @@ export default function RenewalQueue({ filters, onStage, perms }: {
     const [reloadKey, setReloadKey] = useState(0);
     // Stored ratings of the visible rows' tenants, read in one batch (never one request per row).
     const [ratings, setRatings] = useState<Map<string, { score: number; grade: RatingGrade }>>(new Map());
+    // Max increase per visible contract, read in one batch (the API chunks past its own limit).
+    const [caps, setCaps] = useState<Map<string, LeaseCap>>(new Map());
     const begin = useLatestRequest();
     const beginCounts = useLatestRequest();
 
@@ -147,7 +154,26 @@ export default function RenewalQueue({ filters, onStage, perms }: {
             ? <RatingBadge compact renterId={l.renterId} prefetched={r} />
             : <span className="text-muted" title={tRating("notRated")}>—</span>;
     };
-    const cols = ratingOn ? 9 : 8;
+    useEffect(() => {
+        if (!indexOn || rows.length === 0) return;
+        let alive = true;
+        rentalIndexApi.caps(rows.map(r => r.id))
+            .then(list => { if (alive) setCaps(new Map(list.map(c => [c.leaseId, c]))); })
+            .catch(() => {});
+        return () => { alive = false; };
+    }, [indexOn, rows]);
+
+    const capCell = (l: LeaseCap | undefined) => {
+        if (!l) return <span className="text-muted">—</span>;
+        switch (l.status) {
+            case "OK": return <bdi dir="ltr">{tIdx("capCell", { pct: l.allowedPercent ?? 0, cap: wholeAed(l.capRent ?? 0) })}</bdi>;
+            case "NO_INDEX": return <span className="text-muted">{tIdx("noIndex")}</span>;
+            case "NOT_DUBAI": return <span className="text-muted">{tIdx("notDubai")}</span>;
+            case "NO_EMIRATE": return <span className="text-warning">{tIdx("setEmirate")}</span>;
+            default: return <span className="text-muted">{tIdx("notResidential")}</span>;
+        }
+    };
+    const cols = 8 + (ratingOn ? 1 : 0) + (indexOn ? 1 : 0);
 
     useEffect(() => {
         setPage(1);
@@ -307,6 +333,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                 <th className="p-2 text-start">{t("colProperty")}</th>
                                 <th className="p-2 text-end">{t("colRent")}</th>
                                 {ratingOn && <th className="p-2 text-start">{tRating("colRating")}</th>}
+                                {indexOn && <th className="p-2 text-start">{tIdx("colMaxIncrease")}</th>}
                                 <th className="p-2 text-start">{t("colState")}</th>
                                 <th className="p-2 text-end"><span className="sr-only">{t("actions")}</span></th>
                             </tr>
@@ -329,6 +356,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                         <td className="p-2">{l.propertyName ?? "—"}</td>
                                         <td className="p-2 text-end tabular-nums"><bdi dir="ltr">{formatCurrency(l.currentRentAmount ?? l.rentAmount)}</bdi></td>
                                         {ratingOn && <td className="p-2">{ratingCell(l)}</td>}
+                                        {indexOn && <td className="p-2 tabular-nums" data-testid={`renewal-cap-${l.id}`}>{capCell(caps.get(l.id))}</td>}
                                         <td className={cn("p-2", s.tone)}>
                                             {l.renewedToLeaseId ? <Link href={`/dashboard/leases/${l.renewedToLeaseId}`} className="hover:underline">{s.text}</Link> : s.text}
                                         </td>
@@ -355,6 +383,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                     <p className="text-muted truncate">{l.propertyName ?? "—"}</p>
                                     <p>{t("endsOn", { date: fmtIsoDate(l.endDate, locale) })} · <bdi dir="ltr">{formatCurrency(l.currentRentAmount ?? l.rentAmount)}</bdi></p>
                                     {ratingOn && <div>{ratingCell(l)}</div>}
+                                    {indexOn && <p className="text-muted">{tIdx("colMaxIncrease")}: {capCell(caps.get(l.id))}</p>}
                                     <p className={s.tone}>{s.text}</p>
                                 </div>
                                 <ActionsMenu label={t("actions")} items={actions(l, "card")} variant="icon" testId={`renewal-card-actions-${l.id}`} triggerTestId={`renewal-card-actions-trigger-${l.id}`} />

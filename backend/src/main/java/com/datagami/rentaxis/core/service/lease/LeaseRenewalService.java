@@ -11,28 +11,39 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.ledger.UnmappedAccountRoleException;
+import com.datagami.rentaxis.core.service.rentalindex.RentalIndexMath;
+import com.datagami.rentaxis.core.service.rentalindex.RentalIndexRateService;
+import com.datagami.rentaxis.core.service.rentalindex.RentalIndexRateService.IndexStatus;
 import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
+import com.datagami.rentaxis.domain.entity.RenewalIndexCheck;
+import com.datagami.rentaxis.domain.entity.RentalIndexRate;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.RenewalIndexCheckRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * The two ways a tenancy continues past the end of its contract (spec §6.6, §6.7).
@@ -90,6 +101,8 @@ public class LeaseRenewalService {
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
     private final AdditionalCharges charges;
+    /** Required (final review F3): the index reads RENT lines through it, so without it the cap would fail open. */
+    private final com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypes;
 
     /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
     private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
@@ -109,7 +122,8 @@ public class LeaseRenewalService {
                                LeaseChequeRegistrar chequeRegistrar,
                                LeaseAccessPolicy leaseAccessPolicy,
                                ApplicationEventPublisher events,
-                               AdditionalCharges charges) {
+                               AdditionalCharges charges,
+                               com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypes) {
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -120,6 +134,7 @@ public class LeaseRenewalService {
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.events = events;
         this.charges = charges;
+        this.chargeTypes = java.util.Objects.requireNonNull(chargeTypes, "chargeTypes");
     }
 
     // ------------------------------------------------------------------
@@ -140,6 +155,16 @@ public class LeaseRenewalService {
      */
     @Transactional
     public LeaseDTO renew(UUID leaseId, RenewLeaseRequest r) {
+        return renewWithIndex(leaseId, r).draft();
+    }
+
+    /** A renewal's draft with the index assessment {@code renew} enforced and recorded (null: flag off). */
+    record Renewed(LeaseDTO draft, IndexAssessment index) {
+    }
+
+    /** {@link #renew}, also returning the assessment from the plan the renewal was drafted from (bulk renew rows). */
+    @Transactional
+    Renewed renewWithIndex(UUID leaseId, RenewLeaseRequest r) {
         // Locked, not merely loaded. The "already renewed" check below reads a row
         // this call is about to create the competitor for: two accountants hitting
         // Renew at the same moment would both find no successor and both write one,
@@ -193,6 +218,8 @@ public class LeaseRenewalService {
         }
 
         RenewalPlan plan = plan(predecessor, r);
+        // Spec 2026-11-25 §14.1: the server holds every caller to the rental index cap, not only the dialog.
+        String overrideReason = requireIndexOverride(plan.index(), r.indexOverrideReason());
         CreateLeaseDTO dto = successorHeader(predecessor, r);
         dto.setLines(plan.lines());
         // Spec §4a: the new registration, when the operator already has it.
@@ -214,11 +241,12 @@ public class LeaseRenewalService {
             leaseService.recordLeaseEvent(successor, LeaseStatus.DRAFT, LeaseStatus.DRAFT,
                     "Renewal drafted; Ejari registration pending");
         }
+        recordIndexCheck(predecessor, successor.getId(), plan.index(), overrideReason);
         // Scale PR C ruling: renewing clears the soft "not renewing" mark.
         if (renewalMarks != null) renewalMarks.clearOnContinuation(leaseId);
         // Spec §4c: shown to the operator — "Not copied: Admin Fee 1,500 (one-off)".
         draft.setSkippedOneOffLines(plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList());
-        return draft;
+        return new Renewed(draft, plan.index());
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -257,7 +285,300 @@ public class LeaseRenewalService {
                               List<LeaseLineInput> lines, List<LeaseLine> copiedSources,
                               List<LeaseLine> skippedOneOff, BigDecimal warnPercent, boolean exceedsWarn,
                               /* PR #358 R1 P2-3: the predecessor's rent discount, which does not renew. */
-                              BigDecimal droppedDiscount) {
+                              BigDecimal droppedDiscount,
+                              /* Spec 2026-11-25: the rental index check; null when RENTAL_INDEX is off. */
+                              IndexAssessment index) {
+    }
+
+    /**
+     * A renewal measured against the Dubai rental index (spec 2026-11-25 §6, §14.2, §14.4).
+     *
+     * <p>Null when the RENTAL_INDEX flag is off. When it is on but the index does not apply (NOT_DUBAI,
+     * NO_EMIRATE, NOT_RESIDENTIAL) only {@code status} is set. NO_INDEX carries the notice deadline and no
+     * range. OK carries the range in force and, when the lease has a contract rent, the cap.</p>
+     *
+     * @param annualBase   the rent being renewed, annualised over the term it was priced for
+     * @param annualNew    the successor's rent, annualised over the successor's term
+     * @param aboveCap     {@code annualNew > cap.capRent}
+     * @param noticeDeadline the predecessor's end less 90 days (warning only)
+     * @param unitResult   the range in force is this unit's own DLD result (Ruling 2: its evidence and
+     *                     percentage apply)
+     */
+    public record IndexAssessment(IndexStatus status, RentalIndexRate rate, RentalIndexMath.Cap cap,
+                                  BigDecimal annualBase, BigDecimal annualNew, boolean aboveCap,
+                                  LocalDate noticeDeadline, boolean noticePassed, boolean unitResult) {
+    }
+
+    /** The longest override reason (spec §8: 1–500 characters). */
+    static final int MAX_OVERRIDE_REASON = 500;
+    /** Decree 43: a rent increase needs 90 days' notice before the contract ends. */
+    static final int NOTICE_DAYS = 90;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private RentalIndexRateService rentalIndex;
+    @org.springframework.beans.factory.annotation.Autowired
+    private RenewalIndexCheckRepository indexChecks;
+    private Clock clock = Clock.systemDefaultZone();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    /**
+     * The queue's "Max increase" (spec §8): the cap on today's rent for a 12-month successor starting the day after
+     * the lease ends, with the rent unchanged. Null when RENTAL_INDEX is off.
+     */
+    @Transactional(readOnly = true)
+    public IndexAssessment indexCapFor(UUID leaseId) {
+        Lease lease = leaseRepository.findByIdScopedToTenant(leaseId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Lease not found"));
+        leaseAccessPolicy.requireReadable(lease);
+        LocalDate from = lease.getEndDate() == null ? null : lease.getEndDate().plusDays(1);
+        LocalDate to = from == null ? null : termEnd(from, 12);
+        // The rent unchanged: the successor charges exactly what renews.
+        return assess(lease, () -> renewingRent(lease), IndexBase::net, from, to);
+    }
+
+    /**
+     * What one rent line charges the renter now: the headline less its discount, or, after a credit addendum, the
+     * credit's headline less discount (PR #359 R1 P2-1, follow-up ruling R7). {@code removed}: credited to nothing.
+     * The one place a renewal's base is worked out — the plan's base rent and the index both read it.
+     */
+    private record NetRent(BigDecimal net, BigDecimal discount, boolean removed) {
+    }
+
+    private NetRent netRent(LeaseLine line, List<LeaseEffectiveTerms.EffectiveLine> effective) {
+        LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, line);
+        if (eff != null && eff.credited()) {
+            return new NetRent(eff.headlineLessDiscount(), eff.discount(), eff.removed());
+        }
+        BigDecimal discount = line.getDiscountAmount() == null ? BigDecimal.ZERO : line.getDiscountAmount();
+        return new NetRent(line.getGrossAmount().subtract(discount), discount, false);
+    }
+
+    /** The rent that renews, net, and the term the contract rent was priced for (spec 2026-11-25 §14.2). */
+    private record IndexBase(BigDecimal net, LocalDate from, LocalDate to) {
+    }
+
+    /**
+     * Every RENT line a renewal copies (the contract's own, not an addendum's or an extension's, not credited
+     * away; see {@link #copiedLines}), summed net — the same set the successor's RENT lines are measured on.
+     */
+    private IndexBase renewingRent(Lease lease) {
+        List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        LeaseLine contract = LeaseService.contractRentLine(lease, lines);
+        if (contract == null) return null;
+        LocalDate[] priced = contractRentTerm(lease, lines, contract);
+        if (priced[0] == null || priced[1] == null) return null;
+        List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(lease, null);
+        BigDecimal sum = BigDecimal.ZERO;
+        boolean any = false;
+        for (LeaseLine l : lines) {
+            ChargeType type = l.getChargeType();
+            if (type == null || type.getBehaviour() != ChargeBehaviour.RENT || l.getGrossAmount() == null
+                    || l.getAddendumId() != null || isExtensionLine(l, lease)) continue;
+            NetRent n = netRent(l, effective);
+            if (n.removed()) continue;
+            sum = sum.add(n.net());
+            any = true;
+        }
+        return any ? new IndexBase(sum, priced[0], priced[1]) : null;
+    }
+
+    /**
+     * Measures a renewal against the range in force today. The rents are read only when there is a range to
+     * compare them with, so a renewal the index does not touch reads nothing more than it did before.
+     */
+    private IndexAssessment assess(Lease predecessor, Supplier<IndexBase> renewing,
+                                   java.util.function.Function<IndexBase, BigDecimal> newRent,
+                                   LocalDate newStart, LocalDate newEnd) {
+        if (rentalIndex == null) return null;
+        Unit unit = predecessor.getUnit();
+        LocalDate today = LocalDate.now(clock);
+        IndexStatus status = rentalIndex.statusFor(unit, today);
+        if (status == null) return null; // RENTAL_INDEX off: renewals exactly as before
+        if (status != IndexStatus.OK && status != IndexStatus.NO_INDEX) {
+            return new IndexAssessment(status, null, null, null, null, false, null, false, false);
+        }
+        LocalDate deadline = predecessor.getEndDate() == null ? null : predecessor.getEndDate().minusDays(NOTICE_DAYS);
+        boolean passed = deadline != null && today.isAfter(deadline);
+        RentalIndexRate rate = status == IndexStatus.OK ? rentalIndex.inForce(unit, today).orElse(null) : null;
+        if (rate == null) {
+            return new IndexAssessment(IndexStatus.NO_INDEX, null, null, null, null, false, deadline, passed, false);
+        }
+        boolean own = unit != null && unit.getId() != null && unit.getId().equals(rate.getSourceUnitId());
+        IndexBase base = renewing.get();
+        if (base == null) {
+            return new IndexAssessment(status, rate, null, null, null, false, deadline, passed, own);
+        }
+        BigDecimal annualBase = RentalIndexMath.annualise(base.net(), base.from(), base.to());
+        RentalIndexMath.Cap cap = RentalIndexMath.of(rate.getIndexMin(), rate.getIndexMax(), annualBase);
+        if (own && rate.getDldPercent() != null) {
+            // Spec §14.4: DLD's printed percentage for this unit beats the midpoint arithmetic.
+            int pct = rate.getDldPercent();
+            cap = new RentalIndexMath.Cap(cap.average(), cap.gap(), pct, RentalIndexMath.capRent(annualBase, pct));
+        }
+        BigDecimal rent = newStart == null || newEnd == null ? null : newRent.apply(base);
+        BigDecimal annualNew = rent == null ? null : RentalIndexMath.annualise(rent, newStart, newEnd);
+        boolean above = annualNew != null && annualNew.compareTo(cap.capRent()) > 0;
+        return new IndexAssessment(status, rate, cap, annualBase, annualNew, above, deadline, passed, own);
+    }
+
+    /**
+     * The successor's rent for the index: every RENT line the draft will carry (copied, edited, or added as an
+     * extra charge), net of discount. Charge types are read from the repository, never through a service that
+     * throws: an unknown type is skipped here and refused by the draft with its own message, and a swallowed
+     * exception from a transactional proxy would have marked the renewal's transaction rollback-only.
+     */
+    private BigDecimal rentOf(List<LeaseLineInput> lines) {
+        BigDecimal sum = BigDecimal.ZERO;
+        if (lines == null) return sum;
+        Map<String, java.util.Optional<ChargeType>> seen = new java.util.HashMap<>();
+        for (LeaseLineInput in : lines) {
+            if (in == null || in.grossAmount() == null) continue;
+            java.util.Optional<ChargeType> type;
+            if (in.chargeTypeId() != null) {
+                type = seen.computeIfAbsent("id:" + in.chargeTypeId(), k -> chargeTypes.findById(in.chargeTypeId()));
+            } else if (in.chargeTypeCode() != null && !in.chargeTypeCode().isBlank()) {
+                String code = in.chargeTypeCode().trim();
+                type = seen.computeIfAbsent("code:" + code, k -> chargeTypes.findByCode(code));
+            } else {
+                continue;
+            }
+            if (type.isEmpty() || type.get().getBehaviour() != ChargeBehaviour.RENT) continue;
+            sum = sum.add(in.grossAmount()
+                    .subtract(in.discountAmount() == null ? BigDecimal.ZERO : in.discountAmount()));
+        }
+        return sum;
+    }
+
+    /** The trimmed override reason to store, or null; refuses an above-cap renewal without one (spec §14.1). */
+    static String requireIndexOverride(IndexAssessment index, String reason) {
+        if (index == null || index.cap() == null || !index.aboveCap()) return null;
+        String trimmed = reason == null ? "" : reason.trim();
+        BigDecimal cap = index.cap().capRent();
+        if (trimmed.isEmpty()) {
+            throw new BusinessRuleViolationException("The new rent is above the rental index cap of AED "
+                    + String.format(java.util.Locale.ENGLISH, "%,.0f", cap)
+                    + " a year. Enter a reason to renew above it.",
+                    "renewal.indexOverrideRequired", Map.of("cap", cap));
+        }
+        if (trimmed.length() > MAX_OVERRIDE_REASON) {
+            throw new BusinessRuleViolationException("The reason for renewing above the rental index cap is longer"
+                    + " than " + MAX_OVERRIDE_REASON + " characters.",
+                    "renewal.indexOverrideTooLong", Map.of("cap", cap, "max", MAX_OVERRIDE_REASON));
+        }
+        return trimmed;
+    }
+
+    /** Spec §5, §14.7: the snapshot of what this renewal was checked against, in the renew transaction. */
+    private void recordIndexCheck(Lease predecessor, UUID successorId, IndexAssessment index, String reason) {
+        if (index == null || index.status() != IndexStatus.OK || index.cap() == null || index.annualNew() == null
+                || indexChecks == null) {
+            return;
+        }
+        RentalIndexRate rate = index.rate();
+        boolean own = index.unitResult();
+        RenewalIndexCheck c = new RenewalIndexCheck();
+        c.setTenantId(predecessor.getTenantId());
+        c.setLeaseId(predecessor.getId());
+        c.setSuccessorLeaseId(successorId);
+        c.setRateId(rate.getId());
+        c.setRateSource(rate.getSource().name());
+        c.setRateCheckedOn(rate.getCheckedOn());
+        c.setBaseRent(index.annualBase());
+        c.setAverage(index.cap().average());
+        c.setGapPercent(index.cap().gap());
+        c.setAllowedPercent(index.cap().percent());
+        c.setCapRent(index.cap().capRent());
+        c.setNewRent(index.annualNew());
+        // Ruling 2: the unit's own DLD evidence, when the range in force came from it.
+        c.setUnitDocumentPath(own ? rate.getDocumentPath() : null);
+        c.setUnitDldPercent(own ? rate.getDldPercent() : null);
+        c.setAboveCap(index.aboveCap());
+        c.setOverrideReason(index.aboveCap() ? reason : null);
+        c.setDecidedBy(currentUserId());
+        c.setDecidedAt(Instant.now(clock));
+        indexChecks.save(c);
+    }
+
+    /**
+     * Final review I1: an edit of a renewal's successor draft is held to the same cap as the renewal was (spec §14.1).
+     * Applies only when the draft has a stored check (the renewal was measured against a range) and RENTAL_INDEX is
+     * on. The edited RENT lines are measured exactly as {@code renew} measures them — {@link #rentOf} against the
+     * predecessor's {@link #renewingRent}, under the range in force today. When the measured rent or the cap differs
+     * from the newest check on record a new check row is written (never an update); above the cap that needs a
+     * reason ({@code renewal.indexOverrideRequired} / {@code renewal.indexOverrideTooLong}). Runs in the caller's
+     * transaction, so a later refusal of the edit rolls the row back with it.
+     */
+    @Transactional
+    public void checkDraftEdit(Lease draft, List<LeaseLineInput> lines, LocalDate newStart, LocalDate newEnd,
+                               String reason) {
+        if (draft == null || draft.getId() == null || draft.getRenewedFromLeaseId() == null) return;
+        // No usable term to annualise: leave the date problem to the term validation that follows.
+        if (newStart == null || newEnd == null || !newEnd.isAfter(newStart)) return;
+        List<RenewalIndexCheck> prior = indexChecks.findBySuccessorLeaseIdOrderByDecidedAtDesc(draft.getId());
+        if (prior.isEmpty()) return;
+        Lease predecessor = leaseRepository.findByIdScopedToTenant(draft.getRenewedFromLeaseId()).orElse(null);
+        if (predecessor == null) return;
+        IndexAssessment index = assess(predecessor, () -> renewingRent(predecessor), b -> rentOf(lines),
+                newStart, newEnd);
+        if (index == null || index.status() != IndexStatus.OK || index.cap() == null || index.annualNew() == null) {
+            return; // flag off, or no range in force today: the edit is judged as any draft edit
+        }
+        RenewalIndexCheck last = prior.get(0);
+        if (last.getNewRent().compareTo(index.annualNew()) == 0
+                && last.getCapRent().compareTo(index.cap().capRent()) == 0) {
+            return; // nothing measured changed: the decision on record stands
+        }
+        String override = requireIndexOverride(index, reason);
+        recordIndexCheck(predecessor, draft.getId(), index, override);
+    }
+
+    /** One stored check as the lease page shows it (spec §9, §14.7): staff only. */
+    public record IndexCheckView(UUID id, UUID leaseId, UUID successorLeaseId, Instant decidedAt, UUID decidedBy,
+                                 String decidedByName, BigDecimal baseRent, BigDecimal newRent, BigDecimal average,
+                                 BigDecimal gapPercent, int allowedPercent, BigDecimal capRent, boolean aboveCap,
+                                 String overrideReason, String rateSource, LocalDate rateCheckedOn,
+                                 boolean hasUnitDocument) {
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.UserRepository users;
+
+    /**
+     * Final review I2: the stored checks a lease took part in, as the lease renewed or as its successor, newest
+     * first. 404 for a lease the caller cannot read (another organisation's, or outside a manager's properties).
+     */
+    @Transactional(readOnly = true)
+    public List<IndexCheckView> indexChecksOf(UUID leaseId) {
+        Lease lease = leaseRepository.findByIdScopedToTenant(leaseId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Lease not found"));
+        leaseAccessPolicy.requireReadable(lease);
+        List<RenewalIndexCheck> rows = indexChecks.findByLeaseIdOrSuccessorLeaseIdOrderByDecidedAtDesc(leaseId, leaseId);
+        Map<UUID, String> names = new java.util.HashMap<>();
+        Set<UUID> who = new java.util.HashSet<>();
+        for (RenewalIndexCheck c : rows) if (c.getDecidedBy() != null) who.add(c.getDecidedBy());
+        if (users != null && !who.isEmpty()) {
+            for (com.datagami.rentaxis.domain.entity.User u : users.findAllById(who)) names.put(u.getId(), u.getName());
+        }
+        return rows.stream().map(c -> new IndexCheckView(c.getId(), c.getLeaseId(), c.getSuccessorLeaseId(),
+                c.getDecidedAt(), c.getDecidedBy(), names.get(c.getDecidedBy()), c.getBaseRent(), c.getNewRent(),
+                c.getAverage(), c.getGapPercent(), c.getAllowedPercent(), c.getCapRent(), c.isAboveCap(),
+                c.getOverrideReason(), c.getRateSource(), c.getRateCheckedOn(), c.getUnitDocumentPath() != null))
+                .toList();
+    }
+
+    private static UUID currentUserId() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof String s)) return null;
+        try {
+            return UUID.fromString(s);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /** The renewal a request would draft, with nothing written (the preview endpoint). */
@@ -275,9 +596,31 @@ public class LeaseRenewalService {
                     type == null || type.getBehaviour() == null ? null : type.getBehaviour().name(),
                     in.grossAmount(), in.discountAmount(), Boolean.TRUE.equals(in.vatApplicable())));
         }
+        IndexAssessment ix = plan.index();
+        if (ix == null) {
+            return new com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO(plan.baseRent(), plan.newRent(),
+                    plan.changePercent(), lines, plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList(),
+                    plan.warnPercent(), plan.exceedsWarn(), plan.droppedDiscount());
+        }
+        RentalIndexRate rate = ix.rate();
+        RentalIndexMath.Cap cap = ix.cap();
         return new com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO(plan.baseRent(), plan.newRent(),
                 plan.changePercent(), lines, plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList(),
-                plan.warnPercent(), plan.exceedsWarn(), plan.droppedDiscount());
+                plan.warnPercent(), plan.exceedsWarn(), plan.droppedDiscount(),
+                ix.status().name(),
+                rate == null ? null : rate.getIndexMin(),
+                rate == null ? null : rate.getIndexMax(),
+                cap == null ? null : cap.average(),
+                cap == null ? null : cap.gap(),
+                cap == null ? null : cap.percent(),
+                cap == null ? null : cap.capRent(),
+                cap == null || ix.annualNew() == null ? null : ix.aboveCap(),
+                rate == null ? null : rate.getId(),
+                rate == null ? null : rate.getSource().name(),
+                rate == null ? null : rate.getCheckedOn(),
+                rate == null ? null : ix.unitResult(),
+                ix.noticeDeadline(),
+                ix.noticeDeadline() == null ? null : ix.noticePassed());
     }
 
     /** The plan itself, for tests and the preview. */
@@ -323,18 +666,12 @@ public class LeaseRenewalService {
                 // PR #358 R1 P2-3: the base is what the renter pays — headline less the
                 // discount — because the discount does not renew. A NONE renewal keeps
                 // that rent; a percentage and the notice are measured net to net.
-                dropped = contractRent.getDiscountAmount() == null ? BigDecimal.ZERO : contractRent.getDiscountAmount();
-                base = contractRent.getGrossAmount().subtract(dropped);
                 // PR #359 R1 P2-1: a credit addendum cut the rent — the renter pays the
-                // reduced rate, and that is what a renewal carries on and escalates.
-                LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(
-                        effectiveTerms.effectiveLines(predecessor, null), contractRent);
-                if (eff != null && eff.credited()) {
-                    // Follow-up ruling R7: from the credit's headline (the concession it
-                    // re-applied does not renew); a pre-180 credit has only its net figure.
-                    dropped = eff.discount();
-                    base = eff.headlineLessDiscount();
-                }
+                // reduced rate, and that is what a renewal carries on and escalates
+                // (follow-up ruling R7: from the credit's headline; see netRent).
+                NetRent now = netRent(contractRent, effectiveTerms.effectiveLines(predecessor, null));
+                dropped = now.discount();
+                base = now.net();
                 newRent = switch (mode) {
                     case NONE -> base;
                     case AMOUNT -> {
@@ -398,8 +735,13 @@ public class LeaseRenewalService {
         BigDecimal warn = warnPercentFor(predecessor);
         boolean changed = mode != RenewLeaseRequest.RentChange.Mode.NONE;
         boolean exceeds = warn != null && percent != null && percent.compareTo(warn) > 0;
-        return new RenewalPlan(base, newRent, changed ? percent : null, changed, List.copyOf(lines), sources,
-                skipped, warn, exceeds, dropped);
+        // Spec 2026-11-25 §14.2: the same base as above, with the term it was priced for; the explicit-lines and
+        // extra-charge paths are measured too, so no shape of request escapes the cap.
+        List<LeaseLineInput> drafted = List.copyOf(lines);
+        IndexAssessment index = assess(predecessor, () -> renewingRent(predecessor),
+                b -> rentOf(drafted), r.startDate(), r.endDate());
+        return new RenewalPlan(base, newRent, changed ? percent : null, changed, drafted, sources,
+                skipped, warn, exceeds, dropped, index);
     }
 
     /**

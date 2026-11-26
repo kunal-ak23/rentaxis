@@ -146,6 +146,18 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
         """)
     List<Object[]> statsByProperty(@org.springframework.data.repository.query.Param("propertyIds") java.util.Collection<UUID> propertyIds);
 
+    /** Units of a tenant carrying this DEWA premise number (at most one, by the unique index). */
+    @org.springframework.data.jpa.repository.Query(
+            "select u from Unit u where u.tenantId = :tenantId and u.dewaPremiseNumber = :dewa")
+    List<Unit> findByTenantIdAndDewaPremiseNumber(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+                                                  @org.springframework.data.repository.query.Param("dewa") String dewa);
+
+    /** Units of a tenant holding any of these DEWA premise numbers, property loaded (import validation: one query per sheet). */
+    @org.springframework.data.jpa.repository.Query(
+            "select u from Unit u join fetch u.property where u.tenantId = :tenantId and u.dewaPremiseNumber in :dewas")
+    List<Unit> findByTenantIdAndDewaPremiseNumberIn(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+                                                    @org.springframework.data.repository.query.Param("dewas") Collection<String> dewas);
+
     /** Break-it R3 ops3 F1: the unit numbers already in one building (the uniqueness scope of a unit in a building). */
     @org.springframework.data.jpa.repository.Query(
             "select u.unitNumber from Unit u where u.tenantId = :tenantId and u.building.id = :buildingId")

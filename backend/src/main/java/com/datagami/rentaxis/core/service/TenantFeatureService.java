@@ -87,6 +87,7 @@ public class TenantFeatureService {
             case MOBILE_FINANCE -> "Mobile finance screens";
             case WORKSPACE_TABS -> "Workspace tabs (web)";
             case RENTER_RATING -> "Tenant Rating (premium)";
+            case RENTAL_INDEX -> "Rental index check";
         };
     }
 }
