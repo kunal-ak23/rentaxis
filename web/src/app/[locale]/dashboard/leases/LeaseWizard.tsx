@@ -20,13 +20,14 @@ import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/Gra
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import WizardReviewSchedules from "@/components/leases/WizardReviewSchedules";
+import PostLeaseDialog from "@/components/leases/PostLeaseDialog";
 import BulkChequeUploadFlow, { isScannableRow } from "@/components/cheques/BulkChequeUploadFlow";
 import { blankLine, defaultInstallmentsFor, defaultTermEnd, rentChargeType, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type ChequeWrite, type DraftLeaseInput, type DraftPaymentMethod,
     type GenerateChequesRequest, type InstallmentDistribution, type LeaseDetail,
-    type PostLeaseDryRunResponse,
+    type PostLeaseDryRunResponse, type PostLeaseResponse,
 } from "@/lib/api/leasing";
 import type { RenterOption, UnitOption } from "@/lib/api/lookup";
 import { isLeaseChanged, withVersion } from "@/lib/leases/leaseVersion";
@@ -188,6 +189,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const [chequeError, setChequeError] = useState<string | null>(null);
     const [scanOpen, setScanOpen] = useState(false);
     const [dry, setDry] = useState<PostLeaseDryRunResponse | null>(null);
+    // QA-22: Post Contract opens the same dialog as the contract page (confirm + back-dated income choice).
+    const [postOpen, setPostOpen] = useState(false);
 
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -219,6 +222,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setChequeError(null);
         setScanOpen(false);
         setDry(null);
+        setPostOpen(false);
         setBusy(false);
         setError(null);
         setServerErrors([]);
@@ -607,26 +611,11 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         }
     };
 
-    const post = async () => {
-        if (!lease) return;
-        setBusy(true);
-        setError(null);
-        try {
-            // Break-it R2 F2: the version the review step priced.
-            const res = await leaseApi.post(lease.id, lease.version);
-            onCreated();
-            router.push(`/dashboard/leases/${res.lease.id}?posted=${encodeURIComponent(res.tcoEntryNumber)}`);
-            onClose();
-        } catch (e) {
-            if (isLeaseChanged(e)) {
-                setError(serverText(tCommon, e) || (e as ApiError).message);
-                await reloadChanged(lease.id).catch(() => undefined);
-                return;
-            }
-            setError(e instanceof ApiError ? e.message : t("postFailed"));
-        } finally {
-            setBusy(false);
-        }
+    const posted = (res: PostLeaseResponse) => {
+        setPostOpen(false);
+        onCreated();
+        router.push(`/dashboard/leases/${res.lease.id}?posted=${encodeURIComponent(res.tcoEntryNumber)}`);
+        onClose();
     };
 
     // Workspace tabs Phase 0: typing in the wizard makes a reload or a closed browser tab ask first.
@@ -1115,13 +1104,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                 </button>
                                 {canPost && (
                                     <button
-                                        onClick={post}
+                                        onClick={() => { setError(null); setPostOpen(true); }}
                                         disabled={busy || !dry?.ok}
                                         data-testid="wizard-post"
                                         className="px-4 py-2 rounded-lg text-xs font-semibold bg-accent text-accent-foreground hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                                     >
                                         <span className="inline-flex items-center gap-1.5">
-                                            {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                                            <Check size={12} />
                                             {t("postLease")}
                                         </span>
                                     </button>
@@ -1131,6 +1120,22 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                     </div>
                 </div>
             </div>
+            {lease && (
+                <PostLeaseDialog
+                    open={postOpen}
+                    lease={lease}
+                    onClose={() => setPostOpen(false)}
+                    // A 409 lease.changed: the dialog says so; the wizard re-reads the draft and the dialog re-prices it.
+                    onStale={() => {
+                        // If the re-read fails, the dialog would price the old version again: close it and say why.
+                        reloadChanged(lease.id).catch((e: unknown) => {
+                            setPostOpen(false);
+                            setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("postFailed"));
+                        });
+                    }}
+                    onPosted={posted}
+                />
+            )}
         </div>
     );
 }

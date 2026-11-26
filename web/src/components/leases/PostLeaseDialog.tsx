@@ -140,7 +140,8 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
             onConfirm={handlePost}
             confirmText={t("postLease")}
             cancelText={t("cancel")}
-            confirmDisabled={!ok}
+            // QA-22: a back-dated contract posts only once its income choice has loaded.
+            confirmDisabled={!ok || (backdated && !income)}
             busy={posting || loading}
             confirmTestId="post-lease-confirm"
         >
