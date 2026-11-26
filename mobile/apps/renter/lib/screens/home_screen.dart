@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import '../demo/demo_flags.dart';
+import '../demo/wallet_demo.dart';
 import '../providers/promotion_provider.dart';
 import '../widgets/home_ads_strip.dart';
 import 'next_payment.dart';
@@ -33,7 +35,16 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final leasesAsync = ref.watch(renterLeasesProvider);
-    final paymentsAsync = ref.watch(renterPaymentsProvider);
+    // Demo only: an instalment paid through the pseudo checkout this session
+    // drops out of "next payment" and recent activity shows it cleared.
+    final wallet = ref.watch(demoPaymentsEnabledProvider)
+        ? ref.watch(walletDemoProvider)
+        : null;
+    final paymentsAsync = ref
+        .watch(renterPaymentsProvider)
+        .whenData(
+          (rows) => wallet == null ? rows : applyDemoPayments(rows, wallet),
+        );
     final auth = ref.watch(authProvider);
     final penalties = ref.watch(_openPenaltyCountProvider).valueOrNull ?? 0;
 
@@ -339,7 +350,9 @@ class _NoLeaseCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             l.noLeaseMessage,
-            style: l.ar ? MiftahType.ar(size: 13) : MiftahType.body(color: context.miftah.textSecondary),
+            style: l.ar
+                ? MiftahType.ar(size: 13)
+                : MiftahType.body(color: context.miftah.textSecondary),
           ),
         ],
       ),
@@ -517,21 +530,42 @@ class _HeroBalanceCard extends ConsumerWidget {
           const SizedBox(height: 18),
           Row(
             children: [
-              Expanded(
-                child: _HeroButton(
-                  label: l.viewCheques,
-                  filled: true,
-                  onTap: () => context.go('/payments'),
+              // Demo checkout: the filled action becomes "Pay now" while
+              // something is owed, and "View cheques" moves to the outline.
+              if (ref.watch(demoPaymentsEnabledProvider) && next != null) ...[
+                Expanded(
+                  child: _HeroButton(
+                    key: const Key('hero-pay-now'),
+                    label: l.payNow,
+                    filled: true,
+                    onTap: () => context.push('/pay/${next!['id']}'),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HeroButton(
-                  label: l.contract,
-                  filled: false,
-                  onTap: () => context.push('/contracts'),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _HeroButton(
+                    label: l.viewCheques,
+                    filled: false,
+                    onTap: () => context.go('/payments'),
+                  ),
                 ),
-              ),
+              ] else ...[
+                Expanded(
+                  child: _HeroButton(
+                    label: l.viewCheques,
+                    filled: true,
+                    onTap: () => context.go('/payments'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _HeroButton(
+                    label: l.contract,
+                    filled: false,
+                    onTap: () => context.push('/contracts'),
+                  ),
+                ),
+              ],
             ],
           ),
         ],
@@ -549,6 +583,7 @@ TextStyle _onGold(double size, FontWeight weight, double opacity, bool ar) {
 
 class _HeroButton extends StatelessWidget {
   const _HeroButton({
+    super.key,
     required this.label,
     required this.filled,
     required this.onTap,
@@ -821,7 +856,9 @@ class _RecentActivityHeader extends StatelessWidget {
           l.recentActivityTitle,
           style: l.ar
               ? MiftahType.ar(size: 18, weight: FontWeight.w700)
-              : MiftahType.title(color: context.miftah.textPrimary).copyWith(fontSize: 18),
+              : MiftahType.title(
+                  color: context.miftah.textPrimary,
+                ).copyWith(fontSize: 18),
         ),
         GestureDetector(
           onTap: () => context.go('/payments'),
@@ -948,7 +985,9 @@ class _ActivityRow extends StatelessWidget {
                   spec.title,
                   style: l.ar
                       ? MiftahType.ar(size: 14, weight: FontWeight.w700)
-                      : MiftahType.cardTitle(color: context.miftah.textPrimary).copyWith(fontSize: 14),
+                      : MiftahType.cardTitle(
+                          color: context.miftah.textPrimary,
+                        ).copyWith(fontSize: 14),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1039,6 +1078,7 @@ class _L {
       ar ? '$cleared من $total تمت تسويتها' : '$cleared of $total cleared';
 
   String get viewCheques => ar ? 'عرض الشيكات' : 'View cheques';
+  String get payNow => ar ? 'ادفع الآن' : 'Pay now';
 
   // Quick actions
   String get cheques => ar ? 'الشيكات' : 'Cheques';
