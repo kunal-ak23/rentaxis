@@ -80,6 +80,8 @@ type PanelProps = {
     onDismiss: () => void;
     /** A status line under the clear row ("No matches", "Searching…", …), or null. */
     message: ReactNode;
+    /** QA-03: an action under the rows, e.g. "+ Add tenant". */
+    footer?: ReactNode;
 };
 
 export function SelectPanel({
@@ -95,6 +97,7 @@ export function SelectPanel({
     onSelectIndex,
     onDismiss,
     message,
+    footer,
 }: PanelProps) {
     const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -140,6 +143,7 @@ export function SelectPanel({
                         {clearLabel}
                     </button>
                     {message && <p className="px-3 py-3 text-[11px] text-muted text-center">{message}</p>}
+                    {footer}
                     {rows.map((o, i) => (
                         <button
                             key={o.value}

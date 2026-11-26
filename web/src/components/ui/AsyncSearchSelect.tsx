@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { SelectPanel, SelectTrigger, handleListKey } from "@/components/ui/SelectPanel";
 
@@ -20,6 +20,8 @@ type Props = {
     disabled?: boolean;
     /** Id of the trigger, for a `<label htmlFor>`. */
     id?: string;
+    /** QA-03: an action shown under the results, e.g. "+ Add tenant". */
+    footer?: ReactNode;
 };
 
 const DEBOUNCE_MS = 250;
@@ -53,6 +55,7 @@ export function AsyncSearchSelect({
     testId,
     disabled,
     id,
+    footer,
 }: Props) {
     const t = useTranslations("Pickers");
     const [open, setOpen] = useState(false);
@@ -192,6 +195,7 @@ export function AsyncSearchSelect({
                     onSelectIndex={selectIndex}
                     onDismiss={() => close(false)}
                     message={message}
+                    footer={footer}
                 />
             )}
         </div>

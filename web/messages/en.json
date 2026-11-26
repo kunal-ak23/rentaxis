@@ -5613,6 +5613,7 @@
     "unavailable": "Tower filter (towers could not be loaded)"
   },
   "Pickers": {
+    "addTenant": "Add tenant (opens in a new tab)",
     "selectVendor": "Select a vendor",
     "searching": "Searching…",
     "noMatches": "No matches",

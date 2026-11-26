@@ -803,6 +803,10 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                         setSelectedRenter(r);
                                     }}
                                     placeholder={t("renter")}
+                                    // QA-03: the Tenants page in a new tab with its form open, so
+                                    // this wizard keeps its unit and dates; the picker finds the
+                                    // new tenant on its next search.
+                                    onAddNew={() => window.open(`/${locale}/dashboard/renters?new=1`, "_blank", "noopener")}
                                     testId="wizard-renter"
                                 />
                             </Field>

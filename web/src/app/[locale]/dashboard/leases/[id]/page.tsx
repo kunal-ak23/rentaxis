@@ -912,7 +912,11 @@ export default function LeaseDetailPage() {
                                                 : String(lease.gracePeriodDays ?? 0)}
                                     />
                                     <Detail label={t("firstDueDate")} value={fmtIsoDate(lease.firstDueDate, locale)} />
-                                    <Detail label={t("paymentMethod")} value={lease.paymentMethod ?? "—"} />
+                                    <Detail label={t("paymentMethod")} value={
+                                        // QA-33: the method in the page's language, not the enum.
+                                        lease.paymentMethod === "CHEQUE" ? t("methodCheque")
+                                            : lease.paymentMethod === "ONLINE" ? t("methodOnline")
+                                                : lease.paymentMethod ?? "—"} />
                                     {/* F14-33: the Ejari in force (latest registered addendum), with the
                                         contract's own registration beside it when they differ. */}
                                     <Detail label={t("ejariNumber")} value={lease.currentEjari || lease.ejariNumber || "—"} />

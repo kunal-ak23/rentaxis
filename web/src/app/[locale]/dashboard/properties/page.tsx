@@ -552,9 +552,10 @@ function PropertiesPageInner() {
                                         setConfirmDialog({
                                             title: t("noProjects"),
                                             description: t("addProjectFirst"),
-                                            confirmText: t("ok"),
+                                            // QA-04: the way forward, not a dead end.
+                                            confirmText: t("addProject"),
                                             isDestructive: false,
-                                            onConfirm: () => { setConfirmDialog(null); },
+                                            onConfirm: () => { setConfirmDialog(null); setProjectFormError(null); setShowProjectForm(true); },
                                         });
                                         return;
                                     }

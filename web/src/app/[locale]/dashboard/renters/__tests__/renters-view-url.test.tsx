@@ -57,3 +57,19 @@ describe("Tenants list: view toggle in the URL", () => {
         expect(new URL(window.location.href).searchParams.get("view")).toBe("cards");
     });
 });
+
+describe("Tenants list: ?new=1 opens Add Tenant (QA-03)", () => {
+    it("opens the form from the URL and closing it drops the key", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/renters?new=1");
+        global.fetch = vi.fn(async (url: unknown) => {
+            if (String(url).includes("/v1/renters/paged")) return { ok: true, status: 200, json: async () => page } as unknown as Response;
+            return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<RentersPage />);
+        expect(await screen.findByText("Create a new tenant profile.")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: /^Close$/ }));
+        await waitFor(() => expect(new URL(window.location.href).searchParams.get("new")).toBeNull());
+    });
+});

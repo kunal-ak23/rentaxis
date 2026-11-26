@@ -793,7 +793,7 @@ function LeasesList() {
                     <div className="flex items-center gap-3 px-1">
                         <Calendar size={14} className="text-muted" />
                         <span className="text-xs font-medium text-foreground">
-                            {new Date(lease.startDate).toLocaleDateString()} &rarr; {new Date(lease.endDate).toLocaleDateString()}
+                            {fmtIsoDate(lease.startDate, locale)} &rarr; {fmtIsoDate(lease.endDate, locale)}
                         </span>
                     </div>
                     {!compact && (lease.currentEjari || lease.ejariNumber) && (
@@ -1108,8 +1108,8 @@ function LeasesList() {
                                                 <td className="px-4 py-3 text-xs font-medium text-foreground">{lease.unitIdentifier}</td>
                                                 <td className="px-4 py-3 text-xs text-foreground">{lease.renterName}</td>
                                                 <td className="px-4 py-3 text-xs text-muted">{lease.propertyName}</td>
-                                                <td className="px-4 py-3 text-xs text-foreground tabular-nums">{new Date(lease.startDate).toLocaleDateString()}</td>
-                                                <td className="px-4 py-3 text-xs text-foreground tabular-nums">{new Date(lease.endDate).toLocaleDateString()}</td>
+                                                <td className="px-4 py-3 text-xs text-foreground tabular-nums">{fmtIsoDate(lease.startDate, locale)}</td>
+                                                <td className="px-4 py-3 text-xs text-foreground tabular-nums">{fmtIsoDate(lease.endDate, locale)}</td>
                                                 <td className="px-4 py-3 text-xs font-medium text-foreground text-end tabular-nums">{formatCurrency(lease.contractValue ?? 0)}</td>
                                                 <td className="px-4 py-3 text-[10px] text-muted font-mono">
                                                     {lease.chainId ? lease.chainId.slice(0, 8) : "—"}

@@ -56,6 +56,8 @@ function RentersPageInner() {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
+    // QA-03: the contract wizard's "+ Add tenant" opens this page with ?new=1.
+    const [newParam, setNewParam] = useUrlState("new", "");
     // Edit tenant: the row/detail "Edit" action opens this dialog prefilled with
     // the row's current values; null means it is closed.
     const [editingRenter, setEditingRenter] = useState<Renter | null>(null);
@@ -63,6 +65,7 @@ function RentersPageInner() {
 
     const userRole = session?.user?.role as UserRole | undefined;
     const canManageRenters = hasPermission(userRole, 'canManageRenters');
+    const formOpen = showForm || (newParam === "1" && canManageRenters);
 
     // Scale #22: the table/cards toggle is in the URL (`?view=cards`), as on
     // the Properties list.
@@ -218,6 +221,7 @@ function RentersPageInner() {
 
     const closeForm = () => {
         setShowForm(false);
+        if (newParam) setNewParam("");
         setDuplicates(null);
     };
 
@@ -414,7 +418,7 @@ function RentersPageInner() {
                 </div>
             </div>
 
-            {showForm && (
+            {formOpen && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
                         <button onClick={closeForm} aria-label={t("close")} className="cursor-pointer absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
@@ -599,7 +603,7 @@ function RentersPageInner() {
             {/* A search with no matches is not the same fact as "no renters
                 exist yet" — this keeps the search box (above) editable and
                 does not offer to create a renter who may already exist. */}
-            {showNoSearchResults && !showForm && (
+            {showNoSearchResults && !formOpen && (
                 <div className="text-center py-16 bg-background border border-dashed border-border rounded-xl flex flex-col items-center" data-testid="renters-no-search-results">
                     <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <Search size={28} />
@@ -610,7 +614,7 @@ function RentersPageInner() {
                 </div>
             )}
 
-            {showFirstRunEmptyState && !showForm && (
+            {showFirstRunEmptyState && !formOpen && (
                 <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
                     <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <User size={32} />
