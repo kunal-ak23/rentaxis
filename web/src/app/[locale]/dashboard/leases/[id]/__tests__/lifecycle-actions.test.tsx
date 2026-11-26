@@ -263,4 +263,15 @@ describe("Give notice — particulars (#27)", () => {
         expect(summary).toHaveTextContent("terminated on 26/11/2026");
         expect(summary).not.toHaveTextContent("move-out");
     });
+
+    it("says 'terminates on' for a termination dated ahead", async () => {
+        api.get.mockImplementation(async () => ({
+            ...lease("TERMINATED"), noticeDate: "2026-09-01", noticeGivenBy: "RENTER",
+            intendedMoveOutDate: null, terminatedOn: "2999-01-31",
+        }));
+        renderPage();
+
+        const summary = await screen.findByTestId("lease-notice-summary");
+        expect(summary).toHaveTextContent("terminates on 31/01/2999");
+    });
 });

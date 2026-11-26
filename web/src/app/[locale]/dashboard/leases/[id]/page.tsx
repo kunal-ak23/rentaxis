@@ -59,6 +59,7 @@ import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import HoldoverVacateDialog from "@/components/leases/HoldoverVacateDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import VatScheduleTab from "@/components/leases/VatScheduleTab";
+import { businessTodayIso } from "@/lib/businessDate";
 import { defaultInstallmentsFor, fmtIsoDate, round2, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
@@ -698,7 +699,9 @@ export default function LeaseDetailPage() {
                                 })}
                                 {/* QA-37: once terminated, the termination date replaces the notice's intended move-out. */}
                                 {lease.terminatedOn
-                                    ? ` · ${t("noticeTerminatedOn", { date: fmtIsoDate(lease.terminatedOn, locale) })}`
+                                    // A termination may be dated up to a year ahead: say it in the right tense.
+                                    ? ` · ${t(lease.terminatedOn > businessTodayIso() ? "noticeTerminatesOn" : "noticeTerminatedOn",
+                                        { date: fmtIsoDate(lease.terminatedOn, locale) })}`
                                     : lease.intendedMoveOutDate && ` · ${t("noticeMoveOut", { date: fmtIsoDate(lease.intendedMoveOutDate, locale) })}`}
                             </p>
                         )}
