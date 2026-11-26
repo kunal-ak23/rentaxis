@@ -222,6 +222,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setChequeError(null);
         setScanOpen(false);
         setDry(null);
+        setPostOpen(false);
         setBusy(false);
         setError(null);
         setServerErrors([]);
@@ -1125,7 +1126,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                     lease={lease}
                     onClose={() => setPostOpen(false)}
                     // A 409 lease.changed: the dialog says so; the wizard re-reads the draft and the dialog re-prices it.
-                    onStale={() => { void reloadChanged(lease.id).catch(() => undefined); }}
+                    onStale={() => {
+                        // If the re-read fails, the dialog would price the old version again: close it and say why.
+                        reloadChanged(lease.id).catch((e: unknown) => {
+                            setPostOpen(false);
+                            setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("postFailed"));
+                        });
+                    }}
                     onPosted={posted}
                 />
             )}
