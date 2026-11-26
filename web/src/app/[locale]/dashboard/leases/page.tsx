@@ -541,9 +541,18 @@ function LeasesList() {
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
+            } else {
+                // QA-01 review: every posted contract reaches this now; a refusal must say so.
+                let detail: string | null = null;
+                try {
+                    const body = await pdfRes.json();
+                    detail = body?.message || body?.error || null;
+                } catch {}
+                alert(detail || tl("contractDownloadFailed"));
             }
         } catch (err) {
             console.error(err);
+            alert(tl("contractDownloadFailed"));
         } finally {
             setActionLoading(null);
         }

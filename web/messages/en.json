@@ -2665,6 +2665,8 @@
     "chequesMustEqual": "Cheques total {cheques} but contract value is {contract}",
     "unmappedRoles": "Unmapped Accounts",
     "dryRunTitle": "Review before posting",
+    "contractDownloadFailed": "The contract could not be downloaded. Try again.",
+    "documentDownloadFailed": "The document could not be downloaded. Try again.",
     "dryRunOk": "Ready to post",
     "dryRunErrors": "This contract cannot be posted yet",
     "postFailed": "Posting failed",

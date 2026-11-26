@@ -548,9 +548,18 @@ export default function LeaseDetailPage() {
         }
     };
 
-    const downloadBlob = async (url: string, name: string) => {
+    const downloadBlob = async (url: string, name: string, failText: string) => {
         const res = await fetch(url);
-        if (!res.ok) return;
+        if (!res.ok) {
+            // QA-01 review: a refusal (no contract yet, or one that cannot be produced) says so.
+            let detail: string | null = null;
+            try {
+                const body = await res.json();
+                detail = body?.message || null;
+            } catch {}
+            setError(detail || failText);
+            return;
+        }
         // The server names the file: the document's name plus its extension ("aadhar.pdf").
         await saveResponse(res, name);
     };
@@ -631,7 +640,7 @@ export default function LeaseDetailPage() {
             label: tMaster("downloadContract"), testId: "lease-download-contract", icon: Download,
             // The contract endpoint (the executed copy when there is one, else the signed
             // contract) — this used to download the documents LIST as a ".pdf".
-            onSelect: () => downloadBlob(`/api/proxy/v1/leases/${leaseId}/contract`, `contract-${leaseId.slice(0, 8)}.pdf`),
+            onSelect: () => downloadBlob(`/api/proxy/v1/leases/${leaseId}/contract`, `contract-${leaseId.slice(0, 8)}.pdf`, t("contractDownloadFailed")),
         },
         ledger: { label: t("ledger"), testId: "lease-ledger", icon: BookOpen, href: `/dashboard/finance/tenant-ledger?renterId=${lease.renterId}&leaseId=${lease.id}` },
         delete: { label: t("deleteDraft"), testId: "lease-delete", icon: Trash2, onSelect: () => setDeleteOpen(true), destructive: true },
@@ -1136,7 +1145,7 @@ export default function LeaseDetailPage() {
                                                     </div>
                                                     <div className="flex items-center gap-2 shrink-0">
                                                         <button
-                                                            onClick={() => downloadBlob(`/api/proxy/v1/leases/attachments/${doc.id}/download`, doc.downloadName ?? doc.name)}
+                                                            onClick={() => downloadBlob(`/api/proxy/v1/leases/attachments/${doc.id}/download`, doc.downloadName ?? doc.name, t("documentDownloadFailed"))}
                                                             aria-label={tMaster("download")}
                                                             className="p-1 text-primary hover:text-primary/80 cursor-pointer"
                                                         >
