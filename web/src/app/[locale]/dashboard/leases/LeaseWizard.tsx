@@ -552,11 +552,15 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
      * the user asked for them on cheque 1. The Review step's suggestion and "Use this
      * schedule" use exactly this.
      */
+    // QA-15: regenerating (count changed, or Review's "Use this schedule")
+    // keeps the bank the grid already carries instead of blanking every row.
+    const gridBank = cheques.find(c => c.payeeBank?.trim())?.payeeBank?.trim();
     const chequeRequest = (): GenerateChequesRequest => ({
         installments: generatorCount,
         firstDueDate: terms.firstDueDate || terms.startDate || null,
         distribution: terms.installmentDistribution,
         foldDepositsAndFeesIntoFirst: foldOneTime,
+        ...(gridBank ? { payeeBank: gridBank } : {}),
     });
     const applySchedule = async (req: GenerateChequesRequest) => {
         if (!lease) return;

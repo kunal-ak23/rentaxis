@@ -2709,6 +2709,7 @@
     "distributionLastLarger": "Last larger",
     "distributionBothLarger": "First and last larger",
     "chequesClearedNotice": "The cheque grid was cleared because the charge lines changed. Generate it again.",
+    "chequesClearOnSaveNotice": "Saving a change to the amounts, dates, charges or payment schedule clears the cheque grid. Other changes keep it.",
     "postConfirmNumbered": "Post contract {number}? This writes the journals and cannot be edited without a reversal.",
     "postConfirmUnnumbered": "Post this contract? This writes the journals and cannot be edited without a reversal.",
     "dryRunLoading": "Checking the contract…",
