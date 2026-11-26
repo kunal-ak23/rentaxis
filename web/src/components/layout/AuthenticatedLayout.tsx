@@ -4,7 +4,7 @@ import MvpSidebar from "@/components/ui/MvpSidebar";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useRouter } from "@/i18n/routing";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { TopHeader } from "@/components/ui/TopHeader";
 import TourProvider from "@/components/tour/TourProvider";
@@ -21,6 +21,27 @@ import { buildNav } from "@/lib/nav/navModel";
 import { useTenantFeatures } from "@/hooks/useTenantFeatures";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
+/** How long to wait before asking the server again when a session check could not reach it (QA-38). */
+export const SESSION_RECHECK_MS = 5000;
+
+/**
+ * QA-38: next-auth v4 reports "unauthenticated" whenever a session refetch
+ * FAILS (laptop waking with no network yet, a 502 while the web restarts), not
+ * only when the cookie is gone. Ask the server once more: true only when it
+ * answers and the answer has no user; null when it could not be reached.
+ */
+export async function serverSaysSignedOut(): Promise<boolean | null> {
+    try {
+        const res = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
+        if (!res.ok) return null;
+        const body = await res.json().catch(() => null);
+        if (body === null || typeof body !== "object") return null;
+        return !(body as { user?: unknown }).user;
+    } catch {
+        return null;
+    }
+}
+
 /** Roles that get workspace tabs (spec §12); renters, guards and promoters have a handful of pages. */
 const WORKSPACE_ROLES: ReadonlySet<UserRole> = new Set<UserRole>(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER"]);
 
@@ -30,16 +51,44 @@ export default function AuthenticatedLayout({
     children: React.ReactNode;
 }) {
     const pathname = usePathname();
-    const { data: session, status } = useSession();
+    const { data: liveSession, status, update } = useSession();
     const router = useRouter();
+    // QA-38: keep showing the page with the last good session while a failed
+    // refetch is checked, so a network blip neither blanks the page (losing
+    // what the user typed) nor sends them to sign in.
+    const [lastSession, setLastSession] = useState(liveSession);
+    if (liveSession && liveSession !== lastSession) setLastSession(liveSession);
+    const session = liveSession ?? (status === "unauthenticated" ? lastSession : null);
+    const [recheck, setRecheck] = useState(0);
 
     useEffect(() => {
-        if (status === "unauthenticated") {
-            // Workspace tabs §4: come back to the page (and its tab) after signing in, as the fetch guard does.
-            const back = `${window.location.pathname}${window.location.search}`;
-            router.push(`/auth/login?callbackUrl=${encodeURIComponent(back)}`);
-        }
-    }, [status, router]);
+        if (status !== "unauthenticated") return;
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        void serverSaysSignedOut().then(signedOut => {
+            if (cancelled) return;
+            if (signedOut) {
+                // Workspace tabs §4: come back to the page (and its tab) after signing in, as the fetch guard does.
+                const back = `${window.location.pathname}${window.location.search}`;
+                router.push(`/auth/login?callbackUrl=${encodeURIComponent(back)}`);
+                return;
+            }
+            if (signedOut === false) {
+                // The cookie is still good: put the session back, and look again
+                // if that refetch fails too.
+                void update().then(restored => {
+                    if (!cancelled && !restored) timer = setTimeout(() => setRecheck(n => n + 1), SESSION_RECHECK_MS);
+                });
+                return;
+            }
+            // Server not reachable: ask again shortly.
+            timer = setTimeout(() => setRecheck(n => n + 1), SESSION_RECHECK_MS);
+        });
+        return () => {
+            cancelled = true;
+            if (timer) clearTimeout(timer);
+        };
+    }, [status, router, update, recheck]);
 
     // Review fix 5: a super admin with no organisation selected who opens the
     // dashboard home (e.g. straight after sign-in) lands on the organisation

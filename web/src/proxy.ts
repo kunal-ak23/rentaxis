@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { legacyRedirect } from "./lib/nav/routeMap";
 import { EXPECTED_TENANT_HEADER } from "./lib/session/orgHeaders";
 import { orgMismatchResponse, resolveBackendIdentity, sessionEndedResponse } from "./lib/session/backendIdentity";
+import { safeCallbackUrl } from "./lib/session/proxyFetchGuard";
 
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -62,6 +63,31 @@ function forwardToBackend(requestHeaders: Headers): NextResponse {
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set('X-Rentaxis-Forwarded', '1');
     return response;
+}
+
+/** `/login`, `/en/login`, `/ar/login`: a short URL people type; no page lives there (QA-39). */
+const LOGIN_ALIAS = /^\/(?:(en|ar)\/)?login\/?$/;
+/** The sign-in and sign-up pages: a signed-in visitor is sent on (QA-39). */
+const SIGNED_OUT_PAGE = /^\/(?:(en|ar)\/)?auth\/(?:login|register)\/?$/;
+
+/**
+ * QA-39: the login page never looked for an existing session, so a signed-in
+ * user who landed on it stayed there. A live, unrevoked session goes to its
+ * callbackUrl (same checks as the login form) or the dashboard home, whose
+ * layout sends renters and guards on to their own home.
+ */
+async function signedOutPageRedirect(req: NextRequest): Promise<NextResponse | null> {
+    const { pathname, search, origin } = req.nextUrl;
+    const alias = LOGIN_ALIAS.exec(pathname);
+    if (alias) {
+        return NextResponse.redirect(new URL(`/${alias[1] ?? 'en'}/auth/login${search}`, origin), 307);
+    }
+    const page = SIGNED_OUT_PAGE.exec(pathname);
+    if (!page) return null;
+    const token = await getToken({ req });
+    if (!token || token.revoked === true || !token.id) return null;
+    const back = safeCallbackUrl(req.nextUrl.searchParams.get('callbackUrl'), origin);
+    return NextResponse.redirect(new URL(back ?? `/${page[1] ?? 'en'}/dashboard`, origin), 307);
 }
 
 export default async function middleware(req: NextRequest) {
@@ -123,6 +149,11 @@ export default async function middleware(req: NextRequest) {
         return addSecurityHeaders(forwardToBackend(requestHeaders), req.nextUrl.pathname);
     }
 
+    const signedOut = await signedOutPageRedirect(req);
+    if (signedOut) {
+        return addSecurityHeaders(signedOut, req.nextUrl.pathname);
+    }
+
     // Admin UI simplification: a moved page answers its old URL with a
     // permanent redirect that keeps the locale and every query parameter
     // (routeMap.ts). Runs before next-intl so the locale is never rewritten.
@@ -138,5 +169,5 @@ export default async function middleware(req: NextRequest) {
 
 export const config = {
     // Match internationalized pathnames AND api proxy routes
-    matcher: ['/', '/(ar|en)/:path*', '/dashboard/:path*', '/api/proxy/:path*']
+    matcher: ['/', '/(ar|en)/:path*', '/dashboard/:path*', '/login', '/auth/:path*', '/api/proxy/:path*']
 };
