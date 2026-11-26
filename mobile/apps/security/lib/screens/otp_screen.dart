@@ -191,9 +191,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 children: [
                   Center(
                     child: Image.asset(
-                      'assets/logo_mark.png',
-                      width: 64,
-                      height: 64,
+                      'assets/logo.png',
+                      width: 150,
+                      fit: BoxFit.contain,
                     ),
                   ),
                   const SizedBox(height: 22),

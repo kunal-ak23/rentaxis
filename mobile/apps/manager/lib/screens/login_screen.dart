@@ -185,19 +185,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 .setLanguage(lang),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 30),
 
                         // Brand block, mirrored from the renter login so the
                         // two apps read as one product.
                         Image.asset(
-                          'assets/logo_mark.png',
-                          width: 100,
-                          height: 100,
-                        ),
-                        const SizedBox(height: 16),
-                        Image.asset(
-                          'assets/logo_horizontal.png',
-                          height: 32,
+                          'assets/logo.png',
+                          width: 220,
                           fit: BoxFit.contain,
                         ),
                         const SizedBox(height: 8),
