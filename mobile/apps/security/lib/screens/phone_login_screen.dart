@@ -106,21 +106,12 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                             .setLanguage(lang),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    // Brand mark (Arabic مفتاح).
+                    const SizedBox(height: 24),
+                    // Brand logo: MIFTAH over مفتاح, shown once.
                     Center(
                       child: Image.asset(
-                        'assets/logo_mark.png',
-                        width: 90,
-                        height: 90,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    // Horizontal logo with text.
-                    Center(
-                      child: Image.asset(
-                        'assets/logo_horizontal.png',
-                        height: 30,
+                        'assets/logo.png',
+                        width: 200,
                         fit: BoxFit.contain,
                       ),
                     ),

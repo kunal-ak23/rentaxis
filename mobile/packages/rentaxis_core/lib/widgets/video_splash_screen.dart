@@ -133,7 +133,9 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
                       scale: _logoScale.value,
                       child: Image.asset(
                         'assets/logo.png',
-                        width: 214,
+                        // logo.png is cropped to the art; 196 keeps the old
+                        // visible size (art was 92% of a padded square).
+                        width: 196,
                         fit: BoxFit.contain,
                       ),
                     ),

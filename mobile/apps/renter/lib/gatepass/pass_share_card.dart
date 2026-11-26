@@ -65,10 +65,10 @@ class MiftahPassShareCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Arabic wordmark in عربي, English wordmark in EN — one script each.
+            // The English MIFTAH wordmark in both languages (client brand ruling).
             Image.asset(
-              ar ? 'assets/logo_mark.png' : 'assets/logo_horizontal.png',
-              height: ar ? 40 : 22,
+              'assets/logo_horizontal.png',
+              height: 22,
               fit: BoxFit.contain,
               // A missing wordmark must not cost the guest their pass.
               errorBuilder: (_, _, _) => Text(
