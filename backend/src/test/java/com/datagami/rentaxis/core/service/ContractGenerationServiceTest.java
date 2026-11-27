@@ -40,6 +40,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -456,6 +457,7 @@ class ContractGenerationServiceTest {
         LeaseLineRepository lineRepo = mock(LeaseLineRepository.class);
 
         when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lenient().when(leaseRepo.findByIdForUpdate(lease.getId())).thenReturn(Optional.of(lease));
         when(leaseRepo.findMaxContractNumberForTenant(lease.getTenantId())).thenReturn(maxContractNumber);
         when(leaseRepo.save(any(Lease.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -706,6 +708,31 @@ class ContractGenerationServiceTest {
         // Lease state unchanged.
         assertThat(lease.getContractNumber()).isNull();
         assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    /**
+     * PR #489 review: a lease with no contract rent line (here its only rent line
+     * belongs to an addendum) states its total rent per year over the lease dates,
+     * not the two years' total as "Annual rent".
+     */
+    @Test
+    void annualRentWithoutAContractRentLineIsStatedPerYear() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LandlordOrg landlord = buildLandlordOrg(tenantId);
+        Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
+        Unit unit = buildUnit(tenantId, property);
+        Lease lease = buildLease(tenantId, unit, buildRenter(tenantId), false);
+        lease.setStartDate(LocalDate.of(2026, 1, 1));
+        lease.setEndDate(LocalDate.of(2027, 12, 31)); // 730 days
+        List<LeaseLine> lines = new ArrayList<>();
+        LeaseLine rent = leaseLine(1, "Rent", ChargeBehaviour.RENT, new BigDecimal("110000"), false);
+        rent.setAddendumId(UUID.randomUUID());
+        lines.add(rent);
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, landlord, List.of(), lines, 1L, Files.createTempDirectory("contract-test-"));
+        var v = svc.tenancyFormValues(lease, unit, property, List.of());
+        assertThat(v.get("FORM_ANNUAL_RENT")).contains("55,000.00");
+        assertThat(v.get("FORM_CONTRACT_VALUE")).contains("110,000.00");
     }
 
     /**

@@ -270,9 +270,10 @@ export default function ChequeGrid({
     const leftAmount = leftRows.reduce((s, c) => round2(s + (c.amount || 0)), 0);
     const contractNet = round2(contractValueInclVat - leftAmount);
     const matches = Math.abs(round2(total - contractNet)) < 0.005;
-    // An early termination returns later cheques and a finalized settlement adds its
-    // balance-due row, so the grid no longer collects the contract value: the
-    // settlement statement says what is owed. Comparing the two would only warn falsely.
+    // An early termination returns later cheques, and any finalized settlement (early
+    // or at expiry) may add a balance-due row; a settled termination then reads CLOSED.
+    // The grid no longer collects the contract value: the settlement statement says
+    // what is owed. Before settlement, a normal lease still gets the warning.
     const contractEnded = leaseStatus === "TERMINATED" || !!settlementFinalized;
     // VAT per instalment (spec 2026-09-24 §1). A row with no figure yet (typed on
     // the grid, or its amount edited) is filled in pro rata by the server on save,

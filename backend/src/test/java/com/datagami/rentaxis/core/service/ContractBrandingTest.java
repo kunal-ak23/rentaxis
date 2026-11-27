@@ -48,6 +48,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -171,6 +172,7 @@ class ContractBrandingTest {
                 orgRepo, chequeRepo, lineRepo, mock(ApplicationEventPublisher.class));
         svc.setBlobStorageService(blobs);
         when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lenient().when(leaseRepo.findByIdForUpdate(lease.getId())).thenReturn(Optional.of(lease));
         when(docRepo.findByLeaseId(lease.getId())).thenAnswer(inv -> new ArrayList<>(storedDocs));
         when(docRepo.saveAndFlush(any(com.datagami.rentaxis.domain.entity.LeaseDocument.class))).thenAnswer(inv -> {
             com.datagami.rentaxis.domain.entity.LeaseDocument d = inv.getArgument(0);

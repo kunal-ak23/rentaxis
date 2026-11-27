@@ -269,7 +269,9 @@ public class ContractGenerationService {
     /** The manual "Save signed contract" for a posted lease with no saved PDF (one posted before 27 Nov). */
     @Transactional
     public LeaseDocumentDTO saveSignedContract(UUID leaseId) {
-        Lease lease = leaseRepository.findById(leaseId)
+        // Locked like createExecutedCopy: the posting-time snapshot and this button
+        // must not both find no CONTRACT and both save one.
+        Lease lease = leaseRepository.findByIdForUpdate(leaseId)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
@@ -303,7 +305,7 @@ public class ContractGenerationService {
      */
     @Transactional
     public Optional<LeaseDocumentDTO> createExecutedCopy(UUID leaseId) {
-        Lease lease = leaseRepository.findById(leaseId)
+        Lease lease = leaseRepository.findByIdForUpdate(leaseId)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
@@ -519,12 +521,13 @@ public class ContractGenerationService {
         // every rent line over the term, as the client's contracts state it.
         List<LeaseLine> lines = chargeLines(lease);
         LeaseLine rentLine = LeaseService.contractRentLine(lease, lines);
+        // With no contract rent line the total rent covers the whole term, so it is
+        // stated per year over the lease's own dates.
         BigDecimal annual = rentLine == null ? rent : nz(rentLine.getNetAmount());
-        if (rentLine != null) {
-            long days = LeaseService.rentWindowDays(lease, rentLine);
-            if (days > 0 && (days < 360 || days > 370)) {
-                annual = annual.multiply(BigDecimal.valueOf(365)).divide(BigDecimal.valueOf(days), 2, java.math.RoundingMode.HALF_UP);
-            }
+        long days = rentLine == null && (lease.getStartDate() == null || lease.getEndDate() == null)
+                ? 0 : LeaseService.rentWindowDays(lease, rentLine);
+        if (days > 0 && (days < 360 || days > 370)) {
+            annual = annual.multiply(BigDecimal.valueOf(365)).divide(BigDecimal.valueOf(days), 2, java.math.RoundingMode.HALF_UP);
         }
         v.put("FORM_ANNUAL_RENT", moneyWithWords(annual));
         v.put("FORM_CONTRACT_VALUE", moneyWithWords(rent));

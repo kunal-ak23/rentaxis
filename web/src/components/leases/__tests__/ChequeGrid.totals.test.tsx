@@ -80,7 +80,7 @@ describe("ChequeGrid contract total", () => {
         );
         const footer = screen.getByTestId("cheque-grid-match");
         expect(footer).toHaveAttribute("data-match", "ended");
-        expect(footer).toHaveTextContent("The contract ended early");
+        expect(footer).toHaveTextContent("The contract has ended");
         expect(screen.queryByText(/but the amount to collect is/)).toBeNull();
     });
 
