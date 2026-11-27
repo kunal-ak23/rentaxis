@@ -21,6 +21,8 @@ import { isAbortError } from "@/lib/api/abort";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { dewaProblem, normaliseDewa } from "@/lib/units/dewa";
 import { serverText } from "@/components/finance/bankrec/serverText";
+import { ExpectedRentCell } from "@/components/units/ExpectedRentCell";
+import { BulkExpectedRentDialog } from "@/components/units/BulkExpectedRentDialog";
 
 /** The units page's own page size, for the pages-loop below (S16-02). */
 const UNITS_PAGE_SIZE = 200;
@@ -90,6 +92,8 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
     const { data: session } = useSession();
     const canSetDewa = hasPermission(session?.user?.role as UserRole | undefined, "canSetUnitDewaPremise");
     const canViewLedger = hasPermission(session?.user?.role as UserRole | undefined, "canAccessFinance");
+    const canPriceUnits = hasPermission(session?.user?.role as UserRole | undefined, "canCreateProperties");
+    const [showBulkRent, setShowBulkRent] = useState(false);
     // S16-02: the tower (Building) filter, in the URL so a link/bookmark keeps
     // it — same pattern as the Contracts list's URL-persisted filters:
     // `useSearchParams` re-renders this page on a same-route navigation (a
@@ -277,6 +281,16 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                 <div className="flex items-center gap-2 self-start">
                     <TowerSelect propertyId={propertyId} value={buildingFilter} onChange={setBuildingFilter} testId="units-building-filter" onAvailabilityChange={onTowerAvailability} />
                     {refreshing && <Loader2 size={14} className="animate-spin text-muted" data-testid="units-refreshing" />}
+                    {canPriceUnits && (
+                        <button
+                            onClick={() => setShowBulkRent(true)}
+                            data-testid="units-page-bulk-rent"
+                            className="flex items-center gap-2 bg-background text-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        >
+                            <CreditCard size={14} />
+                            {t("bulkEditRent")}
+                        </button>
+                    )}
                     <button
                         onClick={() => { setFormError(null); setShowForm(true); }}
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
@@ -286,6 +300,18 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                     </button>
                 </div>
             </div>
+
+            {showBulkRent && (
+                <BulkExpectedRentDialog
+                    open
+                    onClose={() => setShowBulkRent(false)}
+                    onDone={fetchUnits}
+                    projects={[{ id: propertyId, label: "" }]}
+                    fixedProjectId={propertyId}
+                    fixedBuildingId={buildingFilter || undefined}
+                    units={units}
+                />
+            )}
 
             {showForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
@@ -432,7 +458,10 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                                                 <CreditCard size={12} className="text-primary/40" />
                                                 <span className="text-[9px] font-bold text-muted uppercase">Target Rent</span>
                                             </div>
-                                            <p className="text-xs font-bold text-foreground">{formatCurrencyCompact(u.expectedRent)}</p>
+                                            <p className="text-xs font-bold text-foreground">
+                                                <ExpectedRentCell unitId={u.id} value={u.expectedRent} canEdit={canPriceUnits}
+                                                    onSaved={rent => setUnits(prev => prev.map(x => (x.id === u.id ? { ...x, expectedRent: rent } : x)))} />
+                                            </p>
                                         </div>
                                         <div className="bg-surface/50 rounded-xl p-3 border border-border relative overflow-hidden">
                                             <div className="absolute top-0 left-0 right-0 h-[2px] bg-accent" />

@@ -10,7 +10,11 @@ import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.datagami.rentaxis.domain.entity.enums.UnitType;
+
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -97,6 +101,62 @@ public class UnitService {
             throw e;
         }
         return Loaded.with(saved, Unit::getProperty, Unit::getBuilding);
+    }
+
+    /**
+     * Sets a unit's expected (asking) rent. It is the price the unit is offered at, so a
+     * signed contract keeps its own rent: only the vacancy and revenue-at-capacity figures
+     * read it.
+     */
+    @Transactional
+    public Unit setExpectedRent(UUID unitId, BigDecimal rent) {
+        requireValidRent(rent);
+        Unit unit = repository.findById(unitId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Unit not found"));
+        propertyScope.requireCanAccessUnit(unit, "Unit not found");
+        unit.setExpectedRent(rent);
+        return Loaded.with(repository.save(unit), Unit::getProperty, Unit::getBuilding);
+    }
+
+    /**
+     * Sets the expected rent of every unit of each given type in the given projects (and,
+     * when named, one building of a single project). Units of a type not in {@code rents}
+     * keep their rent. Returns how many units changed per type.
+     */
+    @Transactional
+    public Map<UnitType, Integer> bulkSetExpectedRent(List<UUID> propertyIds, UUID buildingId,
+                                                      Map<UnitType, BigDecimal> rents) {
+        if (propertyIds == null || propertyIds.isEmpty()) {
+            throw new BusinessRuleViolationException("Choose at least one project");
+        }
+        if (rents == null || rents.isEmpty()) {
+            throw new BusinessRuleViolationException("Enter a rent for at least one unit type");
+        }
+        rents.values().forEach(UnitService::requireValidRent);
+        if (buildingId != null && propertyIds.size() != 1) {
+            throw new BusinessRuleViolationException("A building can only be chosen with one project");
+        }
+        Map<UnitType, Integer> changed = new java.util.EnumMap<>(UnitType.class);
+        rents.keySet().forEach(t -> changed.put(t, 0));
+        for (UUID propertyId : new java.util.LinkedHashSet<>(propertyIds)) {
+            Property property = refs.property(propertyId);
+            propertyScope.requireCanAccessProperty(property.getId());
+            Building building = buildingId == null ? null : refs.building(buildingId, property);
+            for (Unit u : repository.findByPropertyId(property.getId())) {
+                if (building != null && (u.getBuilding() == null || !building.getId().equals(u.getBuilding().getId()))) continue;
+                BigDecimal rent = u.getType() == null ? null : rents.get(u.getType());
+                if (rent == null) continue;
+                u.setExpectedRent(rent);
+                changed.merge(u.getType(), 1, Integer::sum);
+            }
+        }
+        return changed;
+    }
+
+    private static void requireValidRent(BigDecimal rent) {
+        if (rent == null) throw new BusinessRuleViolationException("Expected rent is required");
+        String problem = UnitRules.rentProblem(rent);
+        if (problem != null) throw new BusinessRuleViolationException("Expected rent: " + problem);
     }
 
     public static final String DEWA_TAKEN = "unit.dewaTaken";

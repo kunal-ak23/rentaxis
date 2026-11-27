@@ -47,6 +47,34 @@ public class UnitController {
         return ResponseEntity.ok(service.setDewaPremiseNumber(id, request == null ? null : request.dewaPremiseNumber()));
     }
 
+    /** Body of {@code PUT /units/{id}/expected-rent}. */
+    public record ExpectedRentRequest(BigDecimal expectedRent) {
+    }
+
+    @PutMapping("/{id}/expected-rent")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<Unit> setExpectedRent(@PathVariable UUID id, @RequestBody ExpectedRentRequest request) {
+        return ResponseEntity.ok(service.setExpectedRent(id, request == null ? null : request.expectedRent()));
+    }
+
+    /**
+     * Body of {@code PUT /units/expected-rent/bulk}: the projects, optionally one building of a
+     * single project, and the rent per unit type ({"BHK2": 30000, "BHK3": 40000}).
+     */
+    public record BulkExpectedRentRequest(List<UUID> propertyIds, UUID buildingId, Map<UnitType, BigDecimal> rents) {
+    }
+
+    public record BulkExpectedRentResult(Map<UnitType, Integer> updated, int total) {
+    }
+
+    @PutMapping("/expected-rent/bulk")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<BulkExpectedRentResult> bulkSetExpectedRent(@RequestBody BulkExpectedRentRequest request) {
+        if (request == null) throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException("Request body is required");
+        Map<UnitType, Integer> updated = service.bulkSetExpectedRent(request.propertyIds(), request.buildingId(), request.rents());
+        return ResponseEntity.ok(new BulkExpectedRentResult(updated, updated.values().stream().mapToInt(Integer::intValue).sum()));
+    }
+
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<Unit>> getAllUnits() {
