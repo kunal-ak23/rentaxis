@@ -291,6 +291,24 @@ class ChequeGenerationServiceIT extends AbstractPostgresIT {
      * fee and the deposit on their own is also four rows, but row 3 would move
      * from a rent instalment to the admin fee.
      */
+    /** QA-40 review 2: a grid saved before rowKind existed (null) reads as rent rows. */
+    @Test
+    void regeneratingALegacyGridWithNoRowKindsKeepsNumbers() {
+        UUID leaseId = leaseService.createDraftLease(fixtures.draftDto(START, END, List.of(
+                line("RENT", "48000")))).getId();
+        service.generate(leaseId, fourCheques());
+        service.generateNumbers(leaseId, "200301");
+        tx.executeWithoutResult(s -> chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId)
+                .forEach(c -> { c.setRowKind(null); chequeRepository.save(c); }));
+
+        List<ChequeDTO> again = service.generate(leaseId,
+                new GenerateChequesRequest(4, LocalDate.of(2026, 10, 1), null, null, null, null, null));
+
+        assertThat(again).extracting(ChequeDTO::chequeNumber)
+                .containsExactly("200301", "200302", "200303", "200304");
+        assertThat(again).extracting(ChequeDTO::payeeBank).containsOnly("Emirates NBD");
+    }
+
     @Test
     void regeneratingToADifferentShapeKeepsNoNumbers() {
         UUID leaseId = draft().getId();

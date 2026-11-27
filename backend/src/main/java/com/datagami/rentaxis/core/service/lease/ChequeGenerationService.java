@@ -464,7 +464,9 @@ public class ChequeGenerationService {
         boolean carry = previous.size() == rows.size();
         for (int i = 0; carry && i < rows.size(); i++) {
             Cheque old = previous.get(i);
-            carry = old.getMode() == mode && old.getRowKind() == rows.get(i).kind();
+            // A row saved before rowKind existed reads as RENT, as LeaseBatchService does.
+            ChequeRowKind oldKind = old.getRowKind() == null ? ChequeRowKind.RENT : old.getRowKind();
+            carry = old.getMode() == mode && oldKind == rows.get(i).kind();
         }
         List<String> keptNumbers = new ArrayList<>(rows.size());
         List<String> keptBanks = new ArrayList<>(rows.size());

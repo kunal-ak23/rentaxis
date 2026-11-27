@@ -98,6 +98,8 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
      * {@code q} is {@code %term%}, lowercased and trimmed, matched against the unit number,
      * the current tenant's name and the property's name; {@code floorPrefix} is the
      * unit-number prefix a floor's units share ({@code "07%"} for 07-01, 07-02 ...).
+     * {@code excludeStatus} drops one status (QA-37: the wizard's widened picker
+     * never offers MAINTENANCE units), filtered here so the page stays full.
      */
     @org.springframework.data.jpa.repository.Query("""
         select u from Unit u
@@ -105,6 +107,7 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
           and (cast(:propertyId as java.util.UUID) is null or u.property.id = :propertyId)
           and (cast(:buildingId as java.util.UUID) is null or u.building.id = :buildingId)
           and (cast(:status as string) is null or u.status = :status)
+          and (cast(:excludeStatus as string) is null or u.status <> :excludeStatus)
           and (cast(:floorPrefix as string) is null or u.unitNumber like :floorPrefix)
           and (cast(:q as string) is null
                or lower(u.unitNumber) like :q or lower(u.currentTenantName) like :q
@@ -116,6 +119,7 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
             @org.springframework.data.repository.query.Param("propertyId") UUID propertyId,
             @org.springframework.data.repository.query.Param("buildingId") UUID buildingId,
             @org.springframework.data.repository.query.Param("status") com.datagami.rentaxis.domain.entity.enums.UnitStatus status,
+            @org.springframework.data.repository.query.Param("excludeStatus") com.datagami.rentaxis.domain.entity.enums.UnitStatus excludeStatus,
             @org.springframework.data.repository.query.Param("floorPrefix") String floorPrefix,
             @org.springframework.data.repository.query.Param("q") String q,
             @org.springframework.data.repository.query.Param("unrestricted") boolean unrestricted,

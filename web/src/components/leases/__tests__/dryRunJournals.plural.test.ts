@@ -12,9 +12,12 @@ describe("Leasing.dryRunJournals", () => {
         expect(fmt(en.Leasing.dryRunJournals, "en", { tco: 1, tcoLines: 4, pdr: 0 }))
             .toBe("One contract entry with 4 lines, and no post-dated cheque entries");
     });
-    it("AR formats for each plural category without error", () => {
-        for (const n of [0, 1, 2, 3, 11, 100]) {
-            expect(fmt(ar.Leasing.dryRunJournals, "ar", { tco: 1, tcoLines: n, pdr: n })).not.toMatch(/[{}]/);
-        }
+    it("AR picks the plural form for each category", () => {
+        const ar1 = (tco: number, tcoLines: number, pdr: number) => fmt(ar.Leasing.dryRunJournals, "ar", { tco, tcoLines, pdr });
+        expect(ar1(1, 1, 0)).toBe("قيد عقد واحد ببند واحد، ولا قيود شيكات آجلة");
+        expect(ar1(2, 2, 1)).toBe("قيدا عقد ببندين، وقيد شيكات آجلة واحد");
+        expect(ar1(1, 3, 2)).toMatch(/^قيد عقد واحد بـ \S+ بنود، وقيدا شيكات آجلة$/);
+        expect(ar1(1, 11, 12)).toMatch(/^قيد عقد واحد بـ \S+ بندًا، و\S+ قيدًا للشيكات الآجلة$/);
+        expect(ar1(1, 100, 100)).toMatch(/^قيد عقد واحد بـ \S+ بند، و\S+ قيد شيكات آجلة$/);
     });
 });

@@ -28,18 +28,18 @@ vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "
 // The unit picker as a plain <select> over the units the filter would let through,
 // recording the scope it was handed — the real one sends it to /units/search.
 const pickerScope = vi.hoisted(() => ({ propertyId: undefined as string | undefined, buildingId: undefined as string | undefined }));
-const pickerStatus = vi.hoisted(() => ({ status: undefined as string | undefined, exclude: undefined as string[] | undefined }));
+const pickerStatus = vi.hoisted(() => ({ status: undefined as string | undefined, exclude: undefined as string | undefined }));
 vi.mock("@/components/pickers/UnitPicker", () => ({
-    UnitPicker: ({ value, onChange, placeholder, propertyId, buildingId, status, excludeStatuses }: {
+    UnitPicker: ({ value, onChange, placeholder, propertyId, buildingId, status, excludeStatus }: {
         value: string; onChange: (id: string, u: unknown) => void; placeholder?: string; propertyId?: string; buildingId?: string;
-        status?: string; excludeStatuses?: string[];
+        status?: string; excludeStatus?: string;
     }) => {
         pickerScope.propertyId = propertyId;
         pickerScope.buildingId = buildingId;
         pickerStatus.status = status;
-        pickerStatus.exclude = excludeStatuses;
+        pickerStatus.exclude = excludeStatus;
         const shown = UNITS.filter(u => (!propertyId || u.propertyId === propertyId) && (!buildingId || u.buildingId === buildingId)
-            && (!status || u.status === status) && !(excludeStatuses ?? []).includes(u.status));
+            && (!status || u.status === status) && u.status !== excludeStatus);
         return (
             <select aria-label={placeholder} data-testid="unit-select" value={value}
                 onChange={e => onChange(e.target.value, UNITS.find(u => u.id === e.target.value) ?? null)}>
@@ -162,7 +162,7 @@ describe("contract wizard — Parties step building filter", () => {
         expect(unitOptions()).toEqual(["A-101", "B-201", "C-301"]);
 
         fireEvent.click(screen.getByTestId("wizard-include-let-units"));
-        expect(pickerStatus).toEqual({ status: undefined, exclude: ["MAINTENANCE"] });
+        expect(pickerStatus).toEqual({ status: undefined, exclude: "MAINTENANCE" });
         expect(unitOptions()).toEqual(["A-101", "B-201", "C-301", "C-302"]);
 
         fireEvent.change(screen.getByLabelText("Unit"), { target: { value: "u4" } });
