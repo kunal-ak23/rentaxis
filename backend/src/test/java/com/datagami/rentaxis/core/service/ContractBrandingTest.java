@@ -529,6 +529,55 @@ class ContractBrandingTest {
         verify(docRepo, times(1)).saveAndFlush(any());
     }
 
+    /**
+     * 27 Nov (owner): "save a contract at the time of signing as contract can change in
+     * future". A lease posted without a generated contract has its contract saved at
+     * posting, unstamped, and the executed copy stamps that file once. Later changes
+     * to the lease never reach either.
+     */
+    @Test
+    void aContractSignedWithoutAGeneratedPdfIsSavedAtPostingAndNeverRedrawn() throws Exception {
+        stampSet();
+        posted();
+        lease.setContractNumber(1234L);
+        storedDocs.clear();
+
+        var copy = svc.createExecutedCopy(lease.getId());
+
+        assertThat(copy).isPresent();
+        var contract = storedDocs.stream()
+                .filter(d -> d.getType() == com.datagami.rentaxis.domain.entity.enums.DocumentType.CONTRACT)
+                .findFirst().orElseThrow();
+        assertThat(storedDocs).hasSize(2);
+        byte[] contractBytes = Files.readAllBytes(Path.of(contract.getDocumentUrl()));
+        byte[] executed = svc.currentContractPdf(lease.getId());
+        // Stamped once: the saved contract has no stamp, the copy one per page.
+        assertExecutedCopyOf(contractBytes, executed, "saved at posting");
+
+        lease.getRenter().setNameEn("SOMEONE ELSE ENTIRELY");
+        assertThat(svc.currentContractPdf(lease.getId())).isEqualTo(executed);
+        assertThat(text(executed)).doesNotContain("SOMEONE ELSE");
+    }
+
+    /** The manual action for a lease signed before 27 Nov: saves once, then returns the same file. */
+    @Test
+    void saveSignedContractFreezesAPostedLeaseOnceAndRefusesADraft() throws Exception {
+        storedDocs.clear();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> svc.saveSignedContract(lease.getId()))
+                .hasMessageContaining("Only a signed (posted) contract can be saved");
+        posted();
+        lease.setContractNumber(1234L);
+
+        var first = svc.saveSignedContract(lease.getId());
+        var second = svc.saveSignedContract(lease.getId());
+
+        assertThat(second.getId()).isEqualTo(first.getId());
+        assertThat(storedDocs).hasSize(1);
+        byte[] saved = svc.currentContractPdf(lease.getId());
+        lease.getRenter().setNameEn("SOMEONE ELSE ENTIRELY");
+        assertThat(svc.currentContractPdf(lease.getId())).isEqualTo(saved);
+    }
+
     @Test
     void noCopyWithoutAStampASignatureOrASignedContract() throws Exception {
         // No stamp.
@@ -544,12 +593,11 @@ class ContractBrandingTest {
             lease.setStatus(st);
             assertThat(svc.createExecutedCopy(lease.getId())).as(st.name()).isEmpty();
         }
-        // No stored signed contract (a renewal or an imported lease).
-        posted();
-        storedDocs.clear();
-        assertThat(svc.createExecutedCopy(lease.getId())).isEmpty();
-        verify(docRepo, never()).saveAndFlush(any());
+        // No stored signed contract (a renewal or an imported lease): since 27 Nov the
+        // contract is saved as it stands at posting, then stamped (see
+        // aContractSignedWithoutAGeneratedPdfIsSavedAtPostingAndNeverRedrawn).
         // Without a copy, the download is the signed contract.
+        storedDocs.clear();
         var signed = storeSignedContract();
         posted();
         landlord.setStampImageUrl(null);

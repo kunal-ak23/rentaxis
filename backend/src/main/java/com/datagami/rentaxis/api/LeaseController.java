@@ -804,6 +804,13 @@ public class LeaseController {
         return ResponseEntity.ok(contractGenerationService.generateContract(id));
     }
 
+    /** 27 Nov: freeze a signed contract that has no saved PDF, so later changes never alter it. */
+    @PostMapping("/{id}/contract/save-signed")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<LeaseDocumentDTO> saveSignedContract(@PathVariable UUID id) {
+        return ResponseEntity.ok(contractGenerationService.saveSignedContract(id));
+    }
+
     @PostMapping("/{id}/generate-contract/preview")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<byte[]> previewContract(@PathVariable UUID id) {

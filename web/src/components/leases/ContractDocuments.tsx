@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Download, FileCheck2, FileText, Loader2, Stamp } from "lucide-react";
+import { Download, FileCheck2, FileText, Loader2, Save, Stamp } from "lucide-react";
 
 type ContractDocument = { id: string; type: string; label?: string; createdAt?: string | null };
 
@@ -16,6 +16,10 @@ type ContractDocument = { id: string; type: string; label?: string; createdAt?: 
  * `canIssue` (an admin on a posted lease) offers "Issue executed copy" when none
  * exists: the automatic issue at posting never blocks posting, so a failure there
  * (or a stamp added later) is put right here.
+ *
+ * 27 Nov (owner): a signed lease with no saved contract (posted before contracts
+ * were saved at posting) offers "Save signed contract", which keeps the contract as
+ * it stands now so later changes to the lease or the template never alter it.
  */
 export function ContractDocuments({ leaseId, canIssue, leaseStatus, refreshKey }: {
     leaseId: string;
@@ -89,6 +93,20 @@ export function ContractDocuments({ leaseId, canIssue, leaseStatus, refreshKey }
         }
     };
 
+    const saveSigned = async () => {
+        setIssuing(true);
+        setMessage(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${leaseId}/contract/save-signed`, { method: "POST" });
+            if (res.ok) await load();
+            else setMessage(t("saveFailed"));
+        } catch {
+            setMessage(t("saveFailed"));
+        } finally {
+            setIssuing(false);
+        }
+    };
+
     if (docs === null) return null;
     // Not "signed" while nobody has signed it yet (R3 minor 4).
     const unsigned = leaseStatus === "DRAFT" || leaseStatus === "PENDING_SIGNATURE";
@@ -96,7 +114,21 @@ export function ContractDocuments({ leaseId, canIssue, leaseStatus, refreshKey }
         doc.type === "EXECUTED_COPY" ? t("executedCopy") : unsigned ? t("contract") : t("signedContract");
     const hasSigned = docs.some(d => d.type === "CONTRACT");
     const hasExecuted = docs.some(d => d.type === "EXECUTED_COPY");
-    if (!hasSigned && !hasExecuted) return null;
+    if (!hasSigned && !hasExecuted) {
+        if (!canIssue) return null;
+        return (
+            <div data-testid="contract-documents" className="space-y-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">{t("title")}</p>
+                <p className="text-xs text-muted" data-testid="save-signed-hint">{t("saveSignedHint")}</p>
+                <button type="button" onClick={saveSigned} disabled={issuing} data-testid="save-signed-contract"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-input disabled:opacity-50">
+                    {issuing ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    {t("saveSigned")}
+                </button>
+                {message && <p role="alert" className="text-xs text-error">{message}</p>}
+            </div>
+        );
+    }
 
     return (
         <div data-testid="contract-documents" className="space-y-2">

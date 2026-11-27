@@ -727,9 +727,17 @@ class ContractGenerationServiceTest {
         Lease lease = buildLease(tenantId, unit, renter, false);
         lease.setContractNumber(3934L);
 
+        // The form counts the rows Section 4 prints: a cancelled row is not a
+        // cheque, and a transfer is named as a transfer, not counted as one.
+        List<Cheque> register = new java.util.ArrayList<>(buildRegister());
+        register.get(0).setMode(com.datagami.rentaxis.domain.entity.enums.ChequeMode.TRANSFER);
+        register.get(2).setMode(com.datagami.rentaxis.domain.entity.enums.ChequeMode.TRANSFER);
+        Cheque cancelled = chq(4, LocalDate.of(2026, 10, 24), "000002", "ENBD", new BigDecimal("13750"), "RENT");
+        cancelled.setStatus(ChequeStatus.CANCELLED);
+        register.add(cancelled);
         Path tmpStorage = Files.createTempDirectory("contract-test-");
         ContractGenerationService svc = buildSpyForFullFlow(
-                lease, landlord, buildRegister(), buildLines(false), 3933L, tmpStorage);
+                lease, landlord, register, buildLines(false), 3933L, tmpStorage);
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.previewContract(lease.getId());
         verify(svc).renderPdf(htmlCaptor.capture());
@@ -742,7 +750,8 @@ class ContractGenerationServiceTest {
         assertThat(form).isPositive().isLessThan(terms);
         assertThat(terms).isLessThan(schedule);
         assertThat(html).contains("70.42").contains("624159108").contains("12345 67890")
-                .contains("Warsan Fourth, Dubai").contains("tc-dot on\"></span>Residential");
+                .contains("Warsan Fourth, Dubai").contains("tc-dot on\"></span>Residential")
+                .contains("1 cheque + Bank transfer").doesNotContain("2 cheques");
         assertThat(html).doesNotContainIgnoringCase("Land Department").doesNotContainIgnoringCase("Government of Dubai");
 
         org.mockito.Mockito.doCallRealMethod().when(svc).renderPdf(any(String.class));

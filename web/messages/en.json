@@ -5763,6 +5763,9 @@
     "post_failedRef": "Posting failed — reference {reference}"
   },
   "ContractDocuments": {
+      "saveSigned": "Save signed contract",
+      "saveSignedHint": "No copy of this contract was saved when it was signed. Save it now so later changes to the lease never alter it.",
+      "saveFailed": "The contract could not be saved. Try again.",
       "title": "Contract documents",
       "contract": "Contract",
       "signedContract": "Signed contract",
