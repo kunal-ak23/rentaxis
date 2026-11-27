@@ -708,6 +708,56 @@ class ContractGenerationServiceTest {
         assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
     }
 
+    /**
+     * 27 Nov: the client's contracts open with the bilingual tenancy form, then the
+     * additional terms (with the parties block), and end with the Lease Agreement
+     * schedule. Renders the real PDF; RENTAXIS_CONTRACT_SAMPLE writes it out for a look.
+     */
+    @Test
+    void contractOpensWithTheTenancyFormAndEndsWithTheSchedule() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LandlordOrg landlord = buildLandlordOrg(tenantId);
+        Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
+        property.setAddress("Warsan Fourth, Dubai");
+        property.setMakaniNumber("12345 67890");
+        Unit unit = buildUnit(tenantId, property);
+        unit.setSizeSqft(new BigDecimal("758"));
+        unit.setDewaPremiseNumber("624159108");
+        Renter renter = buildRenter(tenantId);
+        Lease lease = buildLease(tenantId, unit, renter, false);
+        lease.setContractNumber(3934L);
+
+        Path tmpStorage = Files.createTempDirectory("contract-test-");
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, landlord, buildRegister(), buildLines(false), 3933L, tmpStorage);
+        ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
+        svc.previewContract(lease.getId());
+        verify(svc).renderPdf(htmlCaptor.capture());
+        String html = htmlCaptor.getValue();
+
+        assertThat(html).doesNotContain("{{");
+        int form = html.indexOf("TENANCY CONTRACT</div>");
+        int terms = html.indexOf("ADDITIONAL TERMS AND CONDITIONS");
+        int schedule = html.indexOf("LEASE AGREEMENT</div>");
+        assertThat(form).isPositive().isLessThan(terms);
+        assertThat(terms).isLessThan(schedule);
+        assertThat(html).contains("70.42").contains("624159108").contains("12345 67890")
+                .contains("Warsan Fourth, Dubai").contains("tc-dot on\"></span>Residential");
+        assertThat(html).doesNotContainIgnoringCase("Land Department").doesNotContainIgnoringCase("Government of Dubai");
+
+        org.mockito.Mockito.doCallRealMethod().when(svc).renderPdf(any(String.class));
+        byte[] pdf = svc.renderPdf(html);
+        try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            String first = new org.apache.pdfbox.text.PDFTextStripper() {{ setStartPage(1); setEndPage(1); }}.getText(doc);
+            assertThat(first).contains("TENANCY CONTRACT").contains("Property Information");
+            String last = new org.apache.pdfbox.text.PDFTextStripper() {{
+                setStartPage(doc.getNumberOfPages()); setEndPage(doc.getNumberOfPages()); }}.getText(doc);
+            assertThat(last).contains("LEASE AGREEMENT").contains("Payment Details");
+        }
+        String out = System.getenv("RENTAXIS_CONTRACT_SAMPLE");
+        if (out != null) Files.write(Path.of(out), pdf);
+    }
+
     @Test
     void renderedHtml_isWellFormedForOpenHtmlToPdfXmlParser() throws Exception {
         // OpenHtmlToPdf 1.1.37 parses input HTML through a TRaX (Xalan) XSLT

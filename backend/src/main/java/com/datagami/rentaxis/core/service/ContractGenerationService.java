@@ -433,8 +433,99 @@ public class ContractGenerationService {
         values.put("GRAND_TOTAL", formatAmount(grandTotal));
         values.put("PRINT_DATETIME", formatPrintDateTime(java.time.LocalDateTime.now()));
         values.put("TERMS_TABLE", termsTable);
+        values.putAll(tenancyFormValues(lease, unit, property, cheques));
 
         return substituteAll(template, values);
+    }
+
+    private static final BigDecimal SQFT_TO_SQM = new BigDecimal("0.09290304");
+
+    /**
+     * The bilingual tenancy form on page 1 (27 Nov, the client's Ejari-style layout):
+     * values RentAxis holds; anything it does not (Emirates ID, licence, plot number)
+     * stays a blank line on the page. Rent and deposit come from the lease's own
+     * lines (by charge behaviour), so the form agrees with the schedule.
+     */
+    Map<String, String> tenancyFormValues(Lease lease, Unit unit, Property property, List<Cheque> cheques) {
+        Map<String, String> v = new HashMap<>();
+        BigDecimal rent = BigDecimal.ZERO;
+        BigDecimal deposit = BigDecimal.ZERO;
+        for (LeaseLine l : chargeLines(lease)) {
+            var behaviour = l.getChargeType() == null ? null : l.getChargeType().getBehaviour();
+            if (behaviour == com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.RENT) rent = rent.add(nz(l.getNetAmount()));
+            else if (behaviour == com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.DEPOSIT) deposit = deposit.add(nz(l.getNetAmount()));
+        }
+        // A term longer or shorter than a year states the yearly figure, not the total.
+        BigDecimal annual = rent;
+        if (lease.getStartDate() != null && lease.getEndDate() != null) {
+            long days = java.time.temporal.ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1;
+            if (days > 0 && (days < 360 || days > 370)) {
+                annual = rent.multiply(BigDecimal.valueOf(365)).divide(BigDecimal.valueOf(days), 2, java.math.RoundingMode.HALF_UP);
+            }
+        }
+        v.put("FORM_ANNUAL_RENT", moneyWithWords(annual));
+        v.put("FORM_CONTRACT_VALUE", moneyWithWords(rent));
+        v.put("FORM_DEPOSIT", deposit.signum() == 0 ? "&#160;" : formatAmount(deposit) + " AED");
+        long chequeCount = cheques.stream().filter(c -> c.getMode() == null
+                || c.getMode() == com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC).count();
+        String otherModes = cheques.stream().map(Cheque::getMode)
+                .filter(m -> m != null && m != com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC)
+                .distinct().map(m -> switch (m) {
+                    case CASH -> "Cash";
+                    case TRANSFER -> "Bank transfer";
+                    case ONLINE -> "Online";
+                    case PDC -> "";
+                }).collect(java.util.stream.Collectors.joining(", "));
+        String mode = chequeCount == 0 ? "" : chequeCount + (chequeCount == 1 ? " cheque" : " cheques");
+        if (!otherModes.isEmpty()) mode = mode.isEmpty() ? otherModes : mode + " + " + otherModes;
+        v.put("FORM_PAYMENT_MODE", mode.isEmpty() ? "&#160;" : mode);
+        v.put("FORM_USAGE", usageMarks(property, unit));
+        v.put("FORM_BUILDING", escapeUserText(unit.getBuilding() != null && unit.getBuilding().getNameEn() != null
+                ? unit.getBuilding().getNameEn() : property.getNameEn()));
+        v.put("FORM_LOCATION", blankIfNone(property.getAddress()));
+        v.put("FORM_MAKANI", blankIfNone(property.getMakaniNumber()));
+        v.put("FORM_DEWA", blankIfNone(unit.getDewaPremiseNumber()));
+        v.put("FORM_UNIT_TYPE", unitTypeWords(unit.getType()));
+        v.put("FORM_AREA_SQM", unit.getSizeSqft() == null ? "&#160;"
+                : unit.getSizeSqft().multiply(SQFT_TO_SQM).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
+        v.put("FORM_LANDLORD_EMAIL", "&#160;");
+        return v;
+    }
+
+    private String moneyWithWords(BigDecimal amount) {
+        if (amount == null || amount.signum() == 0) return "&#160;";
+        String words = AmountInWordsUtil.toEnglishWords(amount, "AED");
+        return formatAmount(amount) + " AED (" + escapeUserText(words) + ")";
+    }
+
+    private static String blankIfNone(String s) {
+        return s == null || s.isBlank() ? "&#160;" : escapeUserText(s.strip());
+    }
+
+    /** Residential / Commercial / Industrial, the property's use marked: a mixed project goes by the unit. */
+    static String usageMarks(Property property, Unit unit) {
+        boolean commercial = property.getType() == com.datagami.rentaxis.domain.entity.enums.PropertyType.COMMERCIAL
+                || (property.getType() == com.datagami.rentaxis.domain.entity.enums.PropertyType.MIXED
+                    && (unit.getType() == com.datagami.rentaxis.domain.entity.enums.UnitType.RETAIL
+                        || unit.getType() == com.datagami.rentaxis.domain.entity.enums.UnitType.OFFICE));
+        String on = "<span class=\"tc-dot on\"></span>", off = "<span class=\"tc-dot\"></span>";
+        return "<span>" + off + "Industrial / صناعي</span>"
+                + "<span>" + (commercial ? on : off) + "Commercial / تجاري</span>"
+                + "<span>" + (commercial ? off : on) + "Residential / سكني</span>";
+    }
+
+    /** The unit type as a contract states it: "1 Bedroom + Hall", not BHK1. */
+    static String unitTypeWords(com.datagami.rentaxis.domain.entity.enums.UnitType type) {
+        if (type == null) return "&#160;";
+        return switch (type) {
+            case STUDIO -> "Studio";
+            case BHK1 -> "1 Bedroom + Hall";
+            case BHK2 -> "2 Bedrooms + Hall";
+            case BHK3 -> "3 Bedrooms + Hall";
+            case PENTHOUSE -> "Penthouse";
+            case RETAIL -> "Retail / Shop";
+            case OFFICE -> "Office";
+        };
     }
 
     /**

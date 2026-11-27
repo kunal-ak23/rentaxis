@@ -63,7 +63,8 @@ import static org.mockito.Mockito.when;
 class ContractBrandingTest {
 
     /** A 12-cheque contract with four charge lines, measured before branding existed. */
-    private static final int TWELVE_CHEQUE_PAGES = 7;
+    /** 27 Nov: the tenancy form page leads the contract, so one more page than before. */
+    private static final int TWELVE_CHEQUE_PAGES = 8;
 
     private static final String LOGO = "https://acct.blob.core.windows.net/tenant-x/assets/logo.png";
     private static final String STAMP = "https://acct.blob.core.windows.net/tenant-x/assets/stamp.png";
@@ -237,14 +238,16 @@ class ContractBrandingTest {
         assertThat(html).contains("TRN: " + TRN)
                 .doesNotContain("blob.core.windows.net")
                 .doesNotContain("{{LANDLORD_");
-        assertThat(html.split("src=\"data:image/png;base64,", -1)).hasSize(3); // logo + stamp
+        assertThat(html.split("src=\"data:image/png;base64,", -1)).hasSize(4); // logo on the form and the schedule + stamp
         byte[] pdf = svc.renderPdf(html);
         keep("branded.pdf", pdf);
         try (PDDocument doc = Loader.loadPDF(pdf)) {
             assertThat(doc.getNumberOfPages()).isEqualTo(TWELVE_CHEQUE_PAGES);
             assertThat(imagesOn(doc.getPage(0))).isEqualTo(2);
-            // The stamp sits in the per-page footer, so every page carries it.
-            assertThat(imagesOn(doc.getPage(TWELVE_CHEQUE_PAGES - 1))).isEqualTo(1);
+            // The stamp sits in the per-page footer, so every page carries it: a terms
+            // page has the stamp alone; the schedule, now last, has its logo too.
+            assertThat(imagesOn(doc.getPage(1))).isEqualTo(1);
+            assertThat(imagesOn(doc.getPage(TWELVE_CHEQUE_PAGES - 1))).isEqualTo(2);
             String page1 = new PDFTextStripper() {{ setStartPage(1); setEndPage(1); }}.getText(doc);
             assertThat(page1).contains("TRN: " + TRN).contains("+971 4 272 7070");
         }
@@ -289,8 +292,9 @@ class ContractBrandingTest {
             String html = svc.renderContractHtml(lease, "1234");
             int images = html.split("src=\"data:image/png;base64,", -1).length - 1;
             String label = c[0] + (c[2] != null ? "/posted" : c[1] != null ? "/accepted" : "");
-            seen.put(label, images == 2);
-            assertThat(images).as(label).isEqualTo((Boolean) c[3] ? 2 : 1); // the logo always
+            seen.put(label, images == 3);
+            // The logo always, twice (the tenancy form and the schedule); the stamp once when signed.
+            assertThat(images).as(label).isEqualTo((Boolean) c[3] ? 3 : 2);
         }
         assertThat(seen).containsEntry("DRAFT", false).containsEntry("ACTIVE/posted", true);
         // Declared for every status: a new status must be decided on, not default to printing.
@@ -397,7 +401,7 @@ class ContractBrandingTest {
                 .contains("FATHIMA RISWANA AHAMED KABEER");
     }
 
-    /** 1, 7 and 8 pages; English and Arabic names: the stamp lands in the stamp area of every page. */
+    /** 1, 8 and 9 pages; English and Arabic names: the stamp lands in the stamp area of every page. */
     @Test
     void theStampLandsOnEveryPageWhateverTheLengthAndLanguage() throws Exception {
         stampSet();
@@ -406,9 +410,9 @@ class ContractBrandingTest {
         record Case(String label, int cheques, boolean arabic, boolean onePage, int pages) {}
         for (Case c : List.of(
                 new Case("1-page", 12, false, true, 1),
-                new Case("7-page EN", 12, false, false, 7),
-                new Case("7-page AR", 12, true, false, 7),
-                new Case("8-page AR", 40, true, false, 8))) {
+                new Case("8-page EN", 12, false, false, 8),
+                new Case("8-page AR", 12, true, false, 8),
+                new Case("9-page AR", 40, true, false, 9))) {
             while (cheques.size() > c.cheques()) cheques.remove(cheques.size() - 1);
             while (cheques.size() < c.cheques()) {
                 Cheque x = new Cheque();
@@ -424,7 +428,7 @@ class ContractBrandingTest {
             lease.getRenter().setNameEn(c.arabic() ? "\u0641\u0627\u0637\u0645\u0629 \u0627\u0644\u0632\u0647\u0631\u0627\u0621" : "FATHIMA RISWANA AHAMED KABEER");
             String html = svc.renderContractHtml(lease, "1234");
             if (c.onePage()) {
-                html = html.substring(0, html.indexOf("<div class=\"terms-page-break\">")) + "</body></html>";
+                html = html.substring(0, html.indexOf("<div class=\"tc-front-break\">")) + "</body></html>";
             }
             byte[] signedBytes = svc.renderPdf(html);
             try (PDDocument d = Loader.loadPDF(signedBytes)) {

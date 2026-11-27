@@ -296,6 +296,26 @@
             text-decoration: underline;
             margin-bottom: 6pt;
         }
+
+        /* ---- Tenancy contract form (front page, 27 Nov: the client's Ejari-style layout) ---- */
+        .tc-title { text-align:center; margin:2pt 0 6pt 0; }
+        .tc-title .ar { font-size:15pt; font-weight:bold; letter-spacing:2pt; }
+        .tc-title .en { font-size:13pt; font-weight:bold; letter-spacing:1pt; }
+        .tc-band { width:100%; border-collapse:collapse; margin-top:5pt; }
+        .tc-band td { background:#1f2a44; color:#fff; font-weight:bold; font-size:9pt; padding:3pt 6pt; }
+        .tc-band td.ar { text-align:right; direction:rtl; }
+        .tc-box { width:100%; border-collapse:collapse; border:1px solid #c7ccd6; border-top:none; table-layout:fixed; }
+        .tc-box td { padding:3pt 4pt 1.5pt 4pt; font-size:8pt; vertical-align:bottom; }
+        .tc-box .k { color:#1f2a44; }
+        .tc-box .ka { color:#1f2a44; text-align:right; direction:rtl; font-size:7.5pt; }
+        .tc-dot { display:inline-block; width:7pt; height:7pt; border:1pt solid #1f2a44; border-radius:4pt; margin-right:3pt; }
+        .tc-dot.on { background:#1f2a44; }
+        .tc-box .v { border-bottom:1px dotted #777; font-weight:bold; }
+        .tc-box .note { font-size:7pt; color:#666; }
+        .tc-usage span { margin-right:12pt; }
+        .tc-front-break { page-break-after: always; }
+        .terms-parties { width:100%; border-collapse:collapse; margin:2pt 0 6pt 0; }
+        .terms-parties td { font-size:8.5pt; padding:1pt 0; }
     </style>
 </head>
 <body>
@@ -326,7 +346,114 @@
 </div>
 
 <!-- ============================================================
-     PAGE 1 — COVER
+     PAGE 1 — TENANCY CONTRACT (bilingual form, 27 Nov)
+     The client's contracts open with the Ejari-style tenancy form.
+     Only the organisation's own logo prints here, never a government
+     emblem: the registered contract comes from Ejari itself. Fields
+     RentAxis does not hold (Emirates ID, licence, plot) are left as
+     lines to fill in by hand.
+     ============================================================ -->
+<table style="width:100%; border-collapse:collapse;">
+    <tr>
+        {{LANDLORD_LOGO_CELL}}
+        <td style="text-align:center;">
+            <div style="font-size:12pt; font-weight:bold; text-transform:uppercase;">{{LANDLORD_NAME}}</div>
+            <div style="font-size:8pt; margin-top:1pt;">{{LANDLORD_ADDRESS}}</div>
+            <div style="font-size:8pt; margin-top:1pt;">{{LANDLORD_PHONE}}{{LANDLORD_TRN}}</div>
+        </td>
+        <td style="width:120pt; font-size:8.5pt; text-align:right; vertical-align:bottom;">
+            Date&#160;<b>{{AGREEMENT_DATE}}</b>&#160;التاريخ<br/>
+            No.&#160;<b>{{CONTRACT_NUMBER}}</b>&#160;الرقم
+        </td>
+    </tr>
+</table>
+<div class="tc-title">
+    <div class="ar">عقد إيجار</div>
+    <div class="en">TENANCY CONTRACT</div>
+</div>
+
+<table class="tc-band"><tr><td>Owner / Lessor Information</td><td class="ar">معلومات المالك / المؤجر</td></tr></table>
+<table class="tc-box">
+    <colgroup><col style="width:14%"/><col style="width:24%"/><col style="width:12%"/><col style="width:14%"/><col style="width:24%"/><col style="width:12%"/></colgroup>
+    <tr><td class="k">Owner's Name</td><td class="v" colspan="4">{{LANDLORD_NAME}}</td><td class="ka">اسم المالك</td></tr>
+    <tr><td class="k">Lessor's Name</td><td class="v" colspan="4">{{LANDLORD_NAME}}</td><td class="ka">اسم المؤجر</td></tr>
+    <tr><td class="k">Lessor's Emirates ID</td><td class="v" colspan="4">&#160;</td><td class="ka">الهوية الإماراتية للمؤجر</td></tr>
+    <tr><td class="k">License No.</td><td class="v">&#160;</td><td class="ka">رقم الرخصة</td><td class="k">Licensing Authority</td><td class="v">&#160;</td><td class="ka">سلطة الترخيص</td></tr>
+    <tr><td></td><td class="note">In case of a company</td><td class="ka note">في حال كانت شركة</td><td></td><td class="note">In case of a company</td><td class="ka note">في حال كانت شركة</td></tr>
+    <tr><td class="k">Lessor's Email</td><td class="v">{{FORM_LANDLORD_EMAIL}}</td><td class="ka">البريد الإلكتروني</td><td class="k">Lessor's Phone</td><td class="v">{{LANDLORD_PHONE}}</td><td class="ka">رقم الهاتف</td></tr>
+</table>
+
+<table class="tc-band"><tr><td>Tenant Information</td><td class="ar">معلومات المستأجر</td></tr></table>
+<table class="tc-box">
+    <colgroup><col style="width:14%"/><col style="width:24%"/><col style="width:12%"/><col style="width:14%"/><col style="width:24%"/><col style="width:12%"/></colgroup>
+    <tr><td class="k">Tenant's Name</td><td class="v" colspan="4">{{TENANT_NAME}}</td><td class="ka">اسم المستأجر</td></tr>
+    <tr><td class="k">Tenant's Emirates ID</td><td class="v" colspan="4">&#160;</td><td class="ka">الهوية الإماراتية للمستأجر</td></tr>
+    <tr><td class="k">License No.</td><td class="v">&#160;</td><td class="ka">رقم الرخصة</td><td class="k">Licensing Authority</td><td class="v">&#160;</td><td class="ka">سلطة الترخيص</td></tr>
+    <tr><td></td><td class="note">In case of a company</td><td class="ka note">في حال كانت شركة</td><td></td><td class="note">In case of a company</td><td class="ka note">في حال كانت شركة</td></tr>
+    <tr><td class="k">Tenant's Email</td><td class="v">{{TENANT_EMAIL}}</td><td class="ka">البريد الإلكتروني</td><td class="k">Tenant's Phone</td><td class="v">{{TENANT_PHONE}}</td><td class="ka">رقم الهاتف</td></tr>
+</table>
+
+<table class="tc-band"><tr><td>Property Information</td><td class="ar">معلومات العقار</td></tr></table>
+<table class="tc-box">
+    <colgroup><col style="width:14%"/><col style="width:24%"/><col style="width:12%"/><col style="width:14%"/><col style="width:24%"/><col style="width:12%"/></colgroup>
+    <tr><td class="k">Property Usage</td><td class="tc-usage" colspan="4">{{FORM_USAGE}}</td><td class="ka">استخدام العقار</td></tr>
+    <tr><td class="k">Plot No.</td><td class="v">&#160;</td><td class="ka">رقم الأرض</td><td class="k">Makani No.</td><td class="v">{{FORM_MAKANI}}</td><td class="ka">رقم مكاني</td></tr>
+    <tr><td class="k">Building Name</td><td class="v">{{FORM_BUILDING}}</td><td class="ka">اسم المبنى</td><td class="k">Property No.</td><td class="v">{{FLAT_NUMBER}}</td><td class="ka">رقم العقار</td></tr>
+    <tr><td class="k">Property Type</td><td class="v">{{FORM_UNIT_TYPE}}</td><td class="ka">نوع الوحدة</td><td class="k">Property Area (sq.m)</td><td class="v">{{FORM_AREA_SQM}}</td><td class="ka">المساحة (متر مربع)</td></tr>
+    <tr><td class="k">Location</td><td class="v">{{FORM_LOCATION}}</td><td class="ka">الموقع</td><td class="k">Premises No. (DEWA)</td><td class="v">{{FORM_DEWA}}</td><td class="ka">رقم المبنى (ديوا)</td></tr>
+</table>
+
+<table class="tc-band"><tr><td>Contract Information</td><td class="ar">معلومات العقد</td></tr></table>
+<table class="tc-box">
+    <colgroup><col style="width:14%"/><col style="width:24%"/><col style="width:12%"/><col style="width:14%"/><col style="width:24%"/><col style="width:12%"/></colgroup>
+    <tr><td class="k">Contract Period: From</td><td class="v">{{LEASE_START_DATE}}</td><td class="ka">فترة العقد: من</td><td class="k">To</td><td class="v">{{LEASE_END_DATE}}</td><td class="ka">إلى</td></tr>
+    <tr><td class="k">Annual Rent</td><td class="v" colspan="4">{{FORM_ANNUAL_RENT}}</td><td class="ka">الإيجار السنوي</td></tr>
+    <tr><td class="k">Contract Value</td><td class="v" colspan="4">{{FORM_CONTRACT_VALUE}}</td><td class="ka">قيمة العقد</td></tr>
+    <tr><td class="k">Security Deposit</td><td class="v">{{FORM_DEPOSIT}}</td><td class="ka">مبلغ التأمين</td><td class="k">Mode of Payment</td><td class="v">{{FORM_PAYMENT_MODE}}</td><td class="ka">طريقة الدفع</td></tr>
+</table>
+
+<table style="width:100%; border-collapse:collapse; margin-top:8pt; font-size:7.5pt; color:#444;"><tr>
+    <td style="width:50%; vertical-align:top;">The Additional Terms and Conditions that follow, and the Lease Agreement schedule at the end, form part of this contract.</td>
+    <td style="width:50%; vertical-align:top; text-align:right; direction:rtl;">تعتبر الشروط والأحكام الإضافية التالية وجدول اتفاقية الإيجار في النهاية جزءاً من هذا العقد.</td>
+</tr></table>
+<div class="tc-front-break"></div>
+
+<!-- ============================================================
+     PAGES 2+ — ADDITIONAL TERMS AND CONDITIONS
+     Each numbered clause is a single table row with EN cell and
+     AR cell side-by-side, so the same clause N stays vertically
+     aligned across both languages on every page.
+     Signature footer comes from the @page @bottom-center margin
+     box, automatically repeating on every page of this section.
+     ============================================================ -->
+
+
+<!-- Terms section header: English left, Arabic right -->
+<table class="terms-header-table">
+    <tr>
+        <td style="text-align:left; font-size:12pt; font-weight:bold; text-decoration:underline;">
+            ADDITIONAL TERMS AND CONDITIONS
+        </td>
+        <td class="ar" style="font-size:12pt; font-weight:bold; text-decoration:underline;">
+            &#x634;&#x631;&#x648;&#x637; &#x648;&#x623;&#x62D;&#x643;&#x627;&#x645; &#x625;&#x636;&#x627;&#x641;&#x64A;&#x629;
+        </td>
+    </tr>
+</table>
+
+<table class="terms-parties">
+    <tr><td>Landlord: {{LANDLORD_NAME}}</td></tr>
+    <tr><td>Tenant: {{TENANT_NAME}}</td></tr>
+    <tr><td>Building: {{FORM_BUILDING}} | Unit: {{FLAT_NUMBER}}</td></tr>
+    <tr><td>Tenancy period: {{LEASE_START_DATE}} to {{LEASE_END_DATE}}</td></tr>
+    <tr><td>Designated email: {{TENANT_EMAIL}}</td></tr>
+</table>
+<!-- Row-aligned terms: each clause is one row with EN | AR cells -->
+{{TERMS_TABLE}}
+
+
+<div class="terms-page-break"></div>
+<!-- ============================================================
+     LAST PAGE — LEASE AGREEMENT SCHEDULE (after the terms, as in the client's contracts)
      ============================================================ -->
 
 <!-- Landlord header band -->
@@ -339,7 +466,7 @@
             <div style="font-size:9pt; margin-top:1pt;">{{LANDLORD_PHONE}}{{LANDLORD_TRN}}</div>
         </td>
         <td style="text-align:right; vertical-align:bottom; font-size:9pt; width:70pt; white-space:nowrap;">
-            Page 1
+            &#160;
         </td>
     </tr>
 </table>
@@ -448,32 +575,6 @@
      @bottom-center margin box (see <div class="page-footer"> above). -->
 
 
-
-<!-- ============================================================
-     PAGES 2+ — ADDITIONAL TERMS AND CONDITIONS
-     Each numbered clause is a single table row with EN cell and
-     AR cell side-by-side, so the same clause N stays vertically
-     aligned across both languages on every page.
-     Signature footer comes from the @page @bottom-center margin
-     box, automatically repeating on every page of this section.
-     ============================================================ -->
-
-<div class="terms-page-break"></div>
-
-<!-- Terms section header: English left, Arabic right -->
-<table class="terms-header-table">
-    <tr>
-        <td style="text-align:left; font-size:12pt; font-weight:bold; text-decoration:underline;">
-            ADDITIONAL TERMS AND CONDITIONS
-        </td>
-        <td class="ar" style="font-size:12pt; font-weight:bold; text-decoration:underline;">
-            &#x634;&#x631;&#x648;&#x637; &#x648;&#x623;&#x62D;&#x643;&#x627;&#x645; &#x625;&#x636;&#x627;&#x641;&#x64A;&#x629;
-        </td>
-    </tr>
-</table>
-
-<!-- Row-aligned terms: each clause is one row with EN | AR cells -->
-{{TERMS_TABLE}}
 
 </body>
 </html>
