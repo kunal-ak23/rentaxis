@@ -285,12 +285,6 @@ class ChequeGenerationServiceIT extends AbstractPostgresIT {
         assertThat(six).extracting(ChequeDTO::payeeBank).containsOnlyNulls();
     }
 
-    /**
-     * QA-40 review: same count, different shape carries nothing. Four folded
-     * cheques (mixed, rent, rent, rent) regenerated as two rent cheques plus the
-     * fee and the deposit on their own is also four rows, but row 3 would move
-     * from a rent instalment to the admin fee.
-     */
     /** QA-40 review 2: a grid saved before rowKind existed (null) reads as rent rows. */
     @Test
     void regeneratingALegacyGridWithNoRowKindsKeepsNumbers() {
@@ -309,6 +303,12 @@ class ChequeGenerationServiceIT extends AbstractPostgresIT {
         assertThat(again).extracting(ChequeDTO::payeeBank).containsOnly("Emirates NBD");
     }
 
+    /**
+     * QA-40 review: same count, different shape carries nothing. Four folded
+     * cheques (mixed, rent, rent, rent) regenerated as two rent cheques plus the
+     * fee and the deposit on their own is also four rows, but row 3 would move
+     * from a rent instalment to the admin fee.
+     */
     @Test
     void regeneratingToADifferentShapeKeepsNoNumbers() {
         UUID leaseId = draft().getId();

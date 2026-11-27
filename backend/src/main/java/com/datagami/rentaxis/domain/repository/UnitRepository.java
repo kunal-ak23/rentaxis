@@ -107,7 +107,7 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
           and (cast(:propertyId as java.util.UUID) is null or u.property.id = :propertyId)
           and (cast(:buildingId as java.util.UUID) is null or u.building.id = :buildingId)
           and (cast(:status as string) is null or u.status = :status)
-          and (cast(:excludeStatus as string) is null or u.status <> :excludeStatus)
+          and (cast(:excludeStatus as string) is null or u.status is null or u.status <> :excludeStatus)
           and (cast(:floorPrefix as string) is null or u.unitNumber like :floorPrefix)
           and (cast(:q as string) is null
                or lower(u.unitNumber) like :q or lower(u.currentTenantName) like :q
