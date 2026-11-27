@@ -24,6 +24,8 @@ import { useLatestRequest, type RequestTicket } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 import { Pagination } from "@/components/ui/Pagination";
 import { useTabTitle } from "@/components/workspace/WorkspaceContext";
+import { ExpectedRentCell } from "@/components/units/ExpectedRentCell";
+import { BulkExpectedRentDialog } from "@/components/units/BulkExpectedRentDialog";
 
 type PropertyContact = {
     id: string;
@@ -747,6 +749,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const buildingLabel = (b: any) => (b ? (locale === "ar" && b.nameAr ? b.nameAr : b.nameEn) : "");
     const [showForm, setShowForm] = useState(false);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [showBulkRent, setShowBulkRent] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [bulkError, setBulkError] = useState<string | null>(null);
     const [addUnitError, setAddUnitError] = useState<string | null>(null);
@@ -855,9 +858,28 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                         >
                             <Upload size={14} /> {t("bulkUploadCsv")}
                         </button>
+                        <button
+                            onClick={() => setShowBulkRent(true)}
+                            data-testid="units-bulk-rent"
+                            className="flex items-center gap-2 bg-background text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        >
+                            <DollarSign size={14} /> {t("bulkEditRent")}
+                        </button>
                     </div>
                 )}
             </div>
+
+            {showBulkRent && (
+                <BulkExpectedRentDialog
+                    open
+                    onClose={() => setShowBulkRent(false)}
+                    onDone={onUpdate}
+                    projects={[{ id: propertyId, label: "" }]}
+                    fixedProjectId={propertyId}
+                    buildings={(buildings as { id: string; nameEn: string; nameAr?: string }[]).map(b => ({ id: b.id, label: buildingLabel(b) }))}
+                    units={units}
+                />
+            )}
 
             {showForm && (
                 <form onSubmit={handleAddUnit} className="bg-surface p-6 rounded-xl border border-border mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -955,7 +977,9 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-muted">{u.sizeSqft}</td>
-                                <td className="px-6 py-4 text-end font-bold">{formatCurrencyCompact(u.expectedRent)}</td>
+                                <td className="px-6 py-4 text-end font-bold">
+                                    <ExpectedRentCell unitId={u.id} value={u.expectedRent} canEdit={canCreate} onSaved={() => onUpdate()} />
+                                </td>
                             </tr>
                         ))}
                     </tbody>

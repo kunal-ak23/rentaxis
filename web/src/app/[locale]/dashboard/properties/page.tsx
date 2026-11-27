@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import ActionsMenu from "@/components/ui/ActionsMenu";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { BulkExpectedRentDialog } from "@/components/units/BulkExpectedRentDialog";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
@@ -91,6 +92,7 @@ function PropertiesPageInner() {
     const [error, setError] = useState<string | null>(null);
     const [showProjectForm, setShowProjectForm] = useState(false);
     const [showPropertyForm, setShowPropertyForm] = useState(false);
+    const [showBulkRent, setShowBulkRent] = useState(false);
     const [projectFormError, setProjectFormError] = useState<string | null>(null);
     const [propertyFormError, setPropertyFormError] = useState<string | null>(null);
     const { data: session } = useSession();
@@ -587,6 +589,7 @@ function PropertiesPageInner() {
                                     { id: "project", label: t("addProject"), testId: "properties-add-project", icon: Plus, onSelect: () => { setProjectFormError(null); setShowProjectForm(true); } },
                                     { id: "import", label: t("importProperty"), testId: "properties-import", icon: Upload, onSelect: () => setShowImportForm(true) },
                                     { id: "portfolio", label: t("importPortfolio"), testId: "properties-import-portfolio", icon: FileSpreadsheet, onSelect: () => setShowPortfolioImport(true) },
+                                    ...(stats.length > 0 ? [{ id: "bulk-rent", label: t("bulkEditRent"), testId: "properties-bulk-rent", icon: DollarSign, onSelect: () => setShowBulkRent(true) }] : []),
                                 ]}
                             />
                         </>
@@ -596,6 +599,15 @@ function PropertiesPageInner() {
             </div>
 
             {/* Project Form Modal */}
+            {showBulkRent && (
+                <BulkExpectedRentDialog
+                    open
+                    onClose={() => setShowBulkRent(false)}
+                    onDone={fetchStats}
+                    projects={stats.map(s => ({ id: s.property.id, label: (locale === "ar" && s.property.nameAr) || s.property.nameEn }))}
+                />
+            )}
+
             {showProjectForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
