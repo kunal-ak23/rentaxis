@@ -78,6 +78,7 @@ const EMPTY_CONTACT_FORM = { category: 'PLUMBER', customLabel: '', name: '', pho
 function formatAddressWithEmirate(address: string | null | undefined, emirate: string | null | undefined, emirateLabel: string): string {
     const trimmed = (address ?? "").trim();
     if (!trimmed) return emirateLabel;
+    if (!emirateLabel.trim()) return trimmed;
     const norm = (v: string) => v.trim().replace(/[\s.,;:!-]+$/u, "").toLowerCase();
     const tail = norm(trimmed);
     const names = [emirateLabel, (emirate ?? "").replace(/_/g, " ")].map(norm).filter(Boolean);
@@ -315,7 +316,7 @@ export default function PropertyDetailPage() {
                         </div>
                         <p className="text-sm font-medium text-muted flex items-center gap-2">
                             <MapPin size={14} className="text-muted" />
-                            {formatAddressWithEmirate(property.address, property.emirate, e(property.emirate))}
+                            {formatAddressWithEmirate(property.address, property.emirate, property.emirate ? e(property.emirate) : "")}
                             {property.makaniNumber && ` • Makani: ${property.makaniNumber}`}
                         </p>
                     </div>

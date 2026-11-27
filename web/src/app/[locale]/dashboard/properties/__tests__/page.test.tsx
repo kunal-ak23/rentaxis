@@ -346,6 +346,22 @@ describe("PropertiesPage add project validation (QA-06)", () => {
         expect(await screen.findByText(en.MasterData.projectNameRequired)).toBeTruthy();
         expect(screen.queryByText(/Validation failed:/)).toBeNull();
     });
+
+    it("keeps the server's reason for other validation errors, without the prefix", async () => {
+        postPropertiesResponse = jsonStub(false, {
+            error: true,
+            message: "Validation failed: makaniNumber: Makani number must be 10 digits",
+        });
+
+        render(<PropertiesPage />);
+        fireEvent.click(await screen.findByTestId("properties-more"));
+        fireEvent.click(screen.getByRole("menuitem", { name: en.MasterData.addProject }));
+        fireEvent.change(screen.getByPlaceholderText("Project Name (EN)"), { target: { value: "Tower" } });
+        fireEvent.click(screen.getByRole("button", { name: en.MasterData.create }));
+
+        expect(await screen.findByText("Makani number must be 10 digits")).toBeTruthy();
+        expect(screen.queryByText(/Validation failed/)).toBeNull();
+    });
 });
 
 describe("PropertiesPage occupancy with no units (QA-08)", () => {

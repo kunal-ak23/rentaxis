@@ -222,8 +222,10 @@ function PropertiesPageInner() {
             console.error(err);
             setProjectFormError(
                 err instanceof ApiError
-                    ? (err.message.startsWith("Validation failed:")
-                        ? (err.message.includes("nameEn") ? t("projectNameRequired") : t("projectCreateFailed"))
+                    ? (/^Validation failed/.test(err.message)
+                        // Keep the server's reason, without the "Validation failed: field:" prefix.
+                        ? (err.message.includes("nameEn") ? t("projectNameRequired")
+                            : err.message.replace(/^Validation failed:?\s*(\w+:\s*)?/, "") || t("projectCreateFailed"))
                         : err.message)
                     : t("projectCreateFailed")
             );

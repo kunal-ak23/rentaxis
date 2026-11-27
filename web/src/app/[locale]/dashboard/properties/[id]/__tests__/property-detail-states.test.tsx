@@ -97,6 +97,12 @@ describe("property detail — header address (QA-07)", () => {
         renderPage();
         expect(await screen.findByText("Dubai Marina, Dubai")).toBeInTheDocument();
     });
+
+    it("shows the address alone, with no trailing comma, when the project has no emirate", async () => {
+        mockProperty({ nameEn: "Sample Vista", emirate: null, address: "Dubai Marina" });
+        renderPage();
+        expect(await screen.findByText("Dubai Marina")).toBeInTheDocument();
+    });
 });
 
 describe("property detail — workspace tab title (QA-11)", () => {
