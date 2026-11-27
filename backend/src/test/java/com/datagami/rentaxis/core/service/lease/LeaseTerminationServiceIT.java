@@ -1159,7 +1159,7 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> termination.terminate(leaseId,
                 new TerminateLeaseRequest(T, null, null, null), null))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("RENT_RECEIVABLE");
+                .hasMessageContaining("rent receivable");
 
         assertThat(register(leaseId)).extracting(Cheque::getStatus)
                 .containsExactly(ChequeStatus.CLEARED, ChequeStatus.CLEARED, ChequeStatus.CLEARED,

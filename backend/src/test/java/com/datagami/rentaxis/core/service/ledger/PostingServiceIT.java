@@ -165,7 +165,7 @@ class PostingServiceIT extends AbstractPostgresIT {
     void unmappedRoleFailsWithRoleName() {
         PostingRequest r = new PostingRequest(JournalDocType.JV, LocalDate.now(), "x", Dimensions.ofProperty(propertyId), JournalSourceType.MANUAL, null, null,
                 List.of(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("10")), cr(AccountRole.SECURITY_DEPOSIT, new BigDecimal("10"))));
-        assertThatThrownBy(() -> posting.post(r)).isInstanceOf(UnmappedAccountRoleException.class).hasMessageContaining("SECURITY_DEPOSIT");
+        assertThatThrownBy(() -> posting.post(r)).isInstanceOf(UnmappedAccountRoleException.class).hasMessageContaining("security deposit");
     }
 
     /**

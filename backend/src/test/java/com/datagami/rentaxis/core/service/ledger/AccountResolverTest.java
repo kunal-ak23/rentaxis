@@ -57,7 +57,7 @@ class AccountResolverTest {
         when(defaultRepo.findByRole(any())).thenReturn(Optional.empty());
         assertThatThrownBy(() -> resolver.resolve(AccountRole.ADVANCE_RENT, property))
                 .isInstanceOf(UnmappedAccountRoleException.class)
-                .hasMessageContaining("ADVANCE_RENT");
+                .hasMessageContaining("advance rent");
     }
 
     @Test
