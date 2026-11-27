@@ -58,6 +58,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -422,6 +423,12 @@ public class LeasePostingService {
         // recognition cut, the TCR, the balance carried as C) and brings the carried
         // instruments onto its own grid — all in this transaction, so a refusal below
         // rolls the whole transfer back.
+        if (checks != Preconditions.FOR_IMPORT_POST) {
+            // QA-13. Before the transfer step, so everything after reads the filled
+            // lines. Not for a cut-over import: its sheet's accounts are reported,
+            // never guessed (spec §10.3).
+            resolveUnmappedDraftLines(lease, leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId));
+        }
         BigDecimal carried = BigDecimal.ZERO;
         if (lease.getTransferredFromLeaseId() != null && checks != Preconditions.FOR_IMPORT_POST) {
             carried = transfers.completeForPosting(lease, this).carriedBalance();
@@ -527,6 +534,13 @@ public class LeasePostingService {
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         leaseAccessPolicy.requireReadable(lease);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        // The review answers what the post will do, so it fills the same lines — but
+        // only inside its own read-only transaction, where nothing is flushed. Joined
+        // to a read-write one, the fill would be written on its commit: skipped, and
+        // the review reports the unmapped line as before.
+        if (TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+            resolveUnmappedDraftLines(lease, lines);
+        }
         List<Cheque> cheques = new ArrayList<>(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId));
 
         // Spec §2: a transfer successor is judged with the rows it will carry and the
@@ -1248,6 +1262,29 @@ public class LeasePostingService {
 
     /** What {@link #planLines} found: the entry to write, its totals, and its complaints. */
     record LinePlan(List<Pair> pairs, BigDecimal net, BigDecimal gross, List<String> errors) {
+    }
+
+    /**
+     * QA-13 (26 Nov prod pass): a draft saved while its property had no accounts
+     * keeps lines with no credit account. Once the accountant generates the
+     * property's accounts, the post (and its dry run) gives those lines the account
+     * a fresh save would — instead of refusing until someone re-saves the draft.
+     * Only lines with no account are touched; one the user picked is never replaced.
+     * Only a contract not yet posted: a posted line's account is history.
+     */
+    void resolveUnmappedDraftLines(Lease lease, List<LeaseLine> lines) {
+        if (lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+            return;
+        }
+        UUID propertyId = propertyIdOf(lease);
+        for (LeaseLine line : lines) {
+            if (line.getCreditAccount() == null) {
+                Account account = leaseService.defaultCreditAccountFor(line.getChargeType(), propertyId);
+                if (account != null) {
+                    line.setCreditAccount(account);
+                }
+            }
+        }
     }
 
     /**

@@ -19,6 +19,7 @@ import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 import com.datagami.rentaxis.core.service.ledger.UnmappedAccountRoleException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
+import com.datagami.rentaxis.domain.entity.PropertyAccountMapping;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.JournalEntry;
 import com.datagami.rentaxis.domain.entity.JournalLine;
@@ -100,6 +101,7 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
     @Autowired JournalEntryRepository entries;
     @Autowired JournalLineRepository lines;
     @Autowired PropertyAccountMappingRepository propertyMappings;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLineRepo;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
@@ -370,8 +372,10 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
 
         assertThatThrownBy(() -> posting.post(leaseId))
                 .isInstanceOf(UnmappedAccountRoleException.class)
-                .hasMessageContaining("PDC_RECEIVABLE")
-                .hasMessageContaining("RENT_RECEIVABLE");
+                .hasMessageContaining("PDC receivable")
+                .hasMessageContaining("rent receivable")
+                .hasMessageContaining("Ledger accounts tab")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("_").doesNotContain(fixtures.property().getId().toString()));
 
         assertThat(journalEntryRows()).isZero();
         assertThat(reread(leaseId).getStatus()).isEqualTo(LeaseStatus.DRAFT);
@@ -401,7 +405,7 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
 
         assertThatThrownBy(() -> posting.post(stranded))
                 .isInstanceOf(UnmappedAccountRoleException.class)
-                .hasMessageContaining("BANK");
+                .hasMessageContaining("bank");
     }
 
     /**
@@ -422,6 +426,62 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
         PostLeaseResponse r = posting.post(leaseId);
 
         assertThat(linesOf(r.tcoJournalId()).get(3).getAccountId()).isEqualTo(adminFee.getId());
+    }
+
+    /**
+     * QA-13 (26 Nov prod pass): the draft was saved while the property had no
+     * ADMIN_FEE account, so its line has none. Once the account exists the review
+     * and the post use it — no re-save through Edit draft first.
+     */
+    @Test
+    void postResolvesADraftLineSavedBeforeThePropertyHadItsAccount() {
+        Account adminFee = leaf(AccountRole.ADMIN_FEE);
+        unmap(AccountRole.ADMIN_FEE);
+        UUID leaseId = readyToPost();
+        tx.executeWithoutResult(s -> assertThat(leaseLineRepo.findByLease_IdOrderBySeqNoAsc(leaseId).get(1)
+                .getCreditAccount()).isNull());
+        tx.executeWithoutResult(s -> {
+            PropertyAccountMapping m = new PropertyAccountMapping();
+            m.setPropertyId(fixtures.property().getId());
+            m.setRole(AccountRole.ADMIN_FEE);
+            m.setAccount(adminFee);
+            propertyMappings.save(m);
+        });
+
+        assertThat(posting.dryRun(leaseId).errors()).isEmpty();
+        // The dry run wrote nothing: the line is still unmapped on disk.
+        tx.executeWithoutResult(s -> assertThat(leaseLineRepo.findByLease_IdOrderBySeqNoAsc(leaseId).get(1)
+                .getCreditAccount()).isNull());
+
+        PostLeaseResponse r = posting.post(leaseId);
+
+        assertThat(linesOf(r.tcoJournalId()).get(3).getAccountId()).isEqualTo(adminFee.getId());
+        tx.executeWithoutResult(s -> assertThat(leaseLineRepo.findByLease_IdOrderBySeqNoAsc(leaseId).get(1)
+                .getCreditAccount().getId()).isEqualTo(adminFee.getId()));
+    }
+
+    /**
+     * QA-13 review: the post fills a draft line only with an account an explicit pick
+     * could have been. ADMIN_FEE mapped to the receivable (an asset) is not one, so
+     * the line stays unmapped and the post refuses as before.
+     */
+    @Test
+    void postDoesNotFillADraftLineWithAMistypedMapping() {
+        Account receivable = leaf(AccountRole.RENT_RECEIVABLE);
+        unmap(AccountRole.ADMIN_FEE);
+        UUID leaseId = readyToPost();
+        tx.executeWithoutResult(s -> {
+            PropertyAccountMapping m = new PropertyAccountMapping();
+            m.setPropertyId(fixtures.property().getId());
+            m.setRole(AccountRole.ADMIN_FEE);
+            m.setAccount(receivable);
+            propertyMappings.save(m);
+        });
+
+        assertThat(posting.dryRun(leaseId).errors()).contains("Line 2 (ADMIN_FEE) has no credit account.");
+        assertThatThrownBy(() -> posting.post(leaseId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Line 2 (ADMIN_FEE) has no credit account");
     }
 
     /**
@@ -728,7 +788,7 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
         assertThat(dry.ok()).isFalse();
         assertThat(dry.errors()).hasSize(3);
         assertThat(dry.errors().get(0)).isEqualTo("Line 2 (ADMIN_FEE) has no credit account.");
-        assertThat(dry.errors().get(1)).contains("ADMIN_FEE").contains("PDC_RECEIVABLE");
+        assertThat(dry.errors().get(1)).contains("admin fee").contains("PDC receivable");
         assertThat(dry.errors().get(2)).isEqualTo("Cheque grid totals 51,000.00 but the amount to collect is 53,000.00.");
         assertThat(dry.contractValue()).isEqualByComparingTo("53000");
         assertThat(dry.contractValueInclVat()).isEqualByComparingTo("53000");

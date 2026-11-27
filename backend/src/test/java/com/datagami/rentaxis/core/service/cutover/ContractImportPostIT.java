@@ -703,7 +703,7 @@ class ContractImportPostIT extends AbstractPostgresIT {
         assertThat(result.leasesFailed()).isEqualTo(1);
         assertThat(result.failures()).singleElement()
                 .satisfies(f -> {
-                    assertThat(f.getMessage()).contains("OUTPUT_VAT");
+                    assertThat(f.getMessage()).contains("output VAT");
                     assertThat(f.getMessage()).contains("SAMPLE-0002");
                 });
         assertThat(result.leases())
