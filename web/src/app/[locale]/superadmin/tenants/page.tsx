@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone, XCircle, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone, XCircle, Trash2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { FileUpload } from "@/components/ui/FileUpload";
@@ -77,6 +77,7 @@ export default function SuperAdminTenantsPage() {
     const [formError, setFormError] = useState("");
     // R3 minor 2: created, but its logo/stamp could not be kept (header X-Org-Branding).
     const [notice, setNotice] = useState("");
+    const [noticeTone, setNoticeTone] = useState<"warning" | "success">("warning");
     // Deleting an organization is irreversible and takes everything inside it,
     // so the dialog asks for the name rather than a yes/no — the same
     // confirmation the API itself requires via ?confirmName=.
@@ -151,7 +152,8 @@ export default function SuperAdminTenantsPage() {
             if (res.ok) {
                 const data = await res.json();
                 if (!isCurrent()) return null;
-                data.sort((a: Tenant, b: Tenant) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                // QA-09: newest first, so an organisation just created is at the top.
+                data.sort((a: Tenant, b: Tenant) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                 setTenants(data);
                 setLoadError("");
                 return data;
@@ -213,8 +215,11 @@ export default function SuperAdminTenantsPage() {
                 body: JSON.stringify(body),
             });
             if (res.ok) {
-                setNotice(!editingTenant && res.headers?.get("X-Org-Branding") === "not-saved"
-                    ? tSa("orgBrandingNotSaved") : "");
+                const brandingNotSaved = !editingTenant && res.headers?.get("X-Org-Branding") === "not-saved";
+                setNoticeTone(brandingNotSaved ? "warning" : "success");
+                setNotice(brandingNotSaved
+                    ? tSa("orgBrandingNotSaved")
+                    : !editingTenant ? tSa("orgCreated", { name: formData.name }) : "");
                 resetForm();
                 // The header's switcher lists the new or renamed organisation at once.
                 refreshMyOrgs();
@@ -392,9 +397,13 @@ export default function SuperAdminTenantsPage() {
             </div>
 
             {notice && (
-                <div role="status" data-testid="org-notice"
-                    className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
-                    <AlertTriangle size={14} className="flex-shrink-0" />
+                <div role="status" data-testid="org-notice" data-tone={noticeTone}
+                    className={noticeTone === "success"
+                        ? "mb-4 flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-xs font-semibold text-success"
+                        : "mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800"}>
+                    {noticeTone === "success"
+                        ? <CheckCircle2 size={14} className="flex-shrink-0" />
+                        : <AlertTriangle size={14} className="flex-shrink-0" />}
                     {notice}
                 </div>
             )}

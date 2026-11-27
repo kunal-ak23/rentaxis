@@ -102,6 +102,25 @@ describe("organisations page fixes", () => {
         }
     });
 
+    it("(e) QA-09: creating an organisation confirms it and lists it first (newest first)", async () => {
+        renderWith("en", <TenantsPage />);
+        await waitFor(() => expect(screen.getByText("Oasis Crest")).toBeInTheDocument());
+
+        fireEvent.click(screen.getByRole("button", { name: en.SuperAdmin.orgProvision }));
+        fireEvent.change(screen.getByTestId("org-name"), { target: { value: "Palm Vista Real Estate" } });
+        fireEvent.submit(screen.getByTestId("org-name").closest("form")!);
+
+        const notice = await screen.findByTestId("org-notice");
+        expect(notice).toHaveTextContent("Organisation “Palm Vista Real Estate” created.");
+        expect(notice).toHaveAttribute("data-tone", "success");
+        await waitFor(() => expect(screen.getByText("Palm Vista Real Estate")).toBeInTheDocument());
+        const rows = screen.getAllByRole("row").map(r => r.textContent ?? "");
+        const newIdx = rows.findIndex(t => t.includes("Palm Vista Real Estate"));
+        const oldIdx = rows.findIndex(t => t.includes("Oasis Crest"));
+        expect(newIdx).toBeGreaterThan(-1);
+        expect(newIdx).toBeLessThan(oldIdx);
+    });
+
     it("(d) the name placeholder is a clearly fictional company", () => {
         expect(en.SuperAdmin.orgNamePlaceholder).not.toMatch(/futtaim/i);
         expect(ar.SuperAdmin.orgNamePlaceholder).not.toMatch(/الفطيم/);

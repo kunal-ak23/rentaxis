@@ -20,7 +20,10 @@ vi.mock("@/i18n/routing", () => ({
     useRouter: () => ({ push }),
 }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role } } }) }));
-vi.mock("../LeaseWizard", () => ({ default: () => null }));
+const wizard = vi.hoisted(() => ({ props: null as null | { onCreated: () => void; onClose: () => void } }));
+vi.mock("../LeaseWizard", () => ({
+    default: (props: { onCreated: () => void; onClose: () => void }) => { wizard.props = props; return null; },
+}));
 vi.mock("@/components/ui/Pagination", () => ({ Pagination: () => <div data-testid="pagination" /> }));
 vi.mock("@/lib/businessDate", () => ({ businessTodayIso: () => "2026-09-25" }));
 
@@ -205,5 +208,25 @@ describe("filters and row menus", () => {
         expect(menu).toBeVisible();
         fireEvent.click(within(menu).getByTestId("lease-list-terminate-l-active"));
         expect(push).toHaveBeenCalledWith("/dashboard/leases/l-active/terminate");
+    });
+
+    it("reloads the pill counts after the wizard creates a draft or closes (QA-17)", async () => {
+        renderPage();
+        const pill = (v: string) => screen.getByTestId(`contract-pill-${v}`);
+        await waitFor(() => expect(pill("draft")).toHaveTextContent("2"));
+
+        fireEvent.click(screen.getByTestId("lease-new"));
+        await waitFor(() => expect(wizard.props).not.toBeNull());
+        TOTALS.DRAFT = 3;
+        try {
+            act(() => { wizard.props!.onCreated(); });
+            await waitFor(() => expect(pill("draft")).toHaveTextContent("3"));
+
+            TOTALS.DRAFT = 4;
+            act(() => { wizard.props!.onClose(); });
+            await waitFor(() => expect(pill("draft")).toHaveTextContent("4"));
+        } finally {
+            TOTALS.DRAFT = 2;
+        }
     });
 });

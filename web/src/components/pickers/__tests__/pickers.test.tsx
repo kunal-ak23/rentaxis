@@ -109,7 +109,10 @@ describe("RenterPicker", () => {
         withIntl("en", <RenterPicker value="" onChange={vi.fn()} testId="renter" onAddNew={onAddNew} />);
         fireEvent.click(screen.getByTestId("renter"));
         expect(await screen.findByText("No matches")).toBeInTheDocument();
-        fireEvent.click(screen.getByTestId("renter-add-new"));
+        fireEvent.keyDown(screen.getByTestId("renter-add-new"), { key: "Escape" });
+        expect(screen.queryByTestId("renter-add-new")).toBeNull();
+        fireEvent.click(screen.getByTestId("renter"));
+        fireEvent.click(await screen.findByTestId("renter-add-new"));
         expect(onAddNew).toHaveBeenCalledTimes(1);
         cleanup();
 

@@ -112,6 +112,9 @@ describe("contract deep links", () => {
         ["tab=documents", "documents", "attachments"],
         ["tab=maintenance", "activity", "maintenance"],
         ["tab=interactions", "activity", "interactions"],
+        // QA-19: the tab labels used as ids.
+        ["tab=cheques", "payments", "cheques"],
+        ["tab=attachments", "documents", "attachments"],
     ])("maps the legacy ?%s to its new tab and opens the section", async (q, tab, section) => {
         search.current = q;
         // The Attachments section is not offered to an accountant, whose

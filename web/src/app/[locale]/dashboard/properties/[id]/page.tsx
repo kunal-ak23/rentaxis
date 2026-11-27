@@ -23,6 +23,7 @@ import { BUILDING_FLOORS_MAX, BUILDING_FLOORS_MIN, floorsInRange, refusalOf, siz
 import { useLatestRequest, type RequestTicket } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 import { Pagination } from "@/components/ui/Pagination";
+import { useTabTitle } from "@/components/workspace/WorkspaceContext";
 
 type PropertyContact = {
     id: string;
@@ -73,6 +74,18 @@ function getCategoryLabel(category: string, customLabel: string | undefined, tc:
 
 const EMPTY_CONTACT_FORM = { category: 'PLUMBER', customLabel: '', name: '', phone: '', email: '', address: '', notes: '' };
 
+/** QA-07: "Dubai Marina, Dubai, Dubai" — skip the emirate when the address already ends with it. */
+function formatAddressWithEmirate(address: string | null | undefined, emirate: string | null | undefined, emirateLabel: string): string {
+    const trimmed = (address ?? "").trim();
+    if (!trimmed) return emirateLabel;
+    if (!emirateLabel.trim()) return trimmed;
+    const norm = (v: string) => v.trim().replace(/[\s.,;:!-]+$/u, "").toLowerCase();
+    const tail = norm(trimmed);
+    const names = [emirateLabel, (emirate ?? "").replace(/_/g, " ")].map(norm).filter(Boolean);
+    if (names.some((n) => tail === n || tail.endsWith(` ${n}`) || tail.endsWith(`,${n}`))) return trimmed;
+    return `${trimmed}, ${emirateLabel}`;
+}
+
 export default function PropertyDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -104,6 +117,8 @@ export default function PropertyDetailPage() {
 
     const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts" | "rentalIndex">("overview");
     const [property, setProperty] = useState<any>(null);
+    // Workspace tabs §6: the tab and the browser tab name the project.
+    useTabTitle(property ? ((locale === "ar" && property.nameAr ? property.nameAr : property.nameEn) || null) : null);
     const rentalIndexEnabled = useRentalIndexEnabled();
     const showRentalIndex = rentalIndexTabVisible(rentalIndexEnabled, property?.emirate);
     const [propertyLoad, setPropertyLoad] = useState<"loading" | "ok" | "notFound" | "forbidden" | "failed">("loading");
@@ -301,7 +316,7 @@ export default function PropertyDetailPage() {
                         </div>
                         <p className="text-sm font-medium text-muted flex items-center gap-2">
                             <MapPin size={14} className="text-muted" />
-                            {property.address ? `${property.address}, ` : ""}{e(property.emirate)}
+                            {formatAddressWithEmirate(property.address, property.emirate, property.emirate ? e(property.emirate) : "")}
                             {property.makaniNumber && ` • Makani: ${property.makaniNumber}`}
                         </p>
                     </div>
