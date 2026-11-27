@@ -150,6 +150,10 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
 
     const [stepIdx, setStepIdx] = useState(0);
     const [unitId, setUnitId] = useState("");
+    // QA-37: the picker lists units vacant today; this widens it to let/reserved
+    // ones for a contract that starts after the current one ends. The server still
+    // refuses dates that overlap another contract on the unit.
+    const [includeLetUnits, setIncludeLetUnits] = useState(false);
     const [renterId, setRenterId] = useState("");
     // The picked rows: the pickers search the server, so the wizard keeps what
     // it later reads (property id, name and type; the renter's name) itself.
@@ -777,7 +781,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                             </Field>
                             <Field label={`${t("unit")} *`}>
                                 <UnitPicker
-                                    status="VACANT"
+                                    status={includeLetUnits ? undefined : "VACANT"}
                                     propertyId={filterPropertyId || undefined}
                                     buildingId={filterBuildingId || undefined}
                                     value={unitId}
@@ -794,6 +798,16 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                         <Building2 size={11} /> {selectedUnit.propertyName} • {selectedUnit.propertyType || "RESIDENTIAL"}
                                     </p>
                                 )}
+                                <label className="mt-1.5 flex items-start gap-1.5 text-[11px] text-muted">
+                                    <input
+                                        type="checkbox"
+                                        data-testid="wizard-include-let-units"
+                                        className="mt-0.5"
+                                        checked={includeLetUnits}
+                                        onChange={e => setIncludeLetUnits(e.target.checked)}
+                                    />
+                                    {t("wizardIncludeLetUnits")}
+                                </label>
                             </Field>
                             <Field label={`${t("renter")} *`}>
                                 <RenterPicker

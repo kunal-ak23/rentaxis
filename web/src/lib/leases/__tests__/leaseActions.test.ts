@@ -193,4 +193,14 @@ describe("lease actions", () => {
             expect(hasSettlement(status)).toBe(["TERMINATED", "EXPIRED", "RENEWED", "CLOSED"].includes(status));
         }
     });
+
+    it("QA-36: before the start date Renew moves from the primary buttons to the menu, still reachable", () => {
+        const f: LeaseActionFacts = { status: "ACTIVE", posted: true, hasContract: true, transferredOut: false };
+        const available = availableLeaseActions(f, leasePermsFor("TENANT_ADMIN"));
+        expect(splitLeaseActions(available, "ACTIVE").primary).toContain("renew");
+        const early = splitLeaseActions(available, "ACTIVE", { notStarted: true });
+        expect(early.primary).not.toContain("renew");
+        expect(early.menu).toContain("renew");
+        expect(early.primary).toContain("recordPayment");
+    });
 });

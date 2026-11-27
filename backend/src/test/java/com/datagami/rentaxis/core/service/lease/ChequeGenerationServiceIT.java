@@ -255,6 +255,36 @@ class ChequeGenerationServiceIT extends AbstractPostgresIT {
         assertThat(sum(rows)).isEqualByComparingTo("56000");
     }
 
+    /**
+     * QA-40: regenerating to the same number of cheques keeps the numbers and banks
+     * typed on the old rows, row for row; a bank in the request still wins, and a
+     * different count starts blank.
+     */
+    @Test
+    void regeneratingToTheSameCountKeepsNumbersAndBanks() {
+        UUID leaseId = draft().getId();
+        service.generate(leaseId, fourCheques());
+        service.generateNumbers(leaseId, "200301");
+
+        List<ChequeDTO> same = service.generate(leaseId,
+                new GenerateChequesRequest(4, LocalDate.of(2026, 10, 1), null, null, null, null, null));
+        assertThat(same).extracting(ChequeDTO::chequeNumber)
+                .containsExactly("200301", "200302", "200303", "200304");
+        assertThat(same).extracting(ChequeDTO::payeeBank).containsOnly("Emirates NBD");
+        assertThat(same.get(0).chequeDate()).isEqualTo(LocalDate.of(2026, 10, 1));
+
+        List<ChequeDTO> newBank = service.generate(leaseId,
+                new GenerateChequesRequest(4, null, null, "Mashreq", null, null, null));
+        assertThat(newBank).extracting(ChequeDTO::payeeBank).containsOnly("Mashreq");
+        assertThat(newBank).extracting(ChequeDTO::chequeNumber)
+                .containsExactly("200301", "200302", "200303", "200304");
+
+        List<ChequeDTO> six = service.generate(leaseId,
+                new GenerateChequesRequest(6, null, null, null, null, null, null));
+        assertThat(six).extracting(ChequeDTO::chequeNumber).containsOnlyNulls();
+        assertThat(six).extracting(ChequeDTO::payeeBank).containsOnlyNulls();
+    }
+
     @Test
     void numbersFillSequentiallyFromTheStartingNumber() {
         UUID leaseId = draft().getId();

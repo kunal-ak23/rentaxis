@@ -1113,11 +1113,11 @@ function LeasesList() {
                                                 <td className="px-4 py-3 text-xs text-foreground tabular-nums">{fmtIsoDate(lease.startDate, locale)}</td>
                                                 <td className="px-4 py-3 text-xs text-foreground tabular-nums">{fmtIsoDate(lease.endDate, locale)}</td>
                                                 <td className="px-4 py-3 text-xs font-medium text-foreground text-end tabular-nums">{formatCurrency(lease.contractValue ?? 0)}</td>
-                                                <td className="px-4 py-3 text-[10px] text-muted font-mono">
-                                                    {lease.chainId ? lease.chainId.slice(0, 8) : "—"}
-                                                    {lease.renewedFromLeaseId && (
-                                                        <span className="ms-1 text-primary">&#8599;</span>
-                                                    )}
+                                                {/* QA-20: a renewal or a new letting, not the first 8 characters of a chain id. */}
+                                                <td className="px-4 py-3 text-[11px] text-muted" title={lease.chainId ?? undefined} data-testid="lease-kind">
+                                                    {lease.renewedFromLeaseId ? (
+                                                        <span className="text-primary">{tl("contractKindRenewal")} &#8599;</span>
+                                                    ) : tl("contractKindNew")}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold", getStatusColor(lease.status))}>

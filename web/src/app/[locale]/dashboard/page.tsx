@@ -16,6 +16,7 @@ import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { businessTodayIso } from "@/lib/businessDate";
 import { buildPipeline, type PipelineStage } from "@/lib/dashboard/pipeline";
 import ContractPipeline from "@/components/dashboard/ContractPipeline";
+import GettingStarted from "@/components/dashboard/GettingStarted";
 import TodayList from "@/components/dashboard/TodayList";
 import UnitStatusBoard from "@/components/dashboard/UnitStatusBoard";
 
@@ -377,6 +378,14 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {canManageLeases && (
+        <GettingStarted
+          projects={summary.totalProperties}
+          units={summary.totalUnits}
+          hasContracts={pipeline ? pipeline.some(s => s.count > 0) : null}
+        />
+      )}
 
       {pipeline && <ContractPipeline stages={pipeline} />}
 

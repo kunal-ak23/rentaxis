@@ -282,7 +282,8 @@ describe("Leases list — bulk post", () => {
         const rows = await screen.findAllByTestId(/^lease-row-/);
         expect(rows).toHaveLength(1);
         expect(rows[0]).toHaveAttribute("data-testid", "lease-row-l4");
-        expect(rows[0]).toHaveTextContent("chain-aa");
+        // QA-20: the chain id moved to the Type cell's tooltip.
+        expect(rows[0].querySelector('[data-testid="lease-kind"]')?.getAttribute("title")).toBe("chain-aaaaaaaa");
         expect(rows[0]).toHaveTextContent("Renewed");
     });
 

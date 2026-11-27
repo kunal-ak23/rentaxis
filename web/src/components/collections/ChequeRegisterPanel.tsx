@@ -17,6 +17,7 @@ import ChequeScanLink from "@/components/cheques/ChequeScanLink";
 import BounceFlow from "@/components/cheques/BounceFlow";
 import ReplaceChequeDialog from "@/components/cheques/ReplaceChequeDialog";
 import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
+import { downloadChequeReceipt } from "@/components/cheques/receiptDownload";
 import ClearBatchDialog from "@/components/cheques/ClearBatchDialog";
 import UnappliedPaymentsTile from "@/components/cheques/UnappliedPaymentsTile";
 import { businessTodayIso } from "@/lib/businessDate";
@@ -90,6 +91,7 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
     const [size, setSize] = useState(25);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [receiptError, setReceiptError] = useState<string | null>(null);
 
     const [summary, setSummary] = useState<ChequeSummary | null>(null);
     const [aging, setAging] = useState<AgingReport | null>(null);
@@ -206,7 +208,11 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
 
     const openAction = (cheque: Cheque, action: RegisterAction) => {
         if (action === "receipt") {
-            window.open(chequeApi.receiptUrl(cheque.id), "_blank", "noopener,noreferrer");
+            // QA-26: saved in place; a refusal shows in the banner instead of nothing.
+            setReceiptError(null);
+            void downloadChequeReceipt(cheque.id, t("receiptFailed")).then(problem => {
+                if (problem) setReceiptError(problem);
+            });
             return;
         }
         if (action === "bounce") {
@@ -309,6 +315,9 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
             </div>
 
             {loadError && <LoadErrorBanner message={loadError} onRetry={refresh} />}
+            {receiptError && (
+                <p role="alert" data-testid="register-receipt-error" className="text-xs text-danger">{receiptError}</p>
+            )}
 
             <UnappliedPaymentsTile visible={canCancel} />
 

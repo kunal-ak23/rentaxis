@@ -55,7 +55,7 @@ describe("PostLeaseDialog transfer journal groups", () => {
         expect(block).toHaveTextContent("Prepaid balance carried to this contract");
         expect(screen.getByTestId("post-transfer-deposit")).toHaveTextContent("3,000.00");
         // The old counts line is still there.
-        expect(screen.getByTestId("post-journals")).toHaveTextContent("1 TCO with 2 lines, 3 PDR");
+        expect(screen.getByTestId("post-journals")).toHaveTextContent("One contract entry with 2 lines, and 3 post-dated cheque entries");
     });
 
     it("says an owed balance is owed, and leaves out groups that post nothing", async () => {

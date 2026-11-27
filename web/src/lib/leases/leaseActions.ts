@@ -120,8 +120,14 @@ export const MENU_ORDER: LeaseActionId[] = [
     "writeOff", "downloadContract", "ledger", "post", "renew", "holdoverVacate", "settlement", "recordPayment", "edit", "delete",
 ];
 
-export function splitLeaseActions(available: LeaseActionId[], status: LeaseStatus): { primary: LeaseActionId[]; menu: LeaseActionId[] } {
-    const primary = (PRIMARY_BY_STATUS[status] ?? []).filter(a => available.includes(a)).slice(0, 3);
+/**
+ * QA-36 (26 Nov): before the contract's start date Renew is still offered (an
+ * early renewal is allowed), but under More actions rather than as a primary
+ * button next to Record payment.
+ */
+export function splitLeaseActions(available: LeaseActionId[], status: LeaseStatus, opts: { notStarted?: boolean } = {}): { primary: LeaseActionId[]; menu: LeaseActionId[] } {
+    const primary = (PRIMARY_BY_STATUS[status] ?? [])
+        .filter(a => available.includes(a) && !(opts.notStarted && a === "renew")).slice(0, 3);
     const menu = MENU_ORDER.filter(a => available.includes(a) && !primary.includes(a));
     return { primary, menu };
 }

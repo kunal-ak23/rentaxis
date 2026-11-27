@@ -451,12 +451,31 @@ public class ChequeGenerationService {
         // the rows first, so the tenant filter applies to them as it would to a
         // read, and the flush makes the deletes hit the database ahead of the
         // inserts rather than after them.
+        //
+        // QA-40 (27 Nov): when the new grid has as many rows as the old one, row i
+        // keeps the cheque number and bank typed on old row i (same mode only; a
+        // bank given in the request still wins). Regenerating to fix a date or an
+        // amount no longer wipes a cheque book the user has already typed in.
+        List<Cheque> previous = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
+                .filter(c -> c.getStatus() == ChequeStatus.DRAFT)
+                .toList();
+        boolean carry = previous.size() == rows.size();
+        List<String> keptNumbers = new ArrayList<>(rows.size());
+        List<String> keptBanks = new ArrayList<>(rows.size());
+        for (int i = 0; i < rows.size(); i++) {
+            Cheque old = carry ? previous.get(i) : null;
+            boolean sameMode = old != null && old.getMode() == mode;
+            keptNumbers.add(sameMode ? old.getChequeNumber() : null);
+            keptBanks.add(sameMode ? old.getPayeeBank() : null);
+        }
         chequeRepository.deleteByLease_IdAndStatus(leaseId, ChequeStatus.DRAFT);
         chequeRepository.flush();
 
+        boolean requestBank = r.payeeBank() != null && !r.payeeBank().isBlank();
         Account debitAccount = debitAccount(r.debitAccountId(), lease);
         List<Cheque> saved = new ArrayList<>(rows.size());
-        for (Row row : rows) {
+        for (int i = 0; i < rows.size(); i++) {
+            Row row = rows.get(i);
             Cheque c = blank(lease);
             c.setSeqNo(row.seqNo());
             c.setPostingDate(row.postingDate());
@@ -467,7 +486,8 @@ public class ChequeGenerationService {
             c.setRowKind(row.kind());
             c.setNarration(row.narration());
             c.setMode(mode);
-            c.setPayeeBank(r.payeeBank());
+            c.setPayeeBank(requestBank ? r.payeeBank() : keptBanks.get(i));
+            c.setChequeNumber(keptNumbers.get(i));
             c.setDebitAccount(r.debitAccountId() != null ? debitAccount : defaultFor(mode, lease, debitAccount));
             saved.add(c);
         }

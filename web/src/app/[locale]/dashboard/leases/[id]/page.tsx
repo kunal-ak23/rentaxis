@@ -4,6 +4,7 @@ import RatingBadge from "@/components/renters/rating/RatingBadge";
 import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { useTabTitle } from "@/components/workspace/WorkspaceContext";
 import { saveResponse } from "@/lib/download";
+import { downloadChequeReceipt } from "@/components/cheques/receiptDownload";
 import { useCallback, useEffect, useState } from "react";
 import { ContractDocuments } from "@/components/leases/ContractDocuments";
 import { useParams, useSearchParams } from "next/navigation";
@@ -408,13 +409,16 @@ export default function LeaseDetailPage() {
     };
 
     /**
-     * `receipt` streams a PDF rather than opening a form, so it goes straight
-     * to the endpoint; everything else is a dated action with notes and gets
+     * `receipt` streams a PDF rather than opening a form, so it is fetched and
+     * saved here (QA-26); everything else is a dated action with notes and gets
      * the shared dialog.
      */
     const openChequeAction = (cheque: Cheque, action: RegisterAction) => {
         if (action === "receipt") {
-            window.open(chequeApi.receiptUrl(cheque.id), "_blank", "noopener,noreferrer");
+            setChequeError(null);
+            void downloadChequeReceipt(cheque.id, tChequesReason("receiptFailed")).then(problem => {
+                if (problem) setChequeError(problem);
+            });
             return;
         }
         setChequeAction({ action, cheque });
@@ -614,7 +618,8 @@ export default function LeaseDetailPage() {
     const totals = totalsOf(lineRows, chargeTypes);
 
     const facts = { status: lease.status, posted, hasContract: !!lease.hasContract, transferredOut: !!lease.transferredToLeaseId };
-    const { primary, menu } = splitLeaseActions(availableLeaseActions(facts, leasePermsFor(userRole)), lease.status);
+    const notStarted = !!lease.startDate && lease.startDate > businessTodayIso();
+    const { primary, menu } = splitLeaseActions(availableLeaseActions(facts, leasePermsFor(userRole)), lease.status, { notStarted });
     // Each label is the expression the old header button rendered.
     type ActionSpec = { label: string; testId: string; icon: React.ElementType; onSelect?: () => void; href?: string; destructive?: boolean };
     const SPEC: Record<LeaseActionId, ActionSpec> = {
