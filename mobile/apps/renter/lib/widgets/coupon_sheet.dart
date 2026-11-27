@@ -73,7 +73,7 @@ class CouponSheet extends StatelessWidget {
   /// sheet, a refused link and a failed launch all leave the code on the
   /// clipboard with nothing else changed, so the renter can still paste it by
   /// hand. The click for this interaction was already recorded when the card
-  /// was tapped (`recordClick` in the strip and the Offers screen, before
+  /// was tapped (`recordClick` on the directory business page, before
   /// `handleTap`), so the redirect adds no event of its own.
   Future<void> _copyAndRedirect(BuildContext context, String code) async {
     final l = _L(context.isAr);

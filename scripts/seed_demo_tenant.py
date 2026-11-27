@@ -1866,7 +1866,16 @@ def main():
     if not business:
         business = api.post("/api/v1/promotions/businesses", json=business_payload)
     elif business_is_legacy:
-        business = api.put(f"/api/v1/promotions/businesses/{business['id']}", json=business_payload)
+        # A PUT replaces the whole business, so carry over what an admin may have set
+        # since (directory description, website, logo, domains); a re-run renames only.
+        business = api.put(f"/api/v1/promotions/businesses/{business['id']}", json={
+            **business_payload,
+            "logoUrl": business.get("logoUrl"),
+            "descriptionEn": business.get("descriptionEn"),
+            "descriptionAr": business.get("descriptionAr"),
+            "websiteUrl": business.get("websiteUrl"),
+            "allowedDomains": business.get("allowedDomains") or business_payload["allowedDomains"],
+        })
     ads = page_items(
         api.get(f"/api/v1/promotions/ads?businessId={business['id']}&size=100")
     )

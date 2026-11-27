@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:renter/providers/promotion_provider.dart';
-import 'package:renter/screens/offers_screen.dart';
+import 'package:renter/screens/directory/business_screen.dart';
 import 'package:renter/utils/promo_url.dart'
     show
         chooseRedirectUrl,
@@ -1867,8 +1867,12 @@ void main() {
   });
 
   group('wired through the app', () {
+    // The business page is where a renter meets a coupon now; its offers are
+    // this business's (`b-1`, the id `_ad` carries).
+    const business = DirectoryBusiness(id: 'b-1', nameEn: 'Spice Bazaar');
+
     testWidgets(
-      'an Offers-screen coupon tap records one click, and the redirect adds none',
+      'a business-page coupon tap records one click, and the redirect adds none',
       (tester) async {
         // Clicks are recorded where the card is tapped, before handleTap, for
         // every CTA type — so tapping a coupon already counted. Copy + Continue
@@ -1877,6 +1881,7 @@ void main() {
         _captureClipboard(tester);
         final launcher = _Launcher();
         final fake = FakePromotionService(
+          businesses: {'b-1': business},
           offerAds: [
             _ad(redirectUrl: _link, sharedFields: const ['RENTER_NAME']),
           ],
@@ -1894,7 +1899,7 @@ void main() {
             ],
             child: MaterialApp(
               theme: AppTheme.lightTheme,
-              home: const OffersScreen(),
+              home: const BusinessScreen(businessId: 'b-1'),
             ),
           ),
         );
@@ -1931,6 +1936,7 @@ void main() {
           _captureClipboard(tester);
           final launcher = _Launcher();
           final fake = FakePromotionService(
+            businesses: {'b-1': business},
             offerAds: [
               _ad(
                 redirectUrl: _link,
@@ -1954,7 +1960,7 @@ void main() {
               ],
               child: MaterialApp(
                 theme: AppTheme.lightTheme,
-                home: const OffersScreen(),
+                home: const BusinessScreen(businessId: 'b-1'),
               ),
             ),
           );

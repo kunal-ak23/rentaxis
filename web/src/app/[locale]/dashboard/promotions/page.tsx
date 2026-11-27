@@ -8,10 +8,11 @@ import { fetchBusinesses, fetchPendingAdCount } from "@/lib/api/promotions";
 import type { PromoBusinessDTO } from "@/types/promotion";
 import { BusinessesTab } from "./_components/BusinessesTab";
 import { AdsTab } from "./_components/AdsTab";
+import { DirectoryTab } from "./_components/DirectoryTab";
 import { PromotersTab } from "./_components/PromotersTab";
 import type { PropertyOption } from "./_components/AdEditor";
 
-type Tab = "businesses" | "ads" | "promoters";
+type Tab = "businesses" | "ads" | "promoters" | "directory";
 
 const BUSINESS_LOOKUP_CAP = 200;
 
@@ -129,13 +130,20 @@ export default function PromotionsPage() {
                     className={`px-4 py-2 text-sm ${tab === "promoters" ? "border-b-2 border-gray-900 font-medium" : "text-gray-500"}`}>
                     {t("promotersTab")}
                 </button>
+                <button type="button" role="tab" aria-selected={tab === "directory"}
+                    onClick={() => setTab("directory")}
+                    className={`px-4 py-2 text-sm ${tab === "directory" ? "border-b-2 border-gray-900 font-medium" : "text-gray-500"}`}>
+                    {t("directoryTab")}
+                </button>
             </div>
 
             {tab === "ads"
                 ? <AdsTab businesses={businesses} properties={properties} onReviewed={refreshPending} />
                 : tab === "businesses"
                     ? <BusinessesTab onChanged={onBusinessesChanged} />
-                    : <PromotersTab businesses={businesses} properties={properties} />}
+                    : tab === "promoters"
+                        ? <PromotersTab businesses={businesses} properties={properties} />
+                        : <DirectoryTab businesses={businesses} />}
         </div>
     );
 }

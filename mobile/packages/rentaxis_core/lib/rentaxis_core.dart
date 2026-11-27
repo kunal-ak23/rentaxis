@@ -39,6 +39,7 @@ export 'api/services/receipt_service.dart';
 // Models
 export 'models/auth_response.dart';
 export 'models/promo_ad.dart';
+export 'models/promo_directory.dart';
 
 // Providers
 export 'providers/auth_provider.dart';

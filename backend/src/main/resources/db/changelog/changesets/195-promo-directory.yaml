@@ -1,0 +1,48 @@
+# Business directory on the renter home (spec 2026-11-26-business-directory-design.md).
+# Admin-defined categories per org; a business can sit in several categories.
+# promo_businesses gains a description and a website (https, on the business's allowed domains).
+databaseChangeLog:
+  - changeSet:
+      id: 195-promo-directory-business-fields
+      author: claude
+      changes:
+        - addColumn:
+            tableName: promo_businesses
+            columns:
+              - column: { name: description_en, type: varchar(500) }
+              - column: { name: description_ar, type: varchar(500) }
+              - column: { name: website_url, type: varchar(512) }
+      rollback:
+        - dropColumn: { tableName: promo_businesses, columnName: website_url }
+        - dropColumn: { tableName: promo_businesses, columnName: description_ar }
+        - dropColumn: { tableName: promo_businesses, columnName: description_en }
+  - changeSet:
+      id: 195-promo-directory-categories
+      author: claude
+      changes:
+        - createTable:
+            tableName: promo_directory_categories
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_promo_directory_categories, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promo_directory_categories_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: name_en, type: varchar(60), constraints: { nullable: false } }
+              - column: { name: name_ar, type: varchar(60) }
+              - column: { name: icon_url, type: varchar(512) }
+              - column: { name: sort_order, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: active, type: boolean, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: archived_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex: { tableName: promo_directory_categories, indexName: idx_promo_directory_categories_tenant, columns: [ { column: { name: tenant_id } }, { column: { name: sort_order } } ] }
+        - createTable:
+            tableName: promo_directory_category_businesses
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_promo_directory_category_businesses, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promo_dir_cat_biz_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: category_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promo_dir_cat_biz_category, referencedTableName: promo_directory_categories, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: business_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promo_dir_cat_biz_business, referencedTableName: promo_businesses, referencedColumnNames: id, deleteCascade: true } }
+        - addUniqueConstraint: { tableName: promo_directory_category_businesses, columnNames: "category_id, business_id", constraintName: uq_promo_dir_cat_biz }
+        - createIndex: { tableName: promo_directory_category_businesses, indexName: idx_promo_dir_cat_biz_tenant_business, columns: [ { column: { name: tenant_id } }, { column: { name: business_id } } ] }
+      rollback:
+        - dropTable: { tableName: promo_directory_category_businesses }
+        - dropTable: { tableName: promo_directory_categories }

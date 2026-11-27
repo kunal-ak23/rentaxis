@@ -29,7 +29,8 @@ import 'screens/gatepass/resident_approvals_screen.dart';
 import 'screens/facilities/facilities_screen.dart';
 import 'screens/facilities/my_requests_screen.dart';
 import 'screens/services_hub_screen.dart';
-import 'screens/offers_screen.dart';
+import 'screens/directory/business_screen.dart';
+import 'screens/directory/category_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -263,16 +264,35 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Parameterless and self-fetching, same reason as the facility and
-          // gate-pass screens above: this router rebuilds on authProvider and
-          // would discard an `extra` payload.
-          GoRoute(
-            path: '/offers',
-            pageBuilder: (context, state) =>
-                fadeTransition(const OffersScreen(), state),
-          ),
+          ...directoryRoutes,
         ],
       ),
     ],
   );
 });
+
+/// The directory screens a home category tile leads to. Ids travel in the
+/// path and each screen re-fetches, same reason as the gate-pass and facility
+/// screens: this router rebuilds on authProvider and would discard `extra`.
+///
+/// `:categoryId` matches exactly one segment, so `/directory/business/<id>`
+/// (three segments) can only ever resolve to the business screen, whatever
+/// order these are listed or matched in. The one overlap, a bare
+/// `/directory/business`, reads as a category id the server 404s — the
+/// category not-found state. Pinned by `directory_category_screen_test.dart`.
+final List<RouteBase> directoryRoutes = [
+  GoRoute(
+    path: '/directory/business/:id',
+    pageBuilder: (context, state) => slideUpTransition(
+      BusinessScreen(businessId: state.pathParameters['id']!),
+      state,
+    ),
+  ),
+  GoRoute(
+    path: '/directory/:categoryId',
+    pageBuilder: (context, state) => slideUpTransition(
+      CategoryScreen(categoryId: state.pathParameters['categoryId']!),
+      state,
+    ),
+  ),
+];

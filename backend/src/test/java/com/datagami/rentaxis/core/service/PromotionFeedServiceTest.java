@@ -171,7 +171,7 @@ class PromotionFeedServiceTest {
         when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
                 .thenReturn(List.of());
 
-        service().offers(tenantId, renterId, null);
+        service().offers(tenantId, renterId, null, null);
 
         ArgumentCaptor<List<PromoPlacement>> captor = ArgumentCaptor.forClass(List.class);
         verify(adRepository).findEligible(eq(tenantId), any(), captor.capture(), anyList());
@@ -201,7 +201,7 @@ class PromotionFeedServiceTest {
         when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
                 .thenReturn(List.of(business()));
 
-        List<PromoAdCardDTO> cards = service().offers(tenantId, renterId, null);
+        List<PromoAdCardDTO> cards = service().offers(tenantId, renterId, null, null);
 
         assertThat(cards).filteredOn(c -> c.ctaType() == PromoCtaType.CALL)
                 .allMatch(c -> "+971501234567".equals(c.ctaPhone()));
@@ -411,8 +411,34 @@ class PromotionFeedServiceTest {
         when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
                 .thenReturn(List.of(b));
 
-        assertThat(service().offers(tenantId, renterId, PromoCategory.DINING)).hasSize(1);
-        assertThat(service().offers(tenantId, renterId, PromoCategory.FITNESS)).isEmpty();
+        assertThat(service().offers(tenantId, renterId, PromoCategory.DINING, null)).hasSize(1);
+        assertThat(service().offers(tenantId, renterId, PromoCategory.FITNESS, null)).isEmpty();
+    }
+
+    @Test
+    void offers_filtersByBusiness_acrossPlacements() {
+        when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
+                .thenReturn(List.of());
+        PromoAd mine = ad(1);
+        PromoAd offersOnly = ad(1);
+        offersOnly.setPlacement(PromoPlacement.OFFERS_ONLY);
+        UUID otherBusinessId = UUID.randomUUID();
+        PromoAd other = ad(1);
+        other.setBusinessId(otherBusinessId);
+        when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
+                .thenReturn(List.of(mine, offersOnly, other));
+        PromoBusiness otherBusiness = business();
+        otherBusiness.setId(otherBusinessId);
+        when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of(business(), otherBusiness));
+
+        assertThat(service().offers(tenantId, renterId, null, businessId).stream().map(PromoAdCardDTO::id))
+                .containsExactly(mine.getId(), offersOnly.getId());
+        assertThat(service().offers(tenantId, renterId, PromoCategory.DINING, businessId)).isEmpty();
+        assertThat(service().offers(tenantId, renterId, null, null)).hasSize(3);
+        // Every placement is asked for.
+        verify(adRepository, times(3)).findEligible(eq(tenantId), any(),
+                eq(List.of(PromoPlacement.HOME_AND_OFFERS, PromoPlacement.OFFERS_ONLY)), anyList());
     }
 
     @Test

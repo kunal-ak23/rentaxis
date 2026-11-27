@@ -6,6 +6,8 @@ import type {
   PromoAdDTO,
   PromoAdRequest,
   PromoAdStatsDTO,
+  DirectoryCategory,
+  DirectoryCategoryRequest,
   PromoApprovalStatus,
   PromoBusinessDTO,
   PromoBusinessRequest,
@@ -34,6 +36,7 @@ import type {
 // on it. Machine-readable error codes are tracked as a backend follow-up.
 const BUSINESSES = '/api/proxy/v1/promotions/businesses'
 const ADS = '/api/proxy/v1/promotions/ads'
+const CATEGORIES = '/api/proxy/v1/promotions/directory-categories'
 const PROMOTERS = '/api/proxy/v1/promotions/promoters'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
@@ -252,4 +255,58 @@ export async function uploadPromoImage(file: File): Promise<string> {
   // 502, not 500 — a 2xx without a URL is a contract mismatch, not a server fault.
   if (!data.url) throw new ApiError(502, 'Upload succeeded but returned no URL')
   return data.url
+}
+
+// ─── Directory categories ────────────────────────────────────────────────────
+
+/** `page` is 0-based. Archived categories are listed only when `archived` asks for them. */
+export async function listCategories(
+  archived = false, page = 0, size = 10,
+): Promise<PageResponse<DirectoryCategory>> {
+  const q = new URLSearchParams({ page: String(page), size: String(size) })
+  if (archived) q.set('archived', 'true')
+  const res = await fetch(`${CATEGORIES}?${q}`)
+  await throwIfNotOk(res)
+  return res.json()
+}
+
+export async function createCategory(body: DirectoryCategoryRequest): Promise<DirectoryCategory> {
+  const res = await fetch(CATEGORIES, {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body),
+  })
+  await throwIfNotOk(res)
+  return res.json()
+}
+
+/** An archived category cannot be edited (400). */
+export async function updateCategory(
+  id: string, body: DirectoryCategoryRequest,
+): Promise<DirectoryCategory> {
+  const res = await fetch(`${CATEGORIES}/${id}`, {
+    method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body),
+  })
+  await throwIfNotOk(res)
+  return res.json()
+}
+
+export async function archiveCategory(id: string): Promise<void> {
+  const res = await fetch(`${CATEGORIES}/${id}`, { method: 'DELETE' })
+  await throwIfNotOk(res)
+}
+
+/** Brings an archived category back, inactive. */
+export async function restoreCategory(id: string): Promise<void> {
+  const res = await fetch(`${CATEGORIES}/${id}/restore`, { method: 'POST' })
+  await throwIfNotOk(res)
+}
+
+/** True for the 400 `UNKNOWN_BUSINESS` a category save answers when a linked business is not this organisation's. */
+export function isUnknownBusinessError(e: unknown): boolean {
+  if (!(e instanceof ApiError) || e.status !== 400) return false
+  try {
+    const body: { code?: unknown } | null = e.body ? JSON.parse(e.body) : null
+    return body?.code === 'UNKNOWN_BUSINESS'
+  } catch {
+    return false
+  }
 }

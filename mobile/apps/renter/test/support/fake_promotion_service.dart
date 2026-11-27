@@ -1,4 +1,16 @@
+import 'package:dio/dio.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+
+/// What the real Dio stack throws for a 404 — a hidden, archived or foreign
+/// category or business.
+DioException notFound(String path) {
+  final options = RequestOptions(path: path);
+  return DioException(
+    requestOptions: options,
+    type: DioExceptionType.badResponse,
+    response: Response(requestOptions: options, statusCode: 404),
+  );
+}
 
 /// Records what the app asked for and what it sent back, so tests can assert
 /// on both without a Dio stack. Mirrors `fake_facility_service.dart`.
@@ -7,7 +19,32 @@ class FakePromotionService implements PromotionApiService {
     this.feedAds = const [],
     this.offerAds = const [],
     this.feedError,
-  });
+    this.categories = const [],
+    this.directoryError,
+    Map<String, ({DirectoryCategory category, List<DirectoryBusiness> businesses})>?
+        categoryDetails,
+    Map<String, DirectoryBusiness>? businesses,
+  })  : categoryDetails = categoryDetails ?? {},
+        businesses = businesses ?? {};
+
+  /// Category id → what `directoryCategory` returns. A missing id is a 404.
+  final Map<String,
+      ({DirectoryCategory category, List<DirectoryBusiness> businesses})>
+      categoryDetails;
+  Object? categoryError;
+  final List<String> requestedCategoryIds = [];
+
+  /// Business id → what `business` returns. A missing id is a 404.
+  final Map<String, DirectoryBusiness> businesses;
+  Object? businessError;
+  final List<String> requestedBusinessIds = [];
+
+  /// The `businessId` filter of every `offers` call, in order.
+  final List<String?> requestedOfferBusinessIds = [];
+
+  List<DirectoryCategory> categories;
+  Object? directoryError;
+  int directoryCalls = 0;
 
   List<PromoAd> feedAds;
   List<PromoAd> offerAds;
@@ -30,11 +67,42 @@ class FakePromotionService implements PromotionApiService {
   }
 
   @override
-  Future<List<PromoAd>> offers({String? category}) async {
+  Future<List<PromoAd>> offers({String? category, String? businessId}) async {
     requestedCategories.add(category);
+    requestedOfferBusinessIds.add(businessId);
     if (offersError != null) throw offersError!;
-    if (category == null) return offerAds;
-    return offerAds.where((a) => a.business.category == category).toList();
+    return offerAds
+        .where((a) => category == null || a.business.category == category)
+        .where((a) => businessId == null || a.business.id == businessId)
+        .toList();
+  }
+
+  @override
+  Future<List<DirectoryCategory>> directory() async {
+    directoryCalls++;
+    if (directoryError != null) throw directoryError!;
+    return categories;
+  }
+
+  @override
+  Future<({DirectoryCategory category, List<DirectoryBusiness> businesses})>
+      directoryCategory(String id) async {
+    requestedCategoryIds.add(id);
+    if (categoryError != null) throw categoryError!;
+    final detail = categoryDetails[id];
+    if (detail == null) throw notFound('/v1/promotions/directory/$id');
+    return detail;
+  }
+
+  @override
+  Future<DirectoryBusiness> business(String id) async {
+    requestedBusinessIds.add(id);
+    if (businessError != null) throw businessError!;
+    final found = businesses[id];
+    if (found == null) {
+      throw notFound('/v1/promotions/directory/businesses/$id');
+    }
+    return found;
   }
 
   @override
@@ -59,11 +127,12 @@ PromoAd testAd({
   String? couponCode,
   String? couponTermsEn,
   String category = 'DINING',
+  String businessId = 'b-1',
 }) =>
     PromoAd.fromJson({
       'id': id,
       'business': {
-        'id': 'b-1',
+        'id': businessId,
         'nameEn': 'Spice Bazaar',
         'nameAr': 'سبايس بازار',
         'logoUrl': logoUrl,

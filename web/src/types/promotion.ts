@@ -62,6 +62,10 @@ export interface PromoBusinessDTO {
   adCount: number
   createdAt: string
   updatedAt: string
+  /** The directory's description and website; absent from an older backend. */
+  descriptionEn?: string | null
+  descriptionAr?: string | null
+  websiteUrl?: string | null
 }
 
 export interface PromoBusinessRequest {
@@ -73,6 +77,34 @@ export interface PromoBusinessRequest {
   whatsappE164?: string | null
   allowedDomains?: string[]
   active?: boolean
+  /** A business PUT replaces these: always sent, null when blank. */
+  descriptionEn?: string | null
+  descriptionAr?: string | null
+  websiteUrl?: string | null
+}
+
+/** A group of businesses in the renter app's directory ("Car wash"). */
+export interface DirectoryCategory {
+  id: string
+  nameEn: string
+  nameAr: string | null
+  iconUrl: string | null
+  sortOrder: number
+  active: boolean
+  businessIds: string[]
+  businessCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** A PUT replaces the link set: always send the full `businessIds`, even `[]`. */
+export interface DirectoryCategoryRequest {
+  nameEn: string
+  nameAr?: string | null
+  iconUrl?: string | null
+  sortOrder?: number | null
+  active?: boolean | null
+  businessIds?: string[] | null
 }
 
 export interface PromoAdDTO {

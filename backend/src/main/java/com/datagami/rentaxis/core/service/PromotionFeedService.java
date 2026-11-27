@@ -172,10 +172,19 @@ public class PromotionFeedService {
         return toCards(tenantId, renterUserId, ordered);
     }
 
-    /** Every eligible ad, newest business content last, optionally category-filtered. */
+    /**
+     * Every eligible ad of every placement (OFFERS_ONLY included), newest business
+     * content last, optionally filtered by business category and by business. The
+     * business filter narrows the eligible set before cards are built, so it never
+     * widens what this renter may see: another org's or an untargeted ad is simply
+     * not in that set.
+     */
     @Transactional(readOnly = true)
-    public List<PromoAdCardDTO> offers(UUID tenantId, UUID renterUserId, PromoCategory category) {
+    public List<PromoAdCardDTO> offers(UUID tenantId, UUID renterUserId, PromoCategory category, UUID businessId) {
         List<PromoAd> eligible = eligible(tenantId, renterUserId, ALL_PLACEMENTS);
+        if (businessId != null) {
+            eligible = eligible.stream().filter(a -> businessId.equals(a.getBusinessId())).toList();
+        }
         List<PromoAdCardDTO> cards = toCards(tenantId, renterUserId, eligible);
         if (category == null) {
             return cards;

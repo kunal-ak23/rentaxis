@@ -18,5 +18,8 @@ public record PromoBusinessDTO(
         boolean active,
         long adCount,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        String descriptionEn,
+        String descriptionAr,
+        String websiteUrl) {
 }

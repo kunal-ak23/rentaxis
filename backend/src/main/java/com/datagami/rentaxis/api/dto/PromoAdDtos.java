@@ -56,6 +56,7 @@ public final class PromoAdDtos {
                 : Arrays.stream(b.getAllowedDomains().split(",")).map(String::trim).toList();
         return new PromoBusinessDTO(b.getId(), b.getNameEn(), b.getNameAr(), image.apply(b.getLogoUrl()),
                 b.getCategory(), b.getPhoneE164(), b.getWhatsappE164(), domains,
-                b.isActive(), adCount, b.getCreatedAt(), b.getUpdatedAt());
+                b.isActive(), adCount, b.getCreatedAt(), b.getUpdatedAt(),
+                b.getDescriptionEn(), b.getDescriptionAr(), b.getWebsiteUrl());
     }
 }

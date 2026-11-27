@@ -47,6 +47,20 @@ public class PromoBusiness extends BaseTenantEntity {
     @Column(name = "allowed_domains", columnDefinition = "text")
     private String allowedDomains;
 
+    /** Business directory (changeset 195): shown on the renter's business page. */
+    @Column(name = "description_en", length = 500)
+    private String descriptionEn;
+
+    @Column(name = "description_ar", length = 500)
+    private String descriptionAr;
+
+    /**
+     * Business directory: the page's "Visit" link. https on one of {@code allowedDomains},
+     * the same rule as an ad link ({@link com.datagami.rentaxis.core.service.PromotionUrlValidator#isAllowed}).
+     */
+    @Column(name = "website_url", length = 512)
+    private String websiteUrl;
+
     @Column(nullable = false)
     private boolean active = true;
 

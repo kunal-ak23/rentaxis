@@ -79,7 +79,7 @@ export function PromoterBusinessesTab({ businesses, canCreate, onChanged }: Prom
                 {error && (
                     <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
                 )}
-                <BusinessEditor mode="promoter" business={editing}
+                <BusinessEditor mode="promoter" showDirectoryFields={false} business={editing}
                     onSave={save} onCancel={() => { setError(null); setEditing(undefined); }} />
             </div>
         );
