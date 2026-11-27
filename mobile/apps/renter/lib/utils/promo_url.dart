@@ -82,7 +82,11 @@ final _printableAscii = RegExp(r'^[\x21-\x7E]+$');
 /// the domain allowlist; see also [isRefusedAppScheme] for the `-http`,
 /// `-https` and `x-safari-` families. The rest run script, read local data,
 /// reach system handlers (Android `intent:`, iOS enterprise installs) or place
-/// calls and messages. Mirrors `PromotionUrlValidator.REFUSED_APP_SCHEMES`.
+/// calls and messages. Keep identical to
+/// `PromotionUrlValidator.REFUSED_APP_SCHEMES` (backend) and
+/// `REFUSED_APP_SCHEMES` in the web's `RedirectLinkFields.tsx`. The app
+/// re-checks here because ads saved before a scheme was added are not
+/// re-validated by the server.
 const refusedAppSchemes = {
   'http', 'https', 'javascript', 'vbscript', 'data', 'file', 'blob', 'about',
   'content', 'ftp', 'ws', 'wss', 'intent', 'itms-services', 'chrome',
@@ -90,9 +94,13 @@ const refusedAppSchemes = {
   // Browsers: these open a web address and would get around the allowlist.
   'googlechrome', 'googlechromes', 'firefox', 'focus', 'brave', 'opera',
   'opera-http', 'microsoft-edge', 'duckduckgo', 'edge',
+  'com-apple-mobilesafari-tab', 'samsunginternet', 'googlechrome-x-callback',
+  'firefox-focus', 'ucbrowser', 'opera-mini',
+  // Calendar subscriptions fetch from a web host.
+  'webcal',
   // Calls and messages.
   'telprompt', 'facetime-prompt', 'facetime-audio-prompt', 'smsto', 'mms',
-  'mmsto',
+  'mmsto', 'callto', 'sip', 'sips', 'wtai',
 };
 
 /// Whether an app link may not use [scheme] (any case): one of

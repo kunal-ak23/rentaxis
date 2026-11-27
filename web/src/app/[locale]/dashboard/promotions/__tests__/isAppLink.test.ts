@@ -30,6 +30,21 @@ describe('isAppLink (mirrors PromotionUrlValidator.isAppLink)', () => {
         }
     })
 
+    it('refuses browser-bridge and call schemes', () => {
+        for (const bad of ['com-apple-mobilesafari-tab:https://evil.example/r',
+            'samsunginternet://open?url=https://evil.example',
+            'googlechrome-x-callback://x-callback-url/open/?url=https%3A%2F%2Fevil.example',
+            'firefox-focus://open-url?url=https://evil.example', 'ucbrowser://evil.example/r',
+            'opera-mini://evil.example/r', 'webcal://evil.example/cal.ics', 'callto:+971500000000',
+            'sip:renter@evil.example', 'sips:renter@evil.example', 'wtai://wp/mc;+971500000000',
+            'SamsungInternet://evil.example/r']) {
+            expect(isAppLink(bad), bad).toBe(false)
+        }
+        for (const ok of ['careem://open', 'talabat://restaurant/1', 'noon://deals?x=1']) {
+            expect(isAppLink(ok), ok).toBe(true)
+        }
+    })
+
     it('is printable ASCII only', () => {
         for (const bad of ['glidewash://x\uFE00', 'glidewash://\u3164', 'glidewash://x\u00A0y', 'glidewash://x\u200Ey',
             'glidewash://caf\u00E9', 'glidewash://x\u007F', 'glidewash://re deem', 'glidewash://x\n']) {

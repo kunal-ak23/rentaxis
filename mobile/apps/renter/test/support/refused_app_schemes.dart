@@ -1,8 +1,11 @@
 /// The one hard-coded list of schemes an app link may never use, for the
 /// renter app's tests. Written out by hand on purpose: a scheme dropped from
 /// `refusedAppSchemes` by mistake must still be refused here. Keep in step
-/// with the backend (`RefusedAppSchemes.java`) and the web fixture
-/// (`refusedAppSchemes.fixture.ts`).
+/// with the backend
+/// (`backend/src/test/java/com/datagami/rentaxis/core/service/RefusedAppSchemes.java`)
+/// and the web fixture
+/// (`web/src/app/[locale]/dashboard/promotions/__tests__/refusedAppSchemes.fixture.ts`),
+/// entry for entry; `PromotionUrlValidatorTest` checks the three match.
 const refusedNamedFixture = [
   'http',
   'https',
@@ -41,6 +44,17 @@ const refusedNamedFixture = [
   'smsto',
   'mms',
   'mmsto',
+  'com-apple-mobilesafari-tab',
+  'samsunginternet',
+  'googlechrome-x-callback',
+  'firefox-focus',
+  'ucbrowser',
+  'opera-mini',
+  'webcal',
+  'callto',
+  'sip',
+  'sips',
+  'wtai',
 ];
 
 /// Refused by pattern: ends in -http / -https, or starts with x-safari-.
@@ -58,4 +72,11 @@ const refusedByPatternFixture = [
 const refusedAllFixture = [...refusedNamedFixture, ...refusedByPatternFixture];
 
 /// Legitimate app schemes that must keep working.
-const allowedAppSchemesFixture = ['glidewash', 'myapp', 'fb-messenger'];
+const allowedAppSchemesFixture = [
+  'glidewash',
+  'myapp',
+  'fb-messenger',
+  'careem',
+  'talabat',
+  'noon',
+];

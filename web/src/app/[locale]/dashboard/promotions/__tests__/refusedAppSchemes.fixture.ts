@@ -2,7 +2,9 @@
  * The one hard-coded list of schemes an app link may never use, for the web tests.
  * Written out by hand on purpose: a scheme dropped from REFUSED_APP_SCHEMES by
  * mistake must still be refused here. Keep in step with the backend
- * (RefusedAppSchemes.java) and the renter app (test/support/refused_app_schemes.dart).
+ * (backend/src/test/java/com/datagami/rentaxis/core/service/RefusedAppSchemes.java) and the
+ * renter app (mobile/apps/renter/test/support/refused_app_schemes.dart) entry for entry;
+ * PromotionUrlValidatorTest checks the three match.
  */
 export const REFUSED_NAMED = [
     'http', 'https', 'javascript', 'vbscript', 'data', 'file', 'blob', 'about',
@@ -11,6 +13,8 @@ export const REFUSED_NAMED = [
     'googlechrome', 'googlechromes', 'firefox', 'focus', 'brave', 'opera', 'opera-http',
     'microsoft-edge', 'duckduckgo', 'edge',
     'telprompt', 'facetime-prompt', 'facetime-audio-prompt', 'smsto', 'mms', 'mmsto',
+    'com-apple-mobilesafari-tab', 'samsunginternet', 'googlechrome-x-callback', 'firefox-focus',
+    'ucbrowser', 'opera-mini', 'webcal', 'callto', 'sip', 'sips', 'wtai',
 ]
 
 /** Refused by pattern: ends in -http / -https, or starts with x-safari-. */
@@ -22,4 +26,4 @@ export const REFUSED_BY_PATTERN = [
 export const REFUSED_ALL = [...REFUSED_NAMED, ...REFUSED_BY_PATTERN]
 
 /** Legitimate app schemes that must keep working. */
-export const ALLOWED_APP_SCHEMES = ['glidewash', 'myapp', 'fb-messenger']
+export const ALLOWED_APP_SCHEMES = ['glidewash', 'myapp', 'fb-messenger', 'careem', 'talabat', 'noon']

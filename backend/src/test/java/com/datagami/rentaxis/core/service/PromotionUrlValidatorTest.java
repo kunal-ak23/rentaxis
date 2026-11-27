@@ -204,6 +204,60 @@ class PromotionUrlValidatorTest {
     }
 
     @Test
+    void browserBridgeAndCallSchemesAreRefused() {
+        // Each of these opens a web page in a browser (or places a call) and so
+        // would carry renter data to a host off the allowlist.
+        for (String bridge : new String[]{
+                "com-apple-mobilesafari-tab:https://evil.example/r", "samsunginternet://open?url=https://evil.example",
+                "googlechrome-x-callback://x-callback-url/open/?url=https%3A%2F%2Fevil.example",
+                "firefox-focus://open-url?url=https://evil.example", "ucbrowser://evil.example/r",
+                "opera-mini://evil.example/r", "webcal://evil.example/cal.ics", "callto:+971500000000",
+                "sip:renter@evil.example", "sips:renter@evil.example", "wtai://wp/mc;+971500000000",
+                "SamsungInternet://evil.example/r"}) {
+            assertThat(validator.isAllowedRedirect(bridge, "spice-bazaar.ae")).as(bridge).isFalse();
+        }
+        // Ordinary app links still pass.
+        for (String ok : new String[]{"careem://open", "talabat://restaurant/1", "noon://deals?x=1",
+                "glidewash://redeem"}) {
+            assertThat(validator.isAllowedRedirect(ok, "spice-bazaar.ae")).as(ok).isTrue();
+        }
+    }
+
+    /**
+     * The web, Java and renter-app fixtures must list the same schemes, so the
+     * three layers' refusal rules stay identical. Skipped only when the backend
+     * is built outside the monorepo.
+     */
+    @Test
+    void theThreeFixturesMatch() throws java.io.IOException {
+        java.nio.file.Path root = java.nio.file.Path.of("..").toAbsolutePath().normalize();
+        java.nio.file.Path web = root.resolve(
+                "web/src/app/[locale]/dashboard/promotions/__tests__/refusedAppSchemes.fixture.ts");
+        java.nio.file.Path dart = root.resolve("mobile/apps/renter/test/support/refused_app_schemes.dart");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(web) && java.nio.file.Files.exists(dart));
+        assertThat(fixtureList(web, "REFUSED_NAMED")).containsExactlyElementsOf(RefusedAppSchemes.NAMED);
+        assertThat(fixtureList(web, "REFUSED_BY_PATTERN")).containsExactlyElementsOf(RefusedAppSchemes.BY_PATTERN);
+        assertThat(fixtureList(web, "ALLOWED_APP_SCHEMES")).containsExactlyElementsOf(RefusedAppSchemes.ALLOWED);
+        assertThat(fixtureList(dart, "refusedNamedFixture")).containsExactlyElementsOf(RefusedAppSchemes.NAMED);
+        assertThat(fixtureList(dart, "refusedByPatternFixture")).containsExactlyElementsOf(RefusedAppSchemes.BY_PATTERN);
+        assertThat(fixtureList(dart, "allowedAppSchemesFixture")).containsExactlyElementsOf(RefusedAppSchemes.ALLOWED);
+    }
+
+    /** The quoted strings in {@code name = [ ... ]} in a TS or Dart fixture file. */
+    private static java.util.List<String> fixtureList(java.nio.file.Path file, String name) throws java.io.IOException {
+        String src = java.nio.file.Files.readString(file);
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\\b" + name + "\\s*=\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL).matcher(src);
+        assertThat(m.find()).as(name + " in " + file).isTrue();
+        java.util.List<String> out = new java.util.ArrayList<>();
+        java.util.regex.Matcher q = java.util.regex.Pattern.compile("'([^']*)'").matcher(m.group(1));
+        while (q.find()) {
+            out.add(q.group(1));
+        }
+        return out;
+    }
+
+    @Test
     void isAllowedRedirect_isTheHttpsRuleOrAnAppLink() {
         assertThat(validator.isAllowedRedirect("https://spice-bazaar.ae/r", "spice-bazaar.ae")).isTrue();
         assertThat(validator.isAllowedRedirect("glidewash://redeem", "spice-bazaar.ae")).isTrue();

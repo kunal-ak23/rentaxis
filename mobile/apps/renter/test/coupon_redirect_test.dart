@@ -1307,6 +1307,34 @@ void main() {
       }
     });
 
+    test('refuses browser-bridge and call schemes, even from the server', () {
+      // Older ads saved before the server refused these must not open either.
+      for (final bridge in [
+        'com-apple-mobilesafari-tab:https://evil.example/r',
+        'samsunginternet://open?url=https://evil.example',
+        'googlechrome-x-callback://x-callback-url/open/?url=https%3A%2F%2Fevil.example',
+        'firefox-focus://open-url?url=https://evil.example',
+        'ucbrowser://evil.example/r',
+        'opera-mini://evil.example/r',
+        'webcal://evil.example/cal.ics',
+        'callto:+971500000000',
+        'sip:renter@evil.example',
+        'sips:renter@evil.example',
+        'wtai://wp/mc;+971500000000',
+        'SamsungInternet://evil.example/r',
+      ]) {
+        expect(parseSafeCouponRedirect(bridge), isNull, reason: bridge);
+      }
+      for (final ok in [
+        'careem://open',
+        'talabat://restaurant/1',
+        'noon://deals?x=1',
+        'glidewash://redeem',
+      ]) {
+        expect(parseSafeCouponRedirect(ok)?.appLink, ok, reason: ok);
+      }
+    });
+
     test('an app link is printable ASCII only', () {
       for (final bad in [
         'glidewash://x\uFE00',

@@ -71,7 +71,9 @@ public class PromotionUrlValidator {
      * {@code -http}/{@code -https}/{@code x-safari-} families. The rest run
      * script, read local data, reach system handlers (Android {@code intent:},
      * iOS enterprise installs) or place calls, messages and FaceTime calls.
-     * Keep in step with the web form and the renter app.
+     * Keep identical to {@code REFUSED_APP_SCHEMES} in
+     * {@code web/src/app/[locale]/dashboard/promotions/_components/RedirectLinkFields.tsx}
+     * and {@code refusedAppSchemes} in {@code mobile/apps/renter/lib/utils/promo_url.dart}.
      */
     static final Set<String> REFUSED_APP_SCHEMES = Set.of(
             "http", "https", "javascript", "vbscript", "data", "file", "blob", "about",
@@ -80,8 +82,13 @@ public class PromotionUrlValidator {
             // Browsers: these open a web address and would get around the allowlist.
             "googlechrome", "googlechromes", "firefox", "focus", "brave", "opera", "opera-http",
             "microsoft-edge", "duckduckgo", "edge",
+            "com-apple-mobilesafari-tab", "samsunginternet", "googlechrome-x-callback", "firefox-focus",
+            "ucbrowser", "opera-mini",
+            // Calendar subscriptions fetch from a web host.
+            "webcal",
             // Calls and messages.
-            "telprompt", "facetime-prompt", "facetime-audio-prompt", "smsto", "mms", "mmsto");
+            "telprompt", "facetime-prompt", "facetime-audio-prompt", "smsto", "mms", "mmsto",
+            "callto", "sip", "sips", "wtai");
 
     /** Normalises admin input into bare lowercase hostnames, dropping anything invalid. */
     public List<String> parseDomains(String raw) {

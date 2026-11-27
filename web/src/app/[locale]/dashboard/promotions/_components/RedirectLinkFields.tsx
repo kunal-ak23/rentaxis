@@ -38,7 +38,8 @@ const APP_SCHEME = /^[a-z][a-z0-9+.-]{1,31}$/i;
  * hand a web address to a browser and would get around the domain allowlist; see
  * also `isRefusedAppScheme` for the `-http`/`-https`/`x-safari-` families. The rest
  * run script, read local data, reach system handlers or place calls and messages.
- * Mirrors `PromotionUrlValidator.REFUSED_APP_SCHEMES`.
+ * Keep identical to `PromotionUrlValidator.REFUSED_APP_SCHEMES` (backend) and
+ * `refusedAppSchemes` in `mobile/apps/renter/lib/utils/promo_url.dart`.
  */
 export const REFUSED_APP_SCHEMES: ReadonlySet<string> = new Set([
     "http", "https", "javascript", "vbscript", "data", "file", "blob", "about",
@@ -47,8 +48,13 @@ export const REFUSED_APP_SCHEMES: ReadonlySet<string> = new Set([
     // Browsers: these open a web address and would get around the allowlist.
     "googlechrome", "googlechromes", "firefox", "focus", "brave", "opera", "opera-http",
     "microsoft-edge", "duckduckgo", "edge",
+    "com-apple-mobilesafari-tab", "samsunginternet", "googlechrome-x-callback", "firefox-focus",
+    "ucbrowser", "opera-mini",
+    // Calendar subscriptions fetch from a web host.
+    "webcal",
     // Calls and messages.
     "telprompt", "facetime-prompt", "facetime-audio-prompt", "smsto", "mms", "mmsto",
+    "callto", "sip", "sips", "wtai",
 ]);
 
 /** A refused scheme (any case): named, or a browser bridge ending in -http/-https or starting with x-safari-. */
