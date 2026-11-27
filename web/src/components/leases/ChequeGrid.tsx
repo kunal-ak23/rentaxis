@@ -534,6 +534,13 @@ export default function ChequeGrid({
                         />
                         {t("separateOneTimeCheque")}
                     </label>
+                    {/* QA-38 (27 Nov retest): generating replaces the saved grid at once,
+                        numbers and banks included — said before the click, not after. */}
+                    {cheques.some(c => (c.chequeNumber ?? "").trim() !== "") && (
+                        <p data-testid="cheque-generate-replaces" className="md:col-span-3 text-[11px] text-warning">
+                            {t("generateReplacesNumbered", { count: cheques.length })}
+                        </p>
+                    )}
                     <div className="flex items-end">
                         <button
                             type="button"

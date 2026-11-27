@@ -2636,6 +2636,7 @@
     "contractValueExclDeposit": "قيمة العقد (بدون التأمين)",
     "chequeGrid": "جدول الشيكات",
     "generateCheques": "توليد الشيكات",
+    "generateReplacesNumbered": "سيستبدل هذا الشيكات الحالية ({count}) في الجدول، بما فيها أرقام الشيكات والبنوك المدخلة عليها.",
     "generateChequeNumbers": "توليد أرقام الشيكات",
     "mergeCheques": "{count, plural, =0 {دمج الشيكات} =1 {دمج الشيكات} two {دمج شيكين} few {دمج # شيكات} many {دمج # شيكًا} other {دمج # شيك}}",
     "mergeChequesHint": "حدّد شيكين أو أكثر واضغط دمج لجمعهما في شيك واحد. يحتفظ الشيك الأعلى بتاريخه ورقمه، وتُجمع المبالغ.",
