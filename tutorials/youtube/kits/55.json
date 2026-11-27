@@ -1,0 +1,59 @@
+{
+  "id": "55",
+  "slug": "tenant-rating",
+  "title": "Miftah tutorial 55 · Tenant rating",
+  "description": "See each tenant's score and grade from two years of payments and conduct, read why it moved, add a manual adjustment, and use it in renewal season.\n\nWho this is for: Accountant, Company Admin, Property Manager, System Admin.\n\nChapters:\n0:00 Tenant Rating\n0:32 Why a C\n0:58 A Manual Adjustment\n1:14 Where It Shows\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nاطّلع على درجة كل مستأجر وتصنيفه بناءً على سجل الدفعات والسلوك لعامين، وافهم سبب تغيّرها، وأضف تعديلًا يدويًا، واستخدمها في موسم التجديد.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "tenancy contract",
+    "lease agreement",
+    "tenant management",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "public",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Leasing",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Tenant Rating"
+    },
+    {
+      "startSec": 32,
+      "start": "0:32",
+      "label": "Why a C"
+    },
+    {
+      "startSec": 58,
+      "start": "0:58",
+      "label": "A Manual Adjustment"
+    },
+    {
+      "startSec": 74,
+      "start": "1:14",
+      "label": "Where It Shows"
+    }
+  ],
+  "durationSec": 90,
+  "roles": [
+    "SUPER_ADMIN",
+    "TENANT_ADMIN",
+    "ACCOUNTANT",
+    "PROPERTY_MANAGER"
+  ],
+  "topic": "leasing",
+  "captionsFile": "tutorials/output/55-tenant-rating.srt",
+  "videoFile": "tutorials/output/55-tenant-rating.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/55.png"
+}

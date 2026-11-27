@@ -1,0 +1,65 @@
+{
+  "id": "53",
+  "slug": "download-several-receipts-at-once",
+  "title": "Miftah tutorial 53 · Download several receipts at once",
+  "description": "Tick cleared payments on a contract, or pick a year, and download their receipts as one PDF, from the office or the tenant portal.\n\nWho this is for: Accountant, Company Admin, Property Manager, Tenant.\n\nChapters:\n0:00 Receipts from the Contract\n0:10 Tick, Then Download\n0:22 A Whole Year\n0:36 Cleared Cheques Only\n0:48 In the Tenant Portal\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nحدّد الدفعات المحصّلة في العقد، أو اختر سنة، ونزّل إيصالاتها في ملف PDF واحد، من المكتب أو من بوابة المستأجر.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "rent collection",
+    "cheques",
+    "online payments",
+    "penalties",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "public",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Collections",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Receipts from the Contract"
+    },
+    {
+      "startSec": 10,
+      "start": "0:10",
+      "label": "Tick, Then Download"
+    },
+    {
+      "startSec": 22,
+      "start": "0:22",
+      "label": "A Whole Year"
+    },
+    {
+      "startSec": 36,
+      "start": "0:36",
+      "label": "Cleared Cheques Only"
+    },
+    {
+      "startSec": 48,
+      "start": "0:48",
+      "label": "In the Tenant Portal"
+    }
+  ],
+  "durationSec": 71,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "ACCOUNTANT",
+    "RENTER"
+  ],
+  "topic": "collections",
+  "captionsFile": "tutorials/output/53-download-several-receipts-at-once.srt",
+  "videoFile": "tutorials/output/53-download-several-receipts-at-once.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/53.png"
+}
