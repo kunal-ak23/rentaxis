@@ -2721,7 +2721,7 @@
     "postConfirmNumbered": "Post contract {number}? This writes the journals and cannot be edited without a reversal.",
     "postConfirmUnnumbered": "Post this contract? This writes the journals and cannot be edited without a reversal.",
     "dryRunLoading": "Checking the contract…",
-    "dryRunJournals": "{tco, plural, one {One contract entry} other {# contract entries}} with {tcoLines} lines, and {pdr, plural, =0 {no post-dated cheque entries} one {one post-dated cheque entry} other {# post-dated cheque entries}}",
+    "dryRunJournals": "{tco, plural, one {One contract entry} other {# contract entries}} with {tcoLines, plural, one {one line} other {# lines}}, and {pdr, plural, =0 {no post-dated cheque entries} one {one post-dated cheque entry} other {# post-dated cheque entries}}",
     "depositCarriedForward": "Deposit carried forward",
     "dryRunTransfer": {
       "title": "The transfer also posts",

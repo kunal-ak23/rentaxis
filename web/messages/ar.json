@@ -2721,7 +2721,7 @@
     "postConfirmNumbered": "ترحيل العقد {number}؟ هذا يكتب القيود ولا يمكن تعديله إلا بقيد عكسي.",
     "postConfirmUnnumbered": "ترحيل هذا العقد؟ هذا يكتب القيود ولا يمكن تعديله إلا بقيد عكسي.",
     "dryRunLoading": "جارٍ فحص العقد…",
-    "dryRunJournals": "{tco} قيد عقد بـ {tcoLines} بنود، و{pdr} قيد شيكات آجلة",
+    "dryRunJournals": "{tco, plural, one {قيد عقد واحد} two {قيدا عقد} few {# قيود عقد} many {# قيد عقد} other {# قيد عقد}} {tcoLines, plural, one {ببند واحد} two {ببندين} few {بـ # بنود} many {بـ # بندًا} other {بـ # بند}}، و{pdr, plural, =0 {لا قيود شيكات آجلة} one {قيد شيكات آجلة واحد} two {قيدا شيكات آجلة} few {# قيود شيكات آجلة} many {# قيدًا للشيكات الآجلة} other {# قيد شيكات آجلة}}",
     "depositCarriedForward": "التأمين المُرحَّل",
     "dryRunTransfer": {
       "title": "يُرحِّل النقل أيضًا",

@@ -28,13 +28,18 @@ vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "
 // The unit picker as a plain <select> over the units the filter would let through,
 // recording the scope it was handed — the real one sends it to /units/search.
 const pickerScope = vi.hoisted(() => ({ propertyId: undefined as string | undefined, buildingId: undefined as string | undefined }));
+const pickerStatus = vi.hoisted(() => ({ status: undefined as string | undefined, exclude: undefined as string[] | undefined }));
 vi.mock("@/components/pickers/UnitPicker", () => ({
-    UnitPicker: ({ value, onChange, placeholder, propertyId, buildingId }: {
+    UnitPicker: ({ value, onChange, placeholder, propertyId, buildingId, status, excludeStatuses }: {
         value: string; onChange: (id: string, u: unknown) => void; placeholder?: string; propertyId?: string; buildingId?: string;
+        status?: string; excludeStatuses?: string[];
     }) => {
         pickerScope.propertyId = propertyId;
         pickerScope.buildingId = buildingId;
-        const shown = UNITS.filter(u => (!propertyId || u.propertyId === propertyId) && (!buildingId || u.buildingId === buildingId));
+        pickerStatus.status = status;
+        pickerStatus.exclude = excludeStatuses;
+        const shown = UNITS.filter(u => (!propertyId || u.propertyId === propertyId) && (!buildingId || u.buildingId === buildingId)
+            && (!status || u.status === status) && !(excludeStatuses ?? []).includes(u.status));
         return (
             <select aria-label={placeholder} data-testid="unit-select" value={value}
                 onChange={e => onChange(e.target.value, UNITS.find(u => u.id === e.target.value) ?? null)}>
@@ -80,6 +85,8 @@ const UNITS = [
     { id: "u1", unitNumber: "A-101", propertyId: "p1", propertyName: "Desert Rose Gardens", propertyType: "RESIDENTIAL", buildingId: "b1", buildingName: "Tower A", status: "VACANT" },
     { id: "u2", unitNumber: "B-201", propertyId: "p1", propertyName: "Desert Rose Gardens", propertyType: "RESIDENTIAL", buildingId: "b2", buildingName: "Tower B", status: "VACANT" },
     { id: "u3", unitNumber: "C-301", propertyId: "p2", propertyName: "Palm Ridge", propertyType: "RESIDENTIAL", buildingId: "b3", buildingName: "Main", status: "VACANT" },
+    { id: "u4", unitNumber: "C-302", propertyId: "p2", propertyName: "Palm Ridge", propertyType: "RESIDENTIAL", buildingId: "b3", buildingName: "Main", status: "OCCUPIED" },
+    { id: "u5", unitNumber: "C-303", propertyId: "p2", propertyName: "Palm Ridge", propertyType: "RESIDENTIAL", buildingId: "b3", buildingName: "Main", status: "MAINTENANCE" },
 ];
 const RENTER = { id: "r1", nameEn: "Omar Tenant", nameAr: "عمر", phone: null, email: null };
 
@@ -147,6 +154,27 @@ describe("contract wizard — Parties step building filter", () => {
         fireEvent.change(screen.getByTestId("wizard-filter-building"), { target: { value: "b2" } });
         expect(screen.getByLabelText("Unit")).toHaveValue("");
         expect(screen.queryByTestId("wizard-unit-property")).not.toBeInTheDocument();
+    });
+
+    it("QA-37: the box widens the list to let units, never maintenance; unticking drops a let unit", async () => {
+        renderWizard();
+        expect(pickerStatus).toEqual({ status: "VACANT", exclude: undefined });
+        expect(unitOptions()).toEqual(["A-101", "B-201", "C-301"]);
+
+        fireEvent.click(screen.getByTestId("wizard-include-let-units"));
+        expect(pickerStatus).toEqual({ status: undefined, exclude: ["MAINTENANCE"] });
+        expect(unitOptions()).toEqual(["A-101", "B-201", "C-301", "C-302"]);
+
+        fireEvent.change(screen.getByLabelText("Unit"), { target: { value: "u4" } });
+        expect(screen.getByLabelText("Unit")).toHaveValue("u4");
+        fireEvent.click(screen.getByTestId("wizard-include-let-units"));
+        expect(screen.getByLabelText("Unit")).toHaveValue("");
+
+        // A vacant unit survives the untick.
+        fireEvent.click(screen.getByTestId("wizard-include-let-units"));
+        fireEvent.change(screen.getByLabelText("Unit"), { target: { value: "u1" } });
+        fireEvent.click(screen.getByTestId("wizard-include-let-units"));
+        expect(screen.getByLabelText("Unit")).toHaveValue("u1");
     });
 
     it("labels the filters in Arabic", async () => {

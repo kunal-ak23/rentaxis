@@ -24,13 +24,16 @@ type Props = {
     excludeIds?: string[];
     /** Id of the trigger, for a `<label htmlFor>`. */
     id?: string;
+    /** Unit statuses never offered, for a search with no `status` (QA-37: MAINTENANCE). */
+    excludeStatuses?: string[];
 };
 
 /** Server-searched unit select: label is the unit number, sublabel its property (· building) and a commercial tag. */
-export function UnitPicker({ value, onChange, propertyId, buildingId, status, placeholder, className, testId, disabled, excludeIds, id }: Props) {
+export function UnitPicker({ value, onChange, propertyId, buildingId, status, placeholder, className, testId, disabled, excludeIds, id, excludeStatuses }: Props) {
     const t = useTranslations("Pickers");
     const commercial = t("commercial");
     const excludeKey = (excludeIds ?? []).join("\u0000");
+    const excludeStatusKey = (excludeStatuses ?? []).join(",");
 
     const toOption = useCallback(
         (u: UnitOption): AsyncOption => {
@@ -48,9 +51,10 @@ export function UnitPicker({ value, onChange, propertyId, buildingId, status, pl
             const rows = units.remember(
                 await lookupApi.searchUnits({ q, propertyId, buildingId, status, limit: Math.min(PAGE + excluded.size, MAX) }),
             );
-            return rows.filter((u) => !excluded.has(u.id)).map(toOption);
+            const skipStatus = new Set(excludeStatusKey ? excludeStatusKey.split(",") : []);
+            return rows.filter((u) => !excluded.has(u.id) && !(u.status && skipStatus.has(u.status))).map(toOption);
         },
-        [propertyId, buildingId, status, excludeKey, toOption],
+        [propertyId, buildingId, status, excludeKey, excludeStatusKey, toOption],
     );
 
     const resolved = units.useResolved(value);

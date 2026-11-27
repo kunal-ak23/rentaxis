@@ -285,6 +285,26 @@ class ChequeGenerationServiceIT extends AbstractPostgresIT {
         assertThat(six).extracting(ChequeDTO::payeeBank).containsOnlyNulls();
     }
 
+    /**
+     * QA-40 review: same count, different shape carries nothing. Four folded
+     * cheques (mixed, rent, rent, rent) regenerated as two rent cheques plus the
+     * fee and the deposit on their own is also four rows, but row 3 would move
+     * from a rent instalment to the admin fee.
+     */
+    @Test
+    void regeneratingToADifferentShapeKeepsNoNumbers() {
+        UUID leaseId = draft().getId();
+        service.generate(leaseId, fourCheques());
+        service.generateNumbers(leaseId, "200301");
+
+        List<ChequeDTO> reshaped = service.generate(leaseId,
+                new GenerateChequesRequest(2, null, null, null, null, false, null));
+
+        assertThat(reshaped).hasSize(4);
+        assertThat(reshaped).extracting(ChequeDTO::chequeNumber).containsOnlyNulls();
+        assertThat(reshaped).extracting(ChequeDTO::payeeBank).containsOnlyNulls();
+    }
+
     @Test
     void numbersFillSequentiallyFromTheStartingNumber() {
         UUID leaseId = draft().getId();

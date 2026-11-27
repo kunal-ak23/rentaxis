@@ -782,6 +782,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                             <Field label={`${t("unit")} *`}>
                                 <UnitPicker
                                     status={includeLetUnits ? undefined : "VACANT"}
+                                    excludeStatuses={includeLetUnits ? ["MAINTENANCE"] : undefined}
                                     propertyId={filterPropertyId || undefined}
                                     buildingId={filterBuildingId || undefined}
                                     value={unitId}
@@ -804,7 +805,15 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                         data-testid="wizard-include-let-units"
                                         className="mt-0.5"
                                         checked={includeLetUnits}
-                                        onChange={e => setIncludeLetUnits(e.target.checked)}
+                                        onChange={e => {
+                                            setIncludeLetUnits(e.target.checked);
+                                            // Unticked: a let or reserved unit picked under the wider
+                                            // list is cleared, so the VACANT filter holds again.
+                                            if (!e.target.checked && selectedUnit && selectedUnit.status !== "VACANT") {
+                                                setUnitId("");
+                                                setSelectedUnit(null);
+                                            }
+                                        }}
                                     />
                                     {t("wizardIncludeLetUnits")}
                                 </label>
