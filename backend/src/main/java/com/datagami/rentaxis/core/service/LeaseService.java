@@ -1623,20 +1623,35 @@ public class LeaseService {
     }
 
     /**
+     * QA-13: the account {@link #defaultCreditAccount} would give a line of
+     * {@code type} on {@code propertyId} now — for the post, which re-resolves a
+     * draft line saved before the property had its accounts. Null when nothing is
+     * mapped yet, and null when the mapped account is not of the type an explicit
+     * pick would have to be (the post then refuses as before). Never throws.
+     */
+    public Account defaultCreditAccountFor(ChargeType type, UUID propertyId) {
+        if (type == null) {
+            return null;
+        }
+        Account account = defaultCreditAccount(type, propertyId);
+        if (account == null || account.isGroup() || !account.isActive()) {
+            return null;
+        }
+        boolean passThrough = type.getBehaviour() == ChargeBehaviour.FEE
+                && type.getRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.PASS_THROUGH;
+        if (passThrough) {
+            return account.getAccountType() == AccountType.EXPENSE || account.getAccountType() == AccountType.LIABILITY
+                    ? account : null;
+        }
+        AccountType expected = ChargeTypeService.expectedTypeFor(type.getRole());
+        return expected != null && account.getAccountType() == expected ? account : null;
+    }
+
+    /**
      * The account a line of {@code type} is credited to on {@code propertyId} when the
      * user picks none. A null account is deliberate: see applyLines' note. The line
      * stays unmapped and the posting guard reports it.
      */
-    /**
-     * QA-13: the account {@link #defaultCreditAccount} would give a line of
-     * {@code type} on {@code propertyId} now — for the post, which re-resolves a
-     * draft line saved before the property had its accounts. Null when nothing is
-     * mapped yet; never throws.
-     */
-    public Account defaultCreditAccountFor(ChargeType type, UUID propertyId) {
-        return type == null ? null : defaultCreditAccount(type, propertyId);
-    }
-
     private Account defaultCreditAccount(ChargeType type, UUID propertyId) {
         // resolveOrNull, not resolve-in-a-try/catch: AccountResolver is proxied, so
         // an UnmappedAccountRoleException thrown out of resolve() marks this

@@ -32,8 +32,11 @@ public class UnmappedAccountRoleException extends BusinessRuleViolationException
     /** "advance rent, bank and PDC receivable": each role in words, sorted, joined as a list. */
     static String readable(Set<AccountRole> roles) {
         java.util.List<String> words = roles.stream().map(UnmappedAccountRoleException::words).sorted().toList();
-        if (words.size() <= 1) {
-            return String.join("", words);
+        if (words.isEmpty()) {
+            return "some accounts";
+        }
+        if (words.size() == 1) {
+            return words.get(0);
         }
         return String.join(", ", words.subList(0, words.size() - 1)) + " and " + words.get(words.size() - 1);
     }

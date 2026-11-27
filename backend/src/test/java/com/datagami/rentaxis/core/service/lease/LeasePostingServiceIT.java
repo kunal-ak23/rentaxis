@@ -461,6 +461,30 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
     }
 
     /**
+     * QA-13 review: the post fills a draft line only with an account an explicit pick
+     * could have been. ADMIN_FEE mapped to the receivable (an asset) is not one, so
+     * the line stays unmapped and the post refuses as before.
+     */
+    @Test
+    void postDoesNotFillADraftLineWithAMistypedMapping() {
+        Account receivable = leaf(AccountRole.RENT_RECEIVABLE);
+        unmap(AccountRole.ADMIN_FEE);
+        UUID leaseId = readyToPost();
+        tx.executeWithoutResult(s -> {
+            PropertyAccountMapping m = new PropertyAccountMapping();
+            m.setPropertyId(fixtures.property().getId());
+            m.setRole(AccountRole.ADMIN_FEE);
+            m.setAccount(receivable);
+            propertyMappings.save(m);
+        });
+
+        assertThat(posting.dryRun(leaseId).errors()).contains("Line 2 (ADMIN_FEE) has no credit account.");
+        assertThatThrownBy(() -> posting.post(leaseId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Line 2 (ADMIN_FEE) has no credit account");
+    }
+
+    /**
      * A line the resolver could not map when the draft was saved. The line-level
      * message wins over the role-level one: the gap is the same gap, but the line
      * is where the accountant can see it.
