@@ -718,7 +718,7 @@ class ContractGenerationServiceTest {
         UUID tenantId = UUID.randomUUID();
         LandlordOrg landlord = buildLandlordOrg(tenantId);
         Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
-        property.setAddress("Warsan Fourth, Dubai");
+        property.setAddress("Al Barsha South, Dubai");
         property.setMakaniNumber("12345 67890");
         Unit unit = buildUnit(tenantId, property);
         unit.setSizeSqft(new BigDecimal("758"));
@@ -750,7 +750,7 @@ class ContractGenerationServiceTest {
         assertThat(form).isPositive().isLessThan(terms);
         assertThat(terms).isLessThan(schedule);
         assertThat(html).contains("70.42").contains("624159108").contains("12345 67890")
-                .contains("Warsan Fourth, Dubai").contains("tc-dot on\"></span>Residential")
+                .contains("Al Barsha South, Dubai").contains("tc-dot on\"></span>Residential")
                 .contains("1 cheque + Bank transfer").doesNotContain("2 cheques");
         assertThat(html).doesNotContainIgnoringCase("Land Department").doesNotContainIgnoringCase("Government of Dubai");
 
