@@ -1627,6 +1627,16 @@ public class LeaseService {
      * user picks none. A null account is deliberate: see applyLines' note. The line
      * stays unmapped and the posting guard reports it.
      */
+    /**
+     * QA-13: the account {@link #defaultCreditAccount} would give a line of
+     * {@code type} on {@code propertyId} now — for the post, which re-resolves a
+     * draft line saved before the property had its accounts. Null when nothing is
+     * mapped yet; never throws.
+     */
+    public Account defaultCreditAccountFor(ChargeType type, UUID propertyId) {
+        return type == null ? null : defaultCreditAccount(type, propertyId);
+    }
+
     private Account defaultCreditAccount(ChargeType type, UUID propertyId) {
         // resolveOrNull, not resolve-in-a-try/catch: AccountResolver is proxied, so
         // an UnmappedAccountRoleException thrown out of resolve() marks this
