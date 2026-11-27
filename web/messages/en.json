@@ -2724,6 +2724,7 @@
     "startingNumber": "Starting cheque number",
     "addCheque": "Add cheque",
     "noCheques": "No cheques yet — generate the grid from the charge lines.",
+    "chequesContractEnded": "The contract ended early: these rows no longer have to add up to the contract value. The settlement statement shows what is due.",
     "chequesMatch": "Cheques match the contract value of {contract}",
     "vatColumn": "VAT",
     "vatAuto": "auto",

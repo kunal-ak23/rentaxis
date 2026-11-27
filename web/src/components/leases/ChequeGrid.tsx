@@ -270,6 +270,10 @@ export default function ChequeGrid({
     const leftAmount = leftRows.reduce((s, c) => round2(s + (c.amount || 0)), 0);
     const contractNet = round2(contractValueInclVat - leftAmount);
     const matches = Math.abs(round2(total - contractNet)) < 0.005;
+    // An early termination returns later cheques and a finalized settlement adds its
+    // balance-due row, so the grid no longer collects the contract value: the
+    // settlement statement says what is owed. Comparing the two would only warn falsely.
+    const contractEnded = leaseStatus === "TERMINATED" || !!settlementFinalized;
     // VAT per instalment (spec 2026-09-24 §1). A row with no figure yet (typed on
     // the grid, or its amount edited) is filled in pro rata by the server on save,
     // so the footer only checks the sum once every row has one.
@@ -924,6 +928,15 @@ export default function ChequeGrid({
                             )}
                             <td className={td} colSpan={cols - 7 - (showVat ? 1 : 0)} />
                         </tr>
+                        {contractEnded ? (
+                        <tr className="border-t border-border bg-input/40">
+                            <td className={`${td} text-muted`} colSpan={cols}>
+                                <span data-testid="cheque-grid-match" data-match="ended" className="inline-flex items-center gap-1.5">
+                                    {t("chequesContractEnded")}
+                                </span>
+                            </td>
+                        </tr>
+                        ) : (
                         <tr className={cn("font-bold border-t border-border", matches ? "bg-success/10" : "bg-error/10")}>
                             <td className={`${td} ${matches ? "text-success" : "text-error"}`} colSpan={cols}>
                                 <span
@@ -941,6 +954,7 @@ export default function ChequeGrid({
                                 </span>
                             </td>
                         </tr>
+                        )}
                         {/* A legacy lease declared its VAT on the contract date, so its
                             posted rows carry none — no footer to argue with it. */}
                         {showVat && (editable || vatTotal > 0) && (
