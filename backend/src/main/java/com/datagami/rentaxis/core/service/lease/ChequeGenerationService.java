@@ -451,12 +451,37 @@ public class ChequeGenerationService {
         // the rows first, so the tenant filter applies to them as it would to a
         // read, and the flush makes the deletes hit the database ahead of the
         // inserts rather than after them.
+        //
+        // QA-40 (27 Nov): when the new grid has the same shape as the old one (as
+        // many rows, each of the same kind, same mode), row i keeps the cheque
+        // number and bank typed on old row i; a bank given in the request still
+        // wins. Any difference in shape carries nothing, so a number can never
+        // land on a different kind of instalment. Regenerating to fix a date or an
+        // amount no longer wipes a cheque book the user has already typed in.
+        List<Cheque> previous = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
+                .filter(c -> c.getStatus() == ChequeStatus.DRAFT)
+                .toList();
+        boolean carry = previous.size() == rows.size();
+        for (int i = 0; carry && i < rows.size(); i++) {
+            Cheque old = previous.get(i);
+            // A row saved before rowKind existed reads as RENT, as LeaseBatchService does.
+            ChequeRowKind oldKind = old.getRowKind() == null ? ChequeRowKind.RENT : old.getRowKind();
+            carry = old.getMode() == mode && oldKind == rows.get(i).kind();
+        }
+        List<String> keptNumbers = new ArrayList<>(rows.size());
+        List<String> keptBanks = new ArrayList<>(rows.size());
+        for (int i = 0; i < rows.size(); i++) {
+            keptNumbers.add(carry ? previous.get(i).getChequeNumber() : null);
+            keptBanks.add(carry ? previous.get(i).getPayeeBank() : null);
+        }
         chequeRepository.deleteByLease_IdAndStatus(leaseId, ChequeStatus.DRAFT);
         chequeRepository.flush();
 
+        boolean requestBank = r.payeeBank() != null && !r.payeeBank().isBlank();
         Account debitAccount = debitAccount(r.debitAccountId(), lease);
         List<Cheque> saved = new ArrayList<>(rows.size());
-        for (Row row : rows) {
+        for (int i = 0; i < rows.size(); i++) {
+            Row row = rows.get(i);
             Cheque c = blank(lease);
             c.setSeqNo(row.seqNo());
             c.setPostingDate(row.postingDate());
@@ -467,7 +492,8 @@ public class ChequeGenerationService {
             c.setRowKind(row.kind());
             c.setNarration(row.narration());
             c.setMode(mode);
-            c.setPayeeBank(r.payeeBank());
+            c.setPayeeBank(requestBank ? r.payeeBank() : keptBanks.get(i));
+            c.setChequeNumber(keptNumbers.get(i));
             c.setDebitAccount(r.debitAccountId() != null ? debitAccount : defaultFor(mode, lease, debitAccount));
             saved.add(c);
         }

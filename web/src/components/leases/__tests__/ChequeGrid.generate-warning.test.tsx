@@ -44,7 +44,7 @@ describe("ChequeGrid generate warning", () => {
             cheque({ id: "c2", seqNo: 2, chequeNumber: "000102", status: "DRAFT" }),
         ]);
         expect(screen.getByTestId("cheque-generate-replaces")).toHaveTextContent(
-            "This replaces the 2 cheques now in the grid, including the cheque numbers and banks typed on them.");
+            "This replaces the 2 cheques now in the grid. If it makes 2 cheques again, each row keeps its cheque number and bank; with a different number of cheques they start blank.");
     });
 
     it("says nothing when no cheque has a number yet", () => {

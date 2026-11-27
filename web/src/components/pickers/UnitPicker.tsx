@@ -24,10 +24,12 @@ type Props = {
     excludeIds?: string[];
     /** Id of the trigger, for a `<label htmlFor>`. */
     id?: string;
+    /** A status never offered, filtered by the server so the page stays full (QA-37: MAINTENANCE). */
+    excludeStatus?: "VACANT" | "OCCUPIED" | "RESERVED" | "MAINTENANCE";
 };
 
 /** Server-searched unit select: label is the unit number, sublabel its property (· building) and a commercial tag. */
-export function UnitPicker({ value, onChange, propertyId, buildingId, status, placeholder, className, testId, disabled, excludeIds, id }: Props) {
+export function UnitPicker({ value, onChange, propertyId, buildingId, status, placeholder, className, testId, disabled, excludeIds, id, excludeStatus }: Props) {
     const t = useTranslations("Pickers");
     const commercial = t("commercial");
     const excludeKey = (excludeIds ?? []).join("\u0000");
@@ -46,11 +48,11 @@ export function UnitPicker({ value, onChange, propertyId, buildingId, status, pl
         async (q: string) => {
             const excluded = new Set(excludeKey ? excludeKey.split("\u0000") : []);
             const rows = units.remember(
-                await lookupApi.searchUnits({ q, propertyId, buildingId, status, limit: Math.min(PAGE + excluded.size, MAX) }),
+                await lookupApi.searchUnits({ q, propertyId, buildingId, status, excludeStatus, limit: Math.min(PAGE + excluded.size, MAX) }),
             );
             return rows.filter((u) => !excluded.has(u.id)).map(toOption);
         },
-        [propertyId, buildingId, status, excludeKey, toOption],
+        [propertyId, buildingId, status, excludeStatus, excludeKey, toOption],
     );
 
     const resolved = units.useResolved(value);

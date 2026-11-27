@@ -255,6 +255,74 @@ class ChequeGenerationServiceIT extends AbstractPostgresIT {
         assertThat(sum(rows)).isEqualByComparingTo("56000");
     }
 
+    /**
+     * QA-40: regenerating to the same number of cheques keeps the numbers and banks
+     * typed on the old rows, row for row; a bank in the request still wins, and a
+     * different count starts blank.
+     */
+    @Test
+    void regeneratingToTheSameCountKeepsNumbersAndBanks() {
+        UUID leaseId = draft().getId();
+        service.generate(leaseId, fourCheques());
+        service.generateNumbers(leaseId, "200301");
+
+        List<ChequeDTO> same = service.generate(leaseId,
+                new GenerateChequesRequest(4, LocalDate.of(2026, 10, 1), null, null, null, null, null));
+        assertThat(same).extracting(ChequeDTO::chequeNumber)
+                .containsExactly("200301", "200302", "200303", "200304");
+        assertThat(same).extracting(ChequeDTO::payeeBank).containsOnly("Emirates NBD");
+        assertThat(same.get(0).chequeDate()).isEqualTo(LocalDate.of(2026, 10, 1));
+
+        List<ChequeDTO> newBank = service.generate(leaseId,
+                new GenerateChequesRequest(4, null, null, "Mashreq", null, null, null));
+        assertThat(newBank).extracting(ChequeDTO::payeeBank).containsOnly("Mashreq");
+        assertThat(newBank).extracting(ChequeDTO::chequeNumber)
+                .containsExactly("200301", "200302", "200303", "200304");
+
+        List<ChequeDTO> six = service.generate(leaseId,
+                new GenerateChequesRequest(6, null, null, null, null, null, null));
+        assertThat(six).extracting(ChequeDTO::chequeNumber).containsOnlyNulls();
+        assertThat(six).extracting(ChequeDTO::payeeBank).containsOnlyNulls();
+    }
+
+    /** QA-40 review 2: a grid saved before rowKind existed (null) reads as rent rows. */
+    @Test
+    void regeneratingALegacyGridWithNoRowKindsKeepsNumbers() {
+        UUID leaseId = leaseService.createDraftLease(fixtures.draftDto(START, END, List.of(
+                line("RENT", "48000")))).getId();
+        service.generate(leaseId, fourCheques());
+        service.generateNumbers(leaseId, "200301");
+        tx.executeWithoutResult(s -> chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId)
+                .forEach(c -> { c.setRowKind(null); chequeRepository.save(c); }));
+
+        List<ChequeDTO> again = service.generate(leaseId,
+                new GenerateChequesRequest(4, LocalDate.of(2026, 10, 1), null, null, null, null, null));
+
+        assertThat(again).extracting(ChequeDTO::chequeNumber)
+                .containsExactly("200301", "200302", "200303", "200304");
+        assertThat(again).extracting(ChequeDTO::payeeBank).containsOnly("Emirates NBD");
+    }
+
+    /**
+     * QA-40 review: same count, different shape carries nothing. Four folded
+     * cheques (mixed, rent, rent, rent) regenerated as two rent cheques plus the
+     * fee and the deposit on their own is also four rows, but row 3 would move
+     * from a rent instalment to the admin fee.
+     */
+    @Test
+    void regeneratingToADifferentShapeKeepsNoNumbers() {
+        UUID leaseId = draft().getId();
+        service.generate(leaseId, fourCheques());
+        service.generateNumbers(leaseId, "200301");
+
+        List<ChequeDTO> reshaped = service.generate(leaseId,
+                new GenerateChequesRequest(2, null, null, null, null, false, null));
+
+        assertThat(reshaped).hasSize(4);
+        assertThat(reshaped).extracting(ChequeDTO::chequeNumber).containsOnlyNulls();
+        assertThat(reshaped).extracting(ChequeDTO::payeeBank).containsOnlyNulls();
+    }
+
     @Test
     void numbersFillSequentiallyFromTheStartingNumber() {
         UUID leaseId = draft().getId();

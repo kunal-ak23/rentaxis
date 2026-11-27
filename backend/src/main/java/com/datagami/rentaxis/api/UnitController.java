@@ -78,8 +78,9 @@ public class UnitController {
             @RequestParam(required = false) java.util.UUID propertyId,
             @RequestParam(required = false) java.util.UUID buildingId,
             @RequestParam(required = false) UnitStatus status,
+            @RequestParam(required = false) UnitStatus excludeStatus,
             @RequestParam(defaultValue = "20") int limit) {
-        return ResponseEntity.ok(service.search(q, propertyId, buildingId, status, limit));
+        return ResponseEntity.ok(service.search(q, propertyId, buildingId, status, excludeStatus, limit));
     }
 
     /** Scale P1-6: labels for a handful of unit ids (at most 200). */

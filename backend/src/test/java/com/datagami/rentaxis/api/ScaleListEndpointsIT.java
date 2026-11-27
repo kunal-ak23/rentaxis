@@ -262,6 +262,20 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
                 .containsExactly("50-01");
         assertThat(names(get(admin, "/api/v1/units/search?q=50-"), null, "unitNumber"))
                 .containsExactlyInAnyOrder("50-01", "50-02");
+        // QA-37: excludeStatus drops one status in the query, so a limited page stays full.
+        Unit underRepair = a.createUnit(marina, "50-00"); // sorts first
+        underRepair.setStatus(UnitStatus.MAINTENANCE);
+        unitRepo.save(underRepair);
+        assertThat(names(get(admin, "/api/v1/units/search?q=50-&excludeStatus=" + UnitStatus.MAINTENANCE), null, "unitNumber"))
+                .containsExactlyInAnyOrder("50-01", "50-02");
+        assertThat(names(get(admin, "/api/v1/units/search?q=50-&limit=2&excludeStatus=" + UnitStatus.MAINTENANCE), null, "unitNumber"))
+                .containsExactlyInAnyOrder("50-01", "50-02");
+        // A unit with no status is not "the excluded status": it stays listed.
+        Unit noStatus = a.createUnit(marina, "50-09");
+        noStatus.setStatus(null);
+        unitRepo.save(noStatus);
+        assertThat(names(get(admin, "/api/v1/units/search?q=50-&excludeStatus=" + UnitStatus.MAINTENANCE), null, "unitNumber"))
+                .containsExactlyInAnyOrder("50-01", "50-02", "50-09");
 
         JsonNode rows = get(admin, "/api/v1/units/search?q=50-&status=" + UnitStatus.VACANT);
         assertThat(rows.get(0).get("propertyType").asText()).isEqualTo(marina.getType().name());

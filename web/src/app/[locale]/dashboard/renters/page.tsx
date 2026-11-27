@@ -468,6 +468,9 @@ function RentersPageInner() {
                                     </ul>
                                 </div>
                             )}
+                            {/* QA-05: the owner ruling of 2026-09-29 keeps the invite with no opt-out;
+                                the form now says so before Create rather than after. */}
+                            <p data-testid="renter-invite-hint" className="col-span-2 text-[11px] text-muted">{t("portalInviteHint")}</p>
                             {formError && (
                                 <div className="col-span-2 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-3 py-2" role="alert">
                                     {formError}

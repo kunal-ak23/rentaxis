@@ -340,8 +340,13 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                                 </label>
                             ))}
                             {mode === "PERCENT" && (
-                                <input aria-label={tr("percent")} data-testid="renew-percent" type="number" step="0.01" dir="ltr"
-                                    className={`${field} w-28 text-end`} value={percent} onChange={e => setPercent(e.target.value)} />
+                                <span className="inline-flex items-center gap-1">
+                                    {/* QA-36: the value hugged the spinner. `field` carries w-full, so it is
+                                        dropped here for one fixed width, with % after the box. */}
+                                    <input aria-label={tr("percent")} data-testid="renew-percent" type="number" step="0.01" dir="ltr"
+                                        className={`${field.replace("w-full ", "")} w-32 text-end`} value={percent} onChange={e => setPercent(e.target.value)} />
+                                    <span className="text-xs text-muted">%</span>
+                                </span>
                             )}
                             {mode === "AMOUNT" && (
                                 <span className="inline-flex flex-col">

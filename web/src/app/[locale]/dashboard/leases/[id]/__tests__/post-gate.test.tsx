@@ -162,7 +162,7 @@ describe("Post gate on a draft contract", () => {
         fireEvent.click(await screen.findByTestId("lease-post"));
 
         await waitFor(() => expect(screen.getByTestId("post-dry-run-ok")).toBeInTheDocument());
-        expect(screen.getByTestId("post-journals")).toHaveTextContent("1 TCO with 2 lines, 4 PDR");
+        expect(screen.getByTestId("post-journals")).toHaveTextContent("One contract entry with 2 lines, and 4 post-dated cheque entries");
         expect(screen.getByTestId("post-cheque-total")).toHaveTextContent("63,000.00");
 
         const confirm = screen.getByTestId("post-lease-confirm");

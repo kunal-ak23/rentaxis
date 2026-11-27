@@ -10,6 +10,7 @@
     "off": "Off"
   },
   "MasterData": {
+    "portalInviteHint": "When you save, the tenant is emailed an invite to the tenant portal.",
     "overviewUnits": "Units",
     "unitsTotal": "Total units",
     "unitsOccupied": "Occupied",
@@ -2575,6 +2576,9 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "wizardIncludeLetUnits": "Also show units that are let or reserved today, for a contract that starts after the current one ends",
+    "contractKindNew": "New",
+    "contractKindRenewal": "Renewal",
     "incomeFrom": {
       "title": "Back-dated contract",
       "help": "This contract started before the month of its contract date. Months already passed can be recognised in one entry instead of in their own (closed) months.",
@@ -2656,7 +2660,7 @@
     "contractValueExclDeposit": "Contract Value (excl. deposit)",
     "chequeGrid": "Cheque Grid",
     "generateCheques": "Generate Cheques",
-    "generateReplacesNumbered": "This replaces the {count} cheques now in the grid, including the cheque numbers and banks typed on them.",
+    "generateReplacesNumbered": "This replaces the {count} cheques now in the grid. If it makes {count} cheques again, each row keeps its cheque number and bank; with a different number of cheques they start blank.",
     "generateChequeNumbers": "Generate Cheque Numbers",
     "mergeCheques": "{count, plural, =0 {Merge cheques} =1 {Merge cheques} other {Merge # cheques}}",
     "mergeChequesHint": "Tick two or more cheques and press Merge to put them on one cheque. The top one keeps its date and number; the amounts are added together.",
@@ -2737,7 +2741,7 @@
     "postConfirmNumbered": "Post contract {number}? This writes the journals and cannot be edited without a reversal.",
     "postConfirmUnnumbered": "Post this contract? This writes the journals and cannot be edited without a reversal.",
     "dryRunLoading": "Checking the contract…",
-    "dryRunJournals": "{tco} TCO with {tcoLines} lines, {pdr} PDR",
+    "dryRunJournals": "{tco, plural, one {One contract entry} other {# contract entries}} with {tcoLines, plural, one {one line} other {# lines}}, and {pdr, plural, =0 {no post-dated cheque entries} one {one post-dated cheque entry} other {# post-dated cheque entries}}",
     "depositCarriedForward": "Deposit carried forward",
     "dryRunTransfer": {
       "title": "The transfer also posts",
@@ -2832,7 +2836,7 @@
     "accessDenied": "You do not have permission to view contracts.",
     "notFound": "Contract not found.",
     "backToLeases": "Back to contracts",
-    "chain": "Chain",
+    "chain": "Type",
     "bulkPost": "Post selected ({n})",
     "bulkPostResults": "Posting results",
     "bulkPostRunning": "Posting {done} of {total}…",
@@ -3040,6 +3044,7 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "receiptFailed": "Could not download the receipt.",
     "combinedReceipt": "Combined receipt ({count})",
     "combinedReceiptHint": "Tick cleared rows to download their receipts as one PDF.",
     "combinedReceiptFailed": "Could not build the combined receipt.",
@@ -5556,6 +5561,13 @@
     "loading": "Loading…"
   },
   "Today": {
+    "gsDone": "Done",
+    "gsContract": "Draft the first contract",
+    "gsTenant": "Add a tenant",
+    "gsUnits": "Add its units",
+    "gsProject": "Add a project",
+    "gsBody": "Set up your organisation in four steps.",
+    "gsTitle": "Get started",
     "title": "Needs you now",
     "deposit": "Cheques to deposit",
     "overdue": "Overdue payments",
