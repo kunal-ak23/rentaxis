@@ -48,6 +48,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -63,7 +64,8 @@ import static org.mockito.Mockito.when;
 class ContractBrandingTest {
 
     /** A 12-cheque contract with four charge lines, measured before branding existed. */
-    private static final int TWELVE_CHEQUE_PAGES = 7;
+    /** 27 Nov: the tenancy form page leads the contract, so one more page than before. */
+    private static final int TWELVE_CHEQUE_PAGES = 8;
 
     private static final String LOGO = "https://acct.blob.core.windows.net/tenant-x/assets/logo.png";
     private static final String STAMP = "https://acct.blob.core.windows.net/tenant-x/assets/stamp.png";
@@ -170,6 +172,7 @@ class ContractBrandingTest {
                 orgRepo, chequeRepo, lineRepo, mock(ApplicationEventPublisher.class));
         svc.setBlobStorageService(blobs);
         when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lenient().when(leaseRepo.findByIdForUpdate(lease.getId())).thenReturn(Optional.of(lease));
         when(docRepo.findByLeaseId(lease.getId())).thenAnswer(inv -> new ArrayList<>(storedDocs));
         when(docRepo.saveAndFlush(any(com.datagami.rentaxis.domain.entity.LeaseDocument.class))).thenAnswer(inv -> {
             com.datagami.rentaxis.domain.entity.LeaseDocument d = inv.getArgument(0);
@@ -237,14 +240,16 @@ class ContractBrandingTest {
         assertThat(html).contains("TRN: " + TRN)
                 .doesNotContain("blob.core.windows.net")
                 .doesNotContain("{{LANDLORD_");
-        assertThat(html.split("src=\"data:image/png;base64,", -1)).hasSize(3); // logo + stamp
+        assertThat(html.split("src=\"data:image/png;base64,", -1)).hasSize(4); // logo on the form and the schedule + stamp
         byte[] pdf = svc.renderPdf(html);
         keep("branded.pdf", pdf);
         try (PDDocument doc = Loader.loadPDF(pdf)) {
             assertThat(doc.getNumberOfPages()).isEqualTo(TWELVE_CHEQUE_PAGES);
             assertThat(imagesOn(doc.getPage(0))).isEqualTo(2);
-            // The stamp sits in the per-page footer, so every page carries it.
-            assertThat(imagesOn(doc.getPage(TWELVE_CHEQUE_PAGES - 1))).isEqualTo(1);
+            // The stamp sits in the per-page footer, so every page carries it: a terms
+            // page has the stamp alone; the schedule, now last, has its logo too.
+            assertThat(imagesOn(doc.getPage(1))).isEqualTo(1);
+            assertThat(imagesOn(doc.getPage(TWELVE_CHEQUE_PAGES - 1))).isEqualTo(2);
             String page1 = new PDFTextStripper() {{ setStartPage(1); setEndPage(1); }}.getText(doc);
             assertThat(page1).contains("TRN: " + TRN).contains("+971 4 272 7070");
         }
@@ -289,8 +294,9 @@ class ContractBrandingTest {
             String html = svc.renderContractHtml(lease, "1234");
             int images = html.split("src=\"data:image/png;base64,", -1).length - 1;
             String label = c[0] + (c[2] != null ? "/posted" : c[1] != null ? "/accepted" : "");
-            seen.put(label, images == 2);
-            assertThat(images).as(label).isEqualTo((Boolean) c[3] ? 2 : 1); // the logo always
+            seen.put(label, images == 3);
+            // The logo always, twice (the tenancy form and the schedule); the stamp once when signed.
+            assertThat(images).as(label).isEqualTo((Boolean) c[3] ? 3 : 2);
         }
         assertThat(seen).containsEntry("DRAFT", false).containsEntry("ACTIVE/posted", true);
         // Declared for every status: a new status must be decided on, not default to printing.
@@ -397,7 +403,7 @@ class ContractBrandingTest {
                 .contains("FATHIMA RISWANA AHAMED KABEER");
     }
 
-    /** 1, 7 and 8 pages; English and Arabic names: the stamp lands in the stamp area of every page. */
+    /** 1, 8 and 9 pages; English and Arabic names: the stamp lands in the stamp area of every page. */
     @Test
     void theStampLandsOnEveryPageWhateverTheLengthAndLanguage() throws Exception {
         stampSet();
@@ -406,9 +412,9 @@ class ContractBrandingTest {
         record Case(String label, int cheques, boolean arabic, boolean onePage, int pages) {}
         for (Case c : List.of(
                 new Case("1-page", 12, false, true, 1),
-                new Case("7-page EN", 12, false, false, 7),
-                new Case("7-page AR", 12, true, false, 7),
-                new Case("8-page AR", 40, true, false, 8))) {
+                new Case("8-page EN", 12, false, false, 8),
+                new Case("8-page AR", 12, true, false, 8),
+                new Case("9-page AR", 40, true, false, 9))) {
             while (cheques.size() > c.cheques()) cheques.remove(cheques.size() - 1);
             while (cheques.size() < c.cheques()) {
                 Cheque x = new Cheque();
@@ -424,7 +430,7 @@ class ContractBrandingTest {
             lease.getRenter().setNameEn(c.arabic() ? "\u0641\u0627\u0637\u0645\u0629 \u0627\u0644\u0632\u0647\u0631\u0627\u0621" : "FATHIMA RISWANA AHAMED KABEER");
             String html = svc.renderContractHtml(lease, "1234");
             if (c.onePage()) {
-                html = html.substring(0, html.indexOf("<div class=\"terms-page-break\">")) + "</body></html>";
+                html = html.substring(0, html.indexOf("<div class=\"tc-front-break\">")) + "</body></html>";
             }
             byte[] signedBytes = svc.renderPdf(html);
             try (PDDocument d = Loader.loadPDF(signedBytes)) {
@@ -525,6 +531,55 @@ class ContractBrandingTest {
         verify(docRepo, times(1)).saveAndFlush(any());
     }
 
+    /**
+     * 27 Nov (owner): "save a contract at the time of signing as contract can change in
+     * future". A lease posted without a generated contract has its contract saved at
+     * posting, unstamped, and the executed copy stamps that file once. Later changes
+     * to the lease never reach either.
+     */
+    @Test
+    void aContractSignedWithoutAGeneratedPdfIsSavedAtPostingAndNeverRedrawn() throws Exception {
+        stampSet();
+        posted();
+        lease.setContractNumber(1234L);
+        storedDocs.clear();
+
+        var copy = svc.createExecutedCopy(lease.getId());
+
+        assertThat(copy).isPresent();
+        var contract = storedDocs.stream()
+                .filter(d -> d.getType() == com.datagami.rentaxis.domain.entity.enums.DocumentType.CONTRACT)
+                .findFirst().orElseThrow();
+        assertThat(storedDocs).hasSize(2);
+        byte[] contractBytes = Files.readAllBytes(Path.of(contract.getDocumentUrl()));
+        byte[] executed = svc.currentContractPdf(lease.getId());
+        // Stamped once: the saved contract has no stamp, the copy one per page.
+        assertExecutedCopyOf(contractBytes, executed, "saved at posting");
+
+        lease.getRenter().setNameEn("SOMEONE ELSE ENTIRELY");
+        assertThat(svc.currentContractPdf(lease.getId())).isEqualTo(executed);
+        assertThat(text(executed)).doesNotContain("SOMEONE ELSE");
+    }
+
+    /** The manual action for a lease signed before 27 Nov: saves once, then returns the same file. */
+    @Test
+    void saveSignedContractFreezesAPostedLeaseOnceAndRefusesADraft() throws Exception {
+        storedDocs.clear();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> svc.saveSignedContract(lease.getId()))
+                .hasMessageContaining("Only a signed (posted) contract can be saved");
+        posted();
+        lease.setContractNumber(1234L);
+
+        var first = svc.saveSignedContract(lease.getId());
+        var second = svc.saveSignedContract(lease.getId());
+
+        assertThat(second.getId()).isEqualTo(first.getId());
+        assertThat(storedDocs).hasSize(1);
+        byte[] saved = svc.currentContractPdf(lease.getId());
+        lease.getRenter().setNameEn("SOMEONE ELSE ENTIRELY");
+        assertThat(svc.currentContractPdf(lease.getId())).isEqualTo(saved);
+    }
+
     @Test
     void noCopyWithoutAStampASignatureOrASignedContract() throws Exception {
         // No stamp.
@@ -540,12 +595,11 @@ class ContractBrandingTest {
             lease.setStatus(st);
             assertThat(svc.createExecutedCopy(lease.getId())).as(st.name()).isEmpty();
         }
-        // No stored signed contract (a renewal or an imported lease).
-        posted();
-        storedDocs.clear();
-        assertThat(svc.createExecutedCopy(lease.getId())).isEmpty();
-        verify(docRepo, never()).saveAndFlush(any());
+        // No stored signed contract (a renewal or an imported lease): since 27 Nov the
+        // contract is saved as it stands at posting, then stamped (see
+        // aContractSignedWithoutAGeneratedPdfIsSavedAtPostingAndNeverRedrawn).
         // Without a copy, the download is the signed contract.
+        storedDocs.clear();
         var signed = storeSignedContract();
         posted();
         landlord.setStampImageUrl(null);

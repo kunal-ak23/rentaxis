@@ -64,6 +64,36 @@ describe("ChequeGrid contract total", () => {
         expect(screen.getByTestId("cheque-grid-match")).toHaveAttribute("data-match", "false");
     });
 
+    it("does not warn on an early-terminated lease whose later cheque went back and a settlement row was added", () => {
+        // Prod 27 Nov: 84,600 contract; CHQ dated after T returned, 5,071.78 balance-due cash row added.
+        const ended = [
+            cheque({ id: "e1", seqNo: 1 }),
+            cheque({ id: "e2", seqNo: 2 }),
+            cheque({ id: "e3", seqNo: 3, status: "RETURNED" }),
+            cheque({ id: "e4", seqNo: 4 }),
+            cheque({ id: "e5", seqNo: 5, amount: 5071.78, mode: "CASH", narration: "Settlement balance due" }),
+        ];
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ChequeGrid cheques={ended} editable={false} contractValueInclVat={63000} leaseStatus="CLOSED" settlementFinalized />
+            </NextIntlClientProvider>,
+        );
+        const footer = screen.getByTestId("cheque-grid-match");
+        expect(footer).toHaveAttribute("data-match", "ended");
+        expect(footer).toHaveTextContent("The contract has ended");
+        expect(screen.queryByText(/but the amount to collect is/)).toBeNull();
+    });
+
+    it("does not warn on a terminated lease before its settlement is finalized", () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ChequeGrid cheques={[cheque({ id: "x1", seqNo: 1 }), cheque({ id: "x2", seqNo: 2, status: "RETURNED" })]}
+                    editable={false} contractValueInclVat={63000} leaseStatus="TERMINATED" />
+            </NextIntlClientProvider>,
+        );
+        expect(screen.getByTestId("cheque-grid-match")).toHaveAttribute("data-match", "ended");
+    });
+
     it("says nothing about exclusions when there are none", () => {
         renderGrid(rows.filter(isContractInstalment));
         expect(screen.queryByTestId("cheque-grid-excluded")).toBeNull();

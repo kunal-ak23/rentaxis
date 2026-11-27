@@ -40,6 +40,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -456,6 +457,7 @@ class ContractGenerationServiceTest {
         LeaseLineRepository lineRepo = mock(LeaseLineRepository.class);
 
         when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lenient().when(leaseRepo.findByIdForUpdate(lease.getId())).thenReturn(Optional.of(lease));
         when(leaseRepo.findMaxContractNumberForTenant(lease.getTenantId())).thenReturn(maxContractNumber);
         when(leaseRepo.save(any(Lease.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -706,6 +708,90 @@ class ContractGenerationServiceTest {
         // Lease state unchanged.
         assertThat(lease.getContractNumber()).isNull();
         assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
+    /**
+     * PR #489 review: a lease with no contract rent line (here its only rent line
+     * belongs to an addendum) states its total rent per year over the lease dates,
+     * not the two years' total as "Annual rent".
+     */
+    @Test
+    void annualRentWithoutAContractRentLineIsStatedPerYear() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LandlordOrg landlord = buildLandlordOrg(tenantId);
+        Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
+        Unit unit = buildUnit(tenantId, property);
+        Lease lease = buildLease(tenantId, unit, buildRenter(tenantId), false);
+        lease.setStartDate(LocalDate.of(2026, 1, 1));
+        lease.setEndDate(LocalDate.of(2027, 12, 31)); // 730 days
+        List<LeaseLine> lines = new ArrayList<>();
+        LeaseLine rent = leaseLine(1, "Rent", ChargeBehaviour.RENT, new BigDecimal("110000"), false);
+        rent.setAddendumId(UUID.randomUUID());
+        lines.add(rent);
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, landlord, List.of(), lines, 1L, Files.createTempDirectory("contract-test-"));
+        var v = svc.tenancyFormValues(lease, unit, property, List.of());
+        assertThat(v.get("FORM_ANNUAL_RENT")).contains("55,000.00");
+        assertThat(v.get("FORM_CONTRACT_VALUE")).contains("110,000.00");
+    }
+
+    /**
+     * 27 Nov: the client's contracts open with the bilingual tenancy form, then the
+     * additional terms (with the parties block), and end with the Lease Agreement
+     * schedule. Renders the real PDF; RENTAXIS_CONTRACT_SAMPLE writes it out for a look.
+     */
+    @Test
+    void contractOpensWithTheTenancyFormAndEndsWithTheSchedule() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LandlordOrg landlord = buildLandlordOrg(tenantId);
+        Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
+        property.setAddress("Al Barsha South, Dubai");
+        property.setMakaniNumber("12345 67890");
+        Unit unit = buildUnit(tenantId, property);
+        unit.setSizeSqft(new BigDecimal("758"));
+        unit.setDewaPremiseNumber("624159108");
+        Renter renter = buildRenter(tenantId);
+        Lease lease = buildLease(tenantId, unit, renter, false);
+        lease.setContractNumber(3934L);
+
+        // The form counts the rows Section 4 prints: a cancelled row is not a
+        // cheque, and a transfer is named as a transfer, not counted as one.
+        List<Cheque> register = new java.util.ArrayList<>(buildRegister());
+        register.get(0).setMode(com.datagami.rentaxis.domain.entity.enums.ChequeMode.TRANSFER);
+        register.get(2).setMode(com.datagami.rentaxis.domain.entity.enums.ChequeMode.TRANSFER);
+        Cheque cancelled = chq(4, LocalDate.of(2026, 10, 24), "000002", "ENBD", new BigDecimal("13750"), "RENT");
+        cancelled.setStatus(ChequeStatus.CANCELLED);
+        register.add(cancelled);
+        Path tmpStorage = Files.createTempDirectory("contract-test-");
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, landlord, register, buildLines(false), 3933L, tmpStorage);
+        ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
+        svc.previewContract(lease.getId());
+        verify(svc).renderPdf(htmlCaptor.capture());
+        String html = htmlCaptor.getValue();
+
+        assertThat(html).doesNotContain("{{");
+        int form = html.indexOf("TENANCY CONTRACT</div>");
+        int terms = html.indexOf("ADDITIONAL TERMS AND CONDITIONS");
+        int schedule = html.indexOf("LEASE AGREEMENT</div>");
+        assertThat(form).isPositive().isLessThan(terms);
+        assertThat(terms).isLessThan(schedule);
+        assertThat(html).contains("70.42").contains("624159108").contains("12345 67890")
+                .contains("Al Barsha South, Dubai").contains("tc-dot on\"></span>Residential")
+                .contains("1 cheque + Bank transfer").doesNotContain("2 cheques");
+        assertThat(html).doesNotContainIgnoringCase("Land Department").doesNotContainIgnoringCase("Government of Dubai");
+
+        org.mockito.Mockito.doCallRealMethod().when(svc).renderPdf(any(String.class));
+        byte[] pdf = svc.renderPdf(html);
+        try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            String first = new org.apache.pdfbox.text.PDFTextStripper() {{ setStartPage(1); setEndPage(1); }}.getText(doc);
+            assertThat(first).contains("TENANCY CONTRACT").contains("Property Information");
+            String last = new org.apache.pdfbox.text.PDFTextStripper() {{
+                setStartPage(doc.getNumberOfPages()); setEndPage(doc.getNumberOfPages()); }}.getText(doc);
+            assertThat(last).contains("LEASE AGREEMENT").contains("Payment Details");
+        }
+        String out = System.getenv("RENTAXIS_CONTRACT_SAMPLE");
+        if (out != null) Files.write(Path.of(out), pdf);
     }
 
     @Test

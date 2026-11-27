@@ -239,6 +239,55 @@ public class ContractGenerationService {
     }
 
     /**
+     * Saves the contract as it stands now as the lease's CONTRACT document, when the
+     * lease is signed (posted) and has none (27 Nov, owner: "save a contract at the
+     * time of signing as contract can change in future"). From then on every read
+     * serves these bytes ({@link #currentContractPdf}), never a fresh render. No status
+     * change and no email: the lease is already signed. Empty when the lease is not
+     * posted or already has a contract document.
+     */
+    Optional<LeaseDocument> saveSignedSnapshot(Lease lease, List<LeaseDocument> docs) {
+        if (lease.getPostedAt() == null || docs.stream().anyMatch(d -> d.getType() == DocumentType.CONTRACT)) {
+            return Optional.empty();
+        }
+        String number = lease.getContractNumber() != null ? String.valueOf(lease.getContractNumber()) : "—";
+        byte[] pdfBytes = renderPdf(renderContractHtml(lease, number, false));
+        String fileName = "RA-" + (lease.getContractNumber() != null ? number : lease.getId())
+                + "-signed-" + System.currentTimeMillis() + ".pdf";
+        String documentUrl = useAzureStorage()
+                ? uploadToAzure(lease.getTenantId(), fileName, pdfBytes)
+                : saveToLocalDisk(fileName, pdfBytes);
+        LeaseDocument doc = new LeaseDocument();
+        doc.setLease(lease);
+        doc.setDocumentUrl(documentUrl);
+        doc.setType(DocumentType.CONTRACT);
+        LeaseDocument saved = leaseDocumentRepository.saveAndFlush(doc);
+        log.info("Signed contract saved for lease {} at {}", lease.getId(), documentUrl);
+        return Optional.of(saved);
+    }
+
+    /** The manual "Save signed contract" for a posted lease with no saved PDF (one posted before 27 Nov). */
+    @Transactional
+    public LeaseDocumentDTO saveSignedContract(UUID leaseId) {
+        // Locked like createExecutedCopy: the posting-time snapshot and this button
+        // must not both find no CONTRACT and both save one.
+        Lease lease = leaseRepository.findByIdForUpdate(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        if (lease.getPostedAt() == null) {
+            throw new BusinessRuleViolationException(
+                    "Only a signed (posted) contract can be saved. Before signing, use Generate Contract.");
+        }
+        List<LeaseDocument> docs = leaseDocumentRepository.findByLeaseId(leaseId);
+        Optional<LeaseDocument> existing = docs.stream().filter(d -> d.getType() == DocumentType.CONTRACT)
+                .max(Comparator.comparing(LeaseDocument::getCreatedAt));
+        return existing.or(() -> saveSignedSnapshot(lease, docs)).map(this::mapToDTO).orElseThrow();
+    }
+
+    /**
      * The executed copy (Kunal, 2026-09-28, "Executed copy at posting"): once a
      * contract is signed and posted, the organisation's digital stamp is added by
      * issuing a NEW document — the signed CONTRACT PDF is never touched.
@@ -246,8 +295,9 @@ public class ContractGenerationService {
      * <p>Made only when there is something to add and something to copy: the
      * organisation has a stamp that loads from our own storage, the lease is in a
      * signed state ({@link #stampPrints}), and it has a stored signed contract
-     * (a renewal or an imported lease has none; its contract is rendered on
-     * demand, already stamped). Idempotent: an existing copy is returned as it is
+     * (a lease signed without a generated contract, such as a renewal or an
+     * imported lease, first has its contract saved as it stands at posting,
+     * unstamped, by {@link #saveSignedSnapshot}; 27 Nov). Idempotent: an existing copy is returned as it is
      * (and changeset 158 makes a second row impossible). Tenant-scoped like every
      * other read here.</p>
      *
@@ -255,7 +305,7 @@ public class ContractGenerationService {
      */
     @Transactional
     public Optional<LeaseDocumentDTO> createExecutedCopy(UUID leaseId) {
-        Lease lease = leaseRepository.findById(leaseId)
+        Lease lease = leaseRepository.findByIdForUpdate(leaseId)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
@@ -271,6 +321,12 @@ public class ContractGenerationService {
         Optional<LeaseDocument> signed = docs.stream()
                 .filter(d -> d.getType() == DocumentType.CONTRACT)
                 .max(Comparator.comparing(LeaseDocument::getCreatedAt));
+        if (signed.isEmpty()) {
+            // 27 Nov (owner): a contract signed without a generated PDF is frozen
+            // now, at posting, so later changes to the lease or the template never
+            // change what was signed.
+            signed = saveSignedSnapshot(lease, docs);
+        }
         if (!stampPrints(lease) || signed.isEmpty()) {
             return Optional.empty();
         }
@@ -356,6 +412,11 @@ public class ContractGenerationService {
 
     // Package-private for tests: lets us assert on the substituted HTML without rendering PDF.
     String renderContractHtml(Lease lease, String contractNumberDisplay) {
+        return renderContractHtml(lease, contractNumberDisplay, stampPrints(lease));
+    }
+
+    /** {@code withStamp} false leaves the stamp area empty: the signed snapshot, stamped once later by the executed copy. */
+    String renderContractHtml(Lease lease, String contractNumberDisplay, boolean withStamp) {
         // Load landlord org for this tenant
         LandlordOrg org = landlordOrgRepository.findById(lease.getTenantId())
                 .orElseThrow(() -> new NotFoundException("Landlord organization not found for tenant"));
@@ -412,7 +473,7 @@ public class ContractGenerationService {
                 .map(src -> "<td style=\"width:70pt; text-align:left; vertical-align:middle;\">"
                         + "<img src=\"" + escapeUserText(src) + "\" alt=\"\" style=\"max-width:70pt; max-height:40pt;\"/></td>")
                 .orElse(""));
-        values.put("LANDLORD_STAMP", (stampPrints(lease)
+        values.put("LANDLORD_STAMP", (withStamp
                 ? brandImage(lease.getTenantId(), org.getStampImageUrl()) : java.util.Optional.<String>empty())
                 .map(src -> "<div style=\"text-align:right;\"><img src=\"" + escapeUserText(src)
                         + "\" alt=\"\" style=\"max-width:110pt; max-height:34pt;\"/></div>")
@@ -433,8 +494,105 @@ public class ContractGenerationService {
         values.put("GRAND_TOTAL", formatAmount(grandTotal));
         values.put("PRINT_DATETIME", formatPrintDateTime(java.time.LocalDateTime.now()));
         values.put("TERMS_TABLE", termsTable);
+        values.putAll(tenancyFormValues(lease, unit, property, cheques));
 
         return substituteAll(template, values);
+    }
+
+    private static final BigDecimal SQFT_TO_SQM = new BigDecimal("0.09290304");
+
+    /**
+     * The bilingual tenancy form on page 1 (27 Nov, the client's Ejari-style layout):
+     * values RentAxis holds; anything it does not (Emirates ID, licence, plot number)
+     * stays a blank line on the page. Rent and deposit come from the lease's own
+     * lines (by charge behaviour), so the form agrees with the schedule.
+     */
+    Map<String, String> tenancyFormValues(Lease lease, Unit unit, Property property, List<Cheque> cheques) {
+        Map<String, String> v = new HashMap<>();
+        BigDecimal rent = BigDecimal.ZERO;
+        BigDecimal deposit = BigDecimal.ZERO;
+        for (LeaseLine l : chargeLines(lease)) {
+            var behaviour = l.getChargeType() == null ? null : l.getChargeType().getBehaviour();
+            if (behaviour == com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.RENT) rent = rent.add(nz(l.getNetAmount()));
+            else if (behaviour == com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.DEPOSIT) deposit = deposit.add(nz(l.getNetAmount()));
+        }
+        // Annual rent is the contract's own rent line (not addendum or extension
+        // lines), stated per year when its window is not a year. Contract value is
+        // every rent line over the term, as the client's contracts state it.
+        List<LeaseLine> lines = chargeLines(lease);
+        LeaseLine rentLine = LeaseService.contractRentLine(lease, lines);
+        // With no contract rent line the total rent covers the whole term, so it is
+        // stated per year over the lease's own dates.
+        BigDecimal annual = rentLine == null ? rent : nz(rentLine.getNetAmount());
+        long days = rentLine == null && (lease.getStartDate() == null || lease.getEndDate() == null)
+                ? 0 : LeaseService.rentWindowDays(lease, rentLine);
+        if (days > 0 && (days < 360 || days > 370)) {
+            annual = annual.multiply(BigDecimal.valueOf(365)).divide(BigDecimal.valueOf(days), 2, java.math.RoundingMode.HALF_UP);
+        }
+        v.put("FORM_ANNUAL_RENT", moneyWithWords(annual));
+        v.put("FORM_CONTRACT_VALUE", moneyWithWords(rent));
+        v.put("FORM_DEPOSIT", deposit.signum() == 0 ? "&#160;" : formatAmount(deposit) + " AED");
+        List<Cheque> standing = cheques == null ? List.of() : printableCheques(lease, cheques);
+        long chequeCount = standing.stream().filter(c -> c.getMode() == null
+                || c.getMode() == com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC).count();
+        String otherModes = standing.stream().map(Cheque::getMode)
+                .filter(m -> m != null && m != com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC)
+                .distinct().map(m -> switch (m) {
+                    case CASH -> "Cash";
+                    case TRANSFER -> "Bank transfer";
+                    case ONLINE -> "Online";
+                    case PDC -> "";
+                }).collect(java.util.stream.Collectors.joining(", "));
+        String mode = chequeCount == 0 ? "" : chequeCount + (chequeCount == 1 ? " cheque" : " cheques");
+        if (!otherModes.isEmpty()) mode = mode.isEmpty() ? otherModes : mode + " + " + otherModes;
+        v.put("FORM_PAYMENT_MODE", mode.isEmpty() ? "&#160;" : mode);
+        v.put("FORM_USAGE", usageMarks(property, unit));
+        v.put("FORM_BUILDING", escapeUserText(unit.getBuilding() != null && unit.getBuilding().getNameEn() != null
+                ? unit.getBuilding().getNameEn() : property.getNameEn()));
+        v.put("FORM_LOCATION", blankIfNone(property.getAddress()));
+        v.put("FORM_MAKANI", blankIfNone(property.getMakaniNumber()));
+        v.put("FORM_DEWA", blankIfNone(unit.getDewaPremiseNumber()));
+        v.put("FORM_UNIT_TYPE", unitTypeWords(unit.getType()));
+        v.put("FORM_AREA_SQM", unit.getSizeSqft() == null ? "&#160;"
+                : unit.getSizeSqft().multiply(SQFT_TO_SQM).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
+        v.put("FORM_LANDLORD_EMAIL", "&#160;");
+        return v;
+    }
+
+    private String moneyWithWords(BigDecimal amount) {
+        if (amount == null || amount.signum() == 0) return "&#160;";
+        String words = AmountInWordsUtil.toEnglishWords(amount, "AED");
+        return formatAmount(amount) + " AED (" + escapeUserText(words) + ")";
+    }
+
+    private static String blankIfNone(String s) {
+        return s == null || s.isBlank() ? "&#160;" : escapeUserText(s.strip());
+    }
+
+    /** Residential / Commercial / Industrial, the property's use marked: a mixed project goes by the unit. */
+    static String usageMarks(Property property, Unit unit) {
+        boolean commercial = property.getType() == com.datagami.rentaxis.domain.entity.enums.PropertyType.COMMERCIAL
+                || (property.getType() == com.datagami.rentaxis.domain.entity.enums.PropertyType.MIXED
+                    && (unit.getType() == com.datagami.rentaxis.domain.entity.enums.UnitType.RETAIL
+                        || unit.getType() == com.datagami.rentaxis.domain.entity.enums.UnitType.OFFICE));
+        String on = "<span class=\"tc-dot on\"></span>", off = "<span class=\"tc-dot\"></span>";
+        return "<span>" + off + "Industrial / صناعي</span>"
+                + "<span>" + (commercial ? on : off) + "Commercial / تجاري</span>"
+                + "<span>" + (commercial ? off : on) + "Residential / سكني</span>";
+    }
+
+    /** The unit type as a contract states it: "1 Bedroom + Hall", not BHK1. */
+    static String unitTypeWords(com.datagami.rentaxis.domain.entity.enums.UnitType type) {
+        if (type == null) return "&#160;";
+        return switch (type) {
+            case STUDIO -> "Studio";
+            case BHK1 -> "1 Bedroom + Hall";
+            case BHK2 -> "2 Bedrooms + Hall";
+            case BHK3 -> "3 Bedrooms + Hall";
+            case PENTHOUSE -> "Penthouse";
+            case RETAIL -> "Retail / Shop";
+            case OFFICE -> "Office";
+        };
     }
 
     /**
@@ -813,9 +971,12 @@ public class ContractGenerationService {
      * QA-18: {@code payee} is who the cheques are made out to — the landlord
      * organisation — printed under "In Favour Of".
      */
-    public String buildSection4Rows(Lease lease, List<Cheque> cheques, String payee) {
-        if (cheques == null || cheques.isEmpty()) return "";
-
+    /**
+     * The register rows a contract prints: a draft or awaiting-signature contract
+     * shows its DRAFT rows; any other shows every row still standing (not cancelled,
+     * returned, replaced or transferred). One rule for Section 4 and the page-1 form.
+     */
+    static List<Cheque> printableCheques(Lease lease, List<Cheque> cheques) {
         boolean draftContract = lease == null
                 || lease.getStatus() == LeaseStatus.DRAFT
                 || lease.getStatus() == LeaseStatus.PENDING_SIGNATURE;
@@ -829,6 +990,13 @@ public class ContractGenerationService {
                         && c.getStatus() != ChequeStatus.TRANSFERRED;
             if (include) printable.add(c);
         }
+        return printable;
+    }
+
+    public String buildSection4Rows(Lease lease, List<Cheque> cheques, String payee) {
+        if (cheques == null || cheques.isEmpty()) return "";
+
+        List<Cheque> printable = printableCheques(lease, cheques);
         printable.sort(Comparator.comparingInt(Cheque::getSeqNo)
                 .thenComparing(Cheque::getChequeDate, Comparator.nullsLast(Comparator.naturalOrder())));
 

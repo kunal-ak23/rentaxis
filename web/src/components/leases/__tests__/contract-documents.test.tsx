@@ -72,11 +72,31 @@ describe("contract documents", () => {
         expect(screen.queryByText(ar.ContractDocuments.signedContract)).toBeNull();
     });
 
-    it("shows nothing before a contract exists", async () => {
+    it("shows nothing before a contract exists to someone who cannot save one", async () => {
         docs = [];
-        const { container } = renderIt(true);
+        const { container } = renderIt(false);
         await waitFor(() => expect(global.fetch).toHaveBeenCalled());
         expect(container).toBeEmptyDOMElement();
+    });
+
+    // 27 Nov (owner): a signed lease with no saved contract can be frozen as it stands.
+    it("an admin saves the contract of a signed lease that has none", async () => {
+        docs = [];
+        global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+            const u = String(url);
+            if (init?.method === "POST") {
+                posts.push(u);
+                docs = [{ id: "d9", type: "CONTRACT", createdAt: "2026-11-27T08:00:00Z" }];
+                return new Response("{}", { status: 200 });
+            }
+            return new Response(JSON.stringify(docs), { status: 200 });
+        }) as unknown as typeof fetch;
+        renderIt(true);
+        expect(await screen.findByTestId("save-signed-hint")).toHaveTextContent("Save it now");
+        fireEvent.click(screen.getByTestId("save-signed-contract"));
+        expect(await screen.findByTestId("contract-doc-CONTRACT")).toHaveTextContent("Signed contract");
+        expect(posts).toEqual(["/api/proxy/v1/leases/lease-1/contract/save-signed"]);
+        expect(screen.queryByTestId("save-signed-contract")).toBeNull();
     });
 
     /**
