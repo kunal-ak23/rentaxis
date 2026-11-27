@@ -14,24 +14,46 @@ ProviderContainer containerWith(FakePromotionService fake) {
 }
 
 void main() {
-  test('home feed provider returns the server order untouched', () async {
-    final fake = FakePromotionService(
-      feedAds: [testAd(id: 'c'), testAd(id: 'a'), testAd(id: 'b')],
-    );
+  test('directory provider returns the categories in server order', () async {
+    final fake = FakePromotionService(categories: [
+      const DirectoryCategory(id: 'b'),
+      const DirectoryCategory(id: 'a'),
+    ]);
     final container = containerWith(fake);
 
-    final ads = await container.read(homePromoFeedProvider.future);
+    final cats = await container.read(directoryProvider.future);
 
-    expect(ads.map((a) => a.id), ['c', 'a', 'b']);
+    expect(cats.map((c) => c.id), ['b', 'a']);
   });
 
   test('offers provider passes the category filter through', () async {
     final fake = FakePromotionService(offerAds: [testAd(category: 'FITNESS')]);
     final container = containerWith(fake);
 
-    await container.read(promoOffersProvider('FITNESS').future);
+    await container.read(
+        promoOffersProvider((category: 'FITNESS', businessId: null)).future);
 
     expect(fake.requestedCategories, ['FITNESS']);
+    expect(fake.requestedOfferBusinessIds, [null]);
+  });
+
+  test('offers provider passes the business filter through', () async {
+    final fake = FakePromotionService(offerAds: [
+      testAd(id: 'a', businessId: 'b-1'),
+      testAd(id: 'b', businessId: 'b-2'),
+    ]);
+    final container = containerWith(fake);
+
+    final ads = await container.read(
+        promoOffersProvider((category: null, businessId: 'b-1')).future);
+
+    expect(fake.requestedOfferBusinessIds, ['b-1']);
+    expect(ads.map((a) => a.id), ['a']);
+  });
+
+  test('a 404 is not-found; other failures are not', () {
+    expect(isNotFoundError(notFound('/x')), isTrue);
+    expect(isNotFoundError(StateError('boom')), isFalse);
   });
 
   group('impression queue', () {

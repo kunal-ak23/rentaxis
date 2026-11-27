@@ -156,12 +156,27 @@ public class PromoterService {
                 .toList();
     }
 
+    /**
+     * Business directory (spec 2026-11-26): a promoter's business edit goes live at once,
+     * so a promoter cannot set the description or website the renter's business page
+     * shows. Whatever the request carries is replaced by {@code descriptionEn},
+     * {@code descriptionAr} and {@code websiteUrl} (the stored values, or none).
+     */
+    private static PromoBusinessRequest withDirectoryFields(PromoBusinessRequest req,
+                                                            String descriptionEn, String descriptionAr,
+                                                            String websiteUrl) {
+        return new PromoBusinessRequest(req.nameEn(), req.nameAr(), req.logoUrl(), req.category(),
+                req.phoneE164(), req.whatsappE164(), req.allowedDomains(), req.active(),
+                descriptionEn, descriptionAr, websiteUrl);
+    }
+
     /** Needs "can create businesses"; the new business is granted to its creator. */
     public PromoBusinessDTO createBusiness(Caller caller, PromoBusinessRequest req) {
         Access access = access(caller);
         requireCanCreate(access);
         requireOwnUploadOrNone(caller, req.logoUrl(), "logoUrl");
-        PromoBusiness b = withoutNameOracle(() -> promotionService.createBusiness(caller.tenantId(), req));
+        PromoBusiness b = withoutNameOracle(() -> promotionService.createBusiness(caller.tenantId(),
+                withDirectoryFields(req, null, null, null)));
         grantRepository.save(PromoterBusiness.of(caller.tenantId(), caller.userId(), b.getId()));
         return PromoAdDtos.business(b, 0L, images::forDto);
     }
@@ -180,9 +195,11 @@ public class PromoterService {
         requireOwnUploadOrNone(caller, req.logoUrl(), "logoUrl");
         // Review round 1, I3: the business row first, then its ads — an approval of one
         // of them in flight (which share-locks this row) is waited for, never slipped past.
-        businessRepository.findForUpdate(caller.tenantId(), businessId)
+        PromoBusiness stored = businessRepository.findForUpdate(caller.tenantId(), businessId)
                 .orElseThrow(() -> new NotFoundException("Business not found"));
-        PromoBusiness b = withoutNameOracle(() -> promotionService.updateBusiness(caller.tenantId(), businessId, req));
+        PromoBusinessRequest kept = withDirectoryFields(req,
+                stored.getDescriptionEn(), stored.getDescriptionAr(), stored.getWebsiteUrl());
+        PromoBusiness b = withoutNameOracle(() -> promotionService.updateBusiness(caller.tenantId(), businessId, kept));
         Instant now = now();
         List<PromoAd> resubmitted = adRepository.findForUpdateByBusinessAndStatusIn(caller.tenantId(), businessId,
                 List.of(PromoApprovalStatus.APPROVED, PromoApprovalStatus.PENDING));
@@ -380,6 +397,11 @@ public class PromoterService {
         } catch (BusinessRuleViolationException e) {
             if (PromotionService.BUSINESS_NAME_TAKEN_CODE.equals(e.getCode())) {
                 throw new BusinessRuleViolationException("That business name can't be used — choose another.");
+            }
+            if (PromotionService.BUSINESS_WEBSITE_DOMAIN_CODE.equals(e.getCode())) {
+                // The promoter cannot see or edit the website; tell them who can.
+                throw new BusinessRuleViolationException("One of the domains you removed is used by this "
+                        + "business's website. Ask the organisation admin to change the website first.");
             }
             throw e;
         }

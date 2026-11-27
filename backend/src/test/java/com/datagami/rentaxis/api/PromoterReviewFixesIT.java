@@ -235,7 +235,7 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
                 promoterService.updateBusiness(new com.datagami.rentaxis.core.service.PromoterService.Caller(
                                 promoter.getId(), org), wash.getId(),
                         new com.datagami.rentaxis.api.dto.PromoBusinessRequest("QuickWash N2 " + UUID.randomUUID(),
-                                null, null, null, "+971501234567", null, null, null));
+                                null, null, null, "+971501234567", null, null, null, null, null, null));
                 call.set(pool.submit(adminCall));
                 queued.set(waitForLockWaitOn("promo_"));
             });

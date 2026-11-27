@@ -58,6 +58,8 @@ public class PromotionService {
 
     /** The code on the name-collision refusal, so the promoter path can word it without the name (review M2). */
     public static final String BUSINESS_NAME_TAKEN_CODE = "promo.businessNameTaken";
+    /** The website is not on the allowlist this write leaves the business with. */
+    public static final String BUSINESS_WEBSITE_DOMAIN_CODE = "promo.businessWebsiteDomain";
 
     /** Mirrors PromoAdRequest's @Pattern; the column is varchar(9). */
     private static final Pattern ACCENT_COLOR =
@@ -254,6 +256,16 @@ public class PromotionService {
             allowedDomains = domains.isEmpty() ? null : String.join(",", domains);
         }
 
+        // Business directory: the page's "Visit" link is held to the same rule as
+        // an ad link (https, host on the allowlist this write leaves the business
+        // with), so it cannot point anywhere the business does not claim.
+        String websiteUrl = trimToNull(req.websiteUrl());
+        if (websiteUrl != null && !urlValidator.isAllowed(websiteUrl, allowedDomains)) {
+            throw new BusinessRuleViolationException(
+                    "The website must be an https link on one of this business's allowed domains.",
+                    BUSINESS_WEBSITE_DOMAIN_CODE, java.util.Map.of());
+        }
+
         // Everything above can throw; nothing below can. Assign only once the
         // request is known good, so a rejected edit cannot leave a managed
         // entity half-updated in the persistence context.
@@ -264,6 +276,9 @@ public class PromotionService {
         b.setPhoneE164(trimToNull(req.phoneE164()));
         b.setWhatsappE164(trimToNull(req.whatsappE164()));
         b.setAllowedDomains(allowedDomains);
+        b.setDescriptionEn(trimToNull(req.descriptionEn()));
+        b.setDescriptionAr(trimToNull(req.descriptionAr()));
+        b.setWebsiteUrl(websiteUrl);
         if (req.active() != null) {
             b.setActive(req.active());
         }
@@ -275,8 +290,11 @@ public class PromotionService {
      * make an arbitrary outbound request to whatever host an admin typed. Not
      * allowlisted — businesses legitimately host artwork on CDNs — but https is
      * required so the request is at least encrypted and the host is a real host.
+     *
+     * <p>Public so a directory category's icon gets exactly this rule (business
+     * directory, ruling R3); answers the value to store.
      */
-    private String requireHttpsOrNull(UUID tenantId, String url, String field) {
+    public String requireHttpsOrNull(UUID tenantId, String url, String field) {
         if (url == null) {
             return null;
         }

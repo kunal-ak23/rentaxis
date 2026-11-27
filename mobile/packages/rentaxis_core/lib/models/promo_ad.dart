@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../utils/lang_pick.dart';
 import '../utils/media_url.dart';
 
 /// What a tap on an ad card does.
@@ -21,7 +22,7 @@ class PromoBusinessRef {
   final String? logoUrl;
   final String? category;
 
-  String name(bool isAr) => _pick(isAr, nameAr, nameEn) ?? '';
+  String name(bool isAr) => pickLang(isAr, nameAr, nameEn) ?? '';
 
   factory PromoBusinessRef.fromJson(Map<String, dynamic> json) => PromoBusinessRef(
         id: json['id'] as String? ?? '',
@@ -129,11 +130,11 @@ class PromoAd {
   final DateTime? endsAt;
 
   /// Never null — a card always has a headline slot to fill.
-  String title(bool isAr) => _pick(isAr, titleAr, titleEn) ?? '';
+  String title(bool isAr) => pickLang(isAr, titleAr, titleEn) ?? '';
 
-  String? subtitle(bool isAr) => _pick(isAr, subtitleAr, subtitleEn);
+  String? subtitle(bool isAr) => pickLang(isAr, subtitleAr, subtitleEn);
 
-  String? couponTerms(bool isAr) => _pick(isAr, couponTermsAr, couponTermsEn);
+  String? couponTerms(bool isAr) => pickLang(isAr, couponTermsAr, couponTermsEn);
 
   /// The configured label, or a sensible default for the CTA type. Empty when
   /// there is no call to action, so callers can test it rather than the enum.
@@ -144,7 +145,7 @@ class PromoAd {
     // does nothing when tapped. It would also disagree with the admin panel's
     // preview, which gates the pill on ctaType alone.
     if (ctaType == PromoCtaType.none) return '';
-    final configured = _pick(isAr, ctaLabelAr, ctaLabelEn);
+    final configured = pickLang(isAr, ctaLabelAr, ctaLabelEn);
     if (configured != null) return configured;
     switch (ctaType) {
       case PromoCtaType.website:
@@ -245,19 +246,4 @@ Color? parseHexColor(String? hex) {
   if (cleaned.length != 8) return null;
   final value = int.tryParse(cleaned, radix: 16);
   return value == null ? null : Color(value);
-}
-
-/// Prefers [preferred] when [isAr], otherwise [fallback], then whichever is
-/// present. A blank string counts as absent — the admin form saves empty
-/// fields as empty strings often enough that trusting non-null is not enough.
-String? _pick(bool isAr, String? arabic, String? english) {
-  String? clean(String? s) {
-    if (s == null) return null;
-    final t = s.trim();
-    return t.isEmpty ? null : t;
-  }
-
-  final ar = clean(arabic);
-  final en = clean(english);
-  return isAr ? (ar ?? en) : (en ?? ar);
 }

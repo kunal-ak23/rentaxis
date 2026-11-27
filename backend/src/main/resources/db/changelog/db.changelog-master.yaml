@@ -393,3 +393,5 @@ databaseChangeLog:
       file: db/changelog/changesets/193-booking-fee-snapshot.yaml
   - include:
       file: db/changelog/changesets/194-rental-index.yaml
+  - include:
+      file: db/changelog/changesets/195-promo-directory.yaml

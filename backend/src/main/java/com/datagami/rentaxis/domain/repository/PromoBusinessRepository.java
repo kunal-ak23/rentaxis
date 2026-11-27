@@ -59,4 +59,33 @@ public interface PromoBusinessRepository extends JpaRepository<PromoBusiness, UU
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("SELECT b FROM PromoBusiness b WHERE b.tenantId = :tenantId AND b.id = :id")
     Optional<PromoBusiness> findForShare(@Param("tenantId") UUID tenantId, @Param("id") UUID id);
+
+    /**
+     * The business directory: a live category's live businesses, oldest first, in one
+     * query. Category and links scoped by the caller's tenant as well as the business.
+     */
+    @Query("""
+            SELECT b FROM PromoBusiness b
+             WHERE b.tenantId = :tenantId AND b.active = true AND b.archivedAt IS NULL
+               AND b.id IN (SELECT l.businessId FROM PromoDirectoryLink l
+                             WHERE l.tenantId = :tenantId AND l.categoryId = :categoryId)
+             ORDER BY b.createdAt ASC, b.id ASC
+            """)
+    List<PromoBusiness> findVisibleInDirectoryCategory(@Param("tenantId") UUID tenantId,
+                                                       @Param("categoryId") UUID categoryId);
+
+    /**
+     * One live business of this tenant that sits in at least one live category, or
+     * empty: a business in no live category is not in the directory.
+     */
+    @Query("""
+            SELECT b FROM PromoBusiness b
+             WHERE b.tenantId = :tenantId AND b.id = :id
+               AND b.active = true AND b.archivedAt IS NULL
+               AND EXISTS (SELECT 1 FROM PromoDirectoryLink l, PromoDirectoryCategory c
+                            WHERE l.tenantId = :tenantId AND c.tenantId = :tenantId
+                              AND l.businessId = b.id AND c.id = l.categoryId
+                              AND c.active = true AND c.archivedAt IS NULL)
+            """)
+    Optional<PromoBusiness> findVisibleInDirectory(@Param("tenantId") UUID tenantId, @Param("id") UUID id);
 }

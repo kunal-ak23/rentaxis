@@ -146,7 +146,7 @@ class PromotionAdminControllerTest {
                 .thenReturn(business());
 
         ResponseEntity<PromoBusinessDTO> res = controller.createBusiness(new PromoBusinessRequest(
-                "Spice Bazaar", null, null, PromoCategory.DINING, null, null, List.of(), null));
+                "Spice Bazaar", null, null, PromoCategory.DINING, null, null, List.of(), null, null, null, null));
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }

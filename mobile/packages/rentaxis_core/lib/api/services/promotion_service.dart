@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../models/promo_ad.dart';
+import '../../models/promo_directory.dart';
 
 /// Wrapper over the renter promotions endpoints (`/v1/promotions/*`).
 ///
@@ -22,13 +23,46 @@ class PromotionApiService {
     return PromoAd.listFromJson((response.data as List?) ?? const []);
   }
 
-  /// GET /v1/promotions/offers — the full catalogue, optionally by category.
-  Future<List<PromoAd>> offers({String? category}) async {
+  /// GET /v1/promotions/offers — the full catalogue, optionally narrowed by
+  /// category or by one business. Only non-null params are sent.
+  Future<List<PromoAd>> offers({String? category, String? businessId}) async {
+    final params = <String, dynamic>{
+      'category': ?category,
+      'businessId': ?businessId,
+    };
     final response = await _dio.get(
       '/v1/promotions/offers',
-      queryParameters: category == null ? null : {'category': category},
+      queryParameters: params.isEmpty ? null : params,
     );
     return PromoAd.listFromJson((response.data as List?) ?? const []);
+  }
+
+  /// GET /v1/promotions/directory — the directory's categories.
+  Future<List<DirectoryCategory>> directory() async {
+    final response = await _dio.get('/v1/promotions/directory');
+    return DirectoryCategory.listFromJson((response.data as List?) ?? const []);
+  }
+
+  /// GET /v1/promotions/directory/{categoryId} — one category and its
+  /// visible businesses. 404 when the category is missing or archived.
+  Future<({DirectoryCategory category, List<DirectoryBusiness> businesses})>
+      directoryCategory(String id) async {
+    final response = await _dio.get('/v1/promotions/directory/$id');
+    final data = Map<String, dynamic>.from(response.data as Map);
+    return (
+      category: DirectoryCategory.fromJson(
+          Map<String, dynamic>.from(data['category'] as Map)),
+      businesses:
+          DirectoryBusiness.listFromJson((data['businesses'] as List?) ?? const []),
+    );
+  }
+
+  /// GET /v1/promotions/directory/businesses/{id} — one business. 404 when
+  /// it is not visible.
+  Future<DirectoryBusiness> business(String id) async {
+    final response = await _dio.get('/v1/promotions/directory/businesses/$id');
+    return DirectoryBusiness.fromJson(
+        Map<String, dynamic>.from(response.data as Map));
   }
 
   /// POST /v1/promotions/events — batched impressions and clicks, 202.

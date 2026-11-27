@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.PromoEventBatchRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.PromoDirectoryService;
 import com.datagami.rentaxis.core.service.PromotionFeedService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
@@ -32,6 +33,7 @@ import static org.mockito.Mockito.when;
 class PromotionFeedControllerTest {
 
     @Mock PromotionFeedService feedService;
+    @Mock PromoDirectoryService directoryService;
     @InjectMocks PromotionFeedController controller;
 
     private final UUID tenantId = UUID.randomUUID();
@@ -63,11 +65,26 @@ class PromotionFeedControllerTest {
 
     @Test
     void offers_passesTheCategoryFilterThrough() {
-        when(feedService.offers(tenantId, renterId, PromoCategory.DINING)).thenReturn(List.of());
+        UUID businessId = UUID.randomUUID();
+        when(feedService.offers(tenantId, renterId, PromoCategory.DINING, businessId)).thenReturn(List.of());
 
-        controller.offers(PromoCategory.DINING);
+        controller.offers(PromoCategory.DINING, businessId);
 
-        verify(feedService).offers(tenantId, renterId, PromoCategory.DINING);
+        verify(feedService).offers(tenantId, renterId, PromoCategory.DINING, businessId);
+    }
+
+    @Test
+    void directory_scopesByTheContextTenant() {
+        UUID categoryId = UUID.randomUUID();
+        UUID businessId = UUID.randomUUID();
+
+        controller.directory();
+        controller.directoryCategory(categoryId);
+        controller.directoryBusiness(businessId);
+
+        verify(directoryService).directory(tenantId);
+        verify(directoryService).directoryCategory(tenantId, categoryId);
+        verify(directoryService).directoryBusiness(tenantId, businessId);
     }
 
     @Test
@@ -81,12 +98,19 @@ class PromotionFeedControllerTest {
         assertThatThrownBy(() -> controller.feed())
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("X-Tenant-Id");
-        assertThatThrownBy(() -> controller.offers(null))
+        assertThatThrownBy(() -> controller.offers(null, null))
                 .isInstanceOf(BusinessRuleViolationException.class);
         assertThatThrownBy(() -> controller.events(new PromoEventBatchRequest(List.of(
                 new PromoEventBatchRequest.Event(UUID.randomUUID(), PromoEventType.CLICK)))))
                 .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> controller.directory())
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> controller.directoryCategory(UUID.randomUUID()))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> controller.directoryBusiness(UUID.randomUUID()))
+                .isInstanceOf(BusinessRuleViolationException.class);
         verifyNoInteractions(feedService);
+        verifyNoInteractions(directoryService);
     }
 
     @Test

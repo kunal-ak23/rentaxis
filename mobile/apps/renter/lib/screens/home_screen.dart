@@ -5,7 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../providers/promotion_provider.dart';
-import '../widgets/home_ads_strip.dart';
+import '../widgets/home_directory_row.dart';
+import '../widgets/quick_action_tile.dart';
 import 'next_payment.dart';
 import '../providers/renter_data.dart';
 import '../utils/renter_rules.dart';
@@ -22,7 +23,7 @@ final _openPenaltyCountProvider = FutureProvider.autoDispose<int>((ref) async {
 ///   2. Gold hero: next cheque, progress, View cheques / Set reminder
 ///   3. Penalty strip (only when there are open penalties)
 ///   4. Quick actions: 4-col grid
-///   5. Promotions carousel (renders nothing when there are no ads)
+///   5. Directory category tiles (render nothing when there are none)
 ///   6. Amenity promo
 ///   7. Recent activity list
 ///
@@ -41,8 +42,7 @@ class HomeScreen extends ConsumerWidget {
       ref.invalidate(renterLeasesProvider);
       ref.invalidate(renterPaymentsProvider);
       ref.invalidate(_openPenaltyCountProvider);
-      // Pull-to-refresh re-reads the day's promo slate too.
-      ref.invalidate(homePromoFeedProvider);
+      ref.invalidate(directoryProvider);
       ref.read(notificationProvider.notifier).fetchUnreadCount();
       await ref.read(renterLeasesProvider.future);
     }
@@ -67,11 +67,11 @@ class HomeScreen extends ConsumerWidget {
                 ],
                 const SizedBox(height: MiftahSpacing.gap),
                 const _QuickActions(),
-                // No leading gap here on purpose: the strip is conditional and
+                // No leading gap here on purpose: the row is conditional and
                 // owns its own, exactly like the penalty strip above. Putting
                 // one on each side left 22px of dead air between quick actions
-                // and facilities whenever the tenant has no promotions.
-                const HomeAdsStrip(),
+                // and facilities whenever there are no directory categories.
+                const HomeDirectoryRow(),
                 const SizedBox(height: MiftahSpacing.gap),
                 const _FacilitiesCard(),
                 const SizedBox(height: 18),
@@ -692,42 +692,10 @@ class _QuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MiftahCard(
-      padding: const EdgeInsets.fromLTRB(6, 13, 6, 11),
-      radius: MiftahRadii.tile,
-      onTap: () => context.push(route),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF4F1FC),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(icon, size: 20, color: MiftahColors.brassDeep),
-          ),
-          const SizedBox(height: 8),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              maxLines: 1,
-              style: context.isAr
-                  ? MiftahType.ar(
-                      size: 11,
-                      weight: FontWeight.w600,
-                      color: context.miftah.textPrimary,
-                    )
-                  : MiftahType.meta(
-                      color: context.miftah.textSecondary,
-                    ).copyWith(fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
+    return QuickActionTile(
+      leading: Icon(icon, size: 20, color: MiftahColors.brassDeep),
+      label: label,
+      route: route,
     );
   }
 }

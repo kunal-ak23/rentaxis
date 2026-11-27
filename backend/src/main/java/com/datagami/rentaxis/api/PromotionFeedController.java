@@ -1,8 +1,12 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.PromoAdCardDTO;
+import com.datagami.rentaxis.api.dto.PromoDirectoryDtos.DirectoryBusinessDTO;
+import com.datagami.rentaxis.api.dto.PromoDirectoryDtos.DirectoryCategoryDTO;
+import com.datagami.rentaxis.api.dto.PromoDirectoryDtos.DirectoryCategoryDetailDTO;
 import com.datagami.rentaxis.api.dto.PromoEventBatchRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.PromoDirectoryService;
 import com.datagami.rentaxis.core.service.PromotionFeedService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
@@ -12,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,9 +45,11 @@ import java.util.UUID;
 public class PromotionFeedController {
 
     private final PromotionFeedService feedService;
+    private final PromoDirectoryService directoryService;
 
-    public PromotionFeedController(PromotionFeedService feedService) {
+    public PromotionFeedController(PromotionFeedService feedService, PromoDirectoryService directoryService) {
         this.feedService = feedService;
+        this.directoryService = directoryService;
     }
 
     /** The home carousel slate — at most six cards, stable for the day. */
@@ -54,9 +61,33 @@ public class PromotionFeedController {
 
     @GetMapping("/offers")
     public ResponseEntity<List<PromoAdCardDTO>> offers(
-            @RequestParam(required = false) PromoCategory category) {
+            @RequestParam(required = false) PromoCategory category,
+            @RequestParam(required = false) UUID businessId) {
         return ResponseEntity.ok(
-                feedService.offers(requireTenant(), currentRenterId(), category));
+                feedService.offers(requireTenant(), currentRenterId(), category, businessId));
+    }
+
+    /** The business directory's tiles: live categories with at least one live business. */
+    @GetMapping("/directory")
+    public ResponseEntity<List<DirectoryCategoryDTO>> directory() {
+        return ResponseEntity.ok(directoryService.directory(requireTenant()));
+    }
+
+    /**
+     * One category and its businesses; 404 for another org's, an archived or an
+     * inactive one. Kept under {@code /directory} (ruling R2), off the admin
+     * {@code /promotions/businesses/**} routes; {@code /directory/businesses/{id}}
+     * has one more segment, so the two never compete for a path.
+     */
+    @GetMapping("/directory/{categoryId}")
+    public ResponseEntity<DirectoryCategoryDetailDTO> directoryCategory(@PathVariable UUID categoryId) {
+        return ResponseEntity.ok(directoryService.directoryCategory(requireTenant(), categoryId));
+    }
+
+    /** A business page; 404 unless it is live and in at least one live category. Its offers: {@code /offers?businessId=}. */
+    @GetMapping("/directory/businesses/{id}")
+    public ResponseEntity<DirectoryBusinessDTO> directoryBusiness(@PathVariable UUID id) {
+        return ResponseEntity.ok(directoryService.directoryBusiness(requireTenant(), id));
     }
 
     /**

@@ -80,7 +80,7 @@ class PromotionServiceTest {
 
         PromoBusiness saved = service.createBusiness(tenantId, new PromoBusinessRequest(
                 "Spice Bazaar", null, null, null, null, null,
-                List.of("HTTPS://Www.Spice-Bazaar.AE/menu", " gym.example.com "), null));
+                List.of("HTTPS://Www.Spice-Bazaar.AE/menu", " gym.example.com "), null, null, null, null));
 
         assertThat(saved.getAllowedDomains()).isEqualTo("www.spice-bazaar.ae,gym.example.com");
     }
@@ -92,10 +92,71 @@ class PromotionServiceTest {
         // worst outcome; say so at the point of entry instead.
         assertThatThrownBy(() -> service.createBusiness(tenantId, new PromoBusinessRequest(
                 "Spice Bazaar", null, null, null, null, null,
-                List.of("*.spice-bazaar.ae"), null)))
+                List.of("*.spice-bazaar.ae"), null, null, null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("*.spice-bazaar.ae");
         verify(businessRepository, never()).saveAndFlush(any(PromoBusiness.class));
+    }
+
+    // ------------------------------------------------- directory: description and website
+
+    private PromoBusinessRequest withWebsite(String websiteUrl) {
+        return new PromoBusinessRequest("QuickWash", null, null, null, null, null,
+                List.of("quickwash.ae"), null, "Car wash at your door", "غسيل سيارات", websiteUrl);
+    }
+
+    @Test
+    void createBusiness_rejectsWebsiteOutsideAllowedDomains() {
+        assertThatThrownBy(() -> service.createBusiness(tenantId, withWebsite("https://evil.example")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("website");
+        verify(businessRepository, never()).saveAndFlush(any(PromoBusiness.class));
+    }
+
+    @Test
+    void createBusiness_rejectsHttpWebsite() {
+        assertThatThrownBy(() -> service.createBusiness(tenantId, withWebsite("http://quickwash.ae")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("website");
+        verify(businessRepository, never()).saveAndFlush(any(PromoBusiness.class));
+    }
+
+    @Test
+    void createBusiness_acceptsWebsiteOnAllowedHost() {
+        // PromotionUrlValidator.isAllowed accepts the exact host and any subdomain of it.
+        when(businessRepository.saveAndFlush(any(PromoBusiness.class))).thenAnswer(i -> i.getArgument(0));
+
+        PromoBusiness saved = service.createBusiness(tenantId, withWebsite(" https://www.quickwash.ae/book "));
+
+        assertThat(saved.getWebsiteUrl()).isEqualTo("https://www.quickwash.ae/book");
+        assertThat(saved.getDescriptionEn()).isEqualTo("Car wash at your door");
+        assertThat(saved.getDescriptionAr()).isEqualTo("غسيل سيارات");
+    }
+
+    @Test
+    void createBusiness_blankWebsiteStoresNull() {
+        when(businessRepository.saveAndFlush(any(PromoBusiness.class))).thenAnswer(i -> i.getArgument(0));
+
+        PromoBusiness saved = service.createBusiness(tenantId, new PromoBusinessRequest("QuickWash", null, null,
+                null, null, null, List.of("quickwash.ae"), null, "  ", null, "   "));
+
+        assertThat(saved.getWebsiteUrl()).isNull();
+        assertThat(saved.getDescriptionEn()).isNull();
+    }
+
+    @Test
+    void updateBusiness_checksWebsiteAgainstTheStoredDomainsWhenTheRequestLeavesThemUnchanged() {
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+        when(businessRepository.saveAndFlush(any(PromoBusiness.class))).thenAnswer(i -> i.getArgument(0));
+
+        PromoBusiness saved = service.updateBusiness(tenantId, businessId, new PromoBusinessRequest(
+                "Spice Bazaar", null, null, null, null, null, null, null, null, null, "https://spice-bazaar.ae/menu"));
+        assertThat(saved.getWebsiteUrl()).isEqualTo("https://spice-bazaar.ae/menu");
+
+        assertThatThrownBy(() -> service.updateBusiness(tenantId, businessId, new PromoBusinessRequest(
+                "Spice Bazaar", null, null, null, null, null, List.of("other.ae"), null, null, null,
+                "https://spice-bazaar.ae/menu")))
+                .isInstanceOf(BusinessRuleViolationException.class);
     }
 
     @Test
@@ -502,7 +563,7 @@ class PromotionServiceTest {
 
         PromoBusiness saved = service.updateBusiness(tenantId, businessId,
                 new PromoBusinessRequest("Spice Bazaar", null, null, null,
-                        "+971501234567", null, null, null));
+                        "+971501234567", null, null, null, null, null, null));
 
         assertThat(saved.getAllowedDomains()).isEqualTo("spice-bazaar.ae");
     }
@@ -516,7 +577,7 @@ class PromotionServiceTest {
 
         PromoBusiness saved = service.updateBusiness(tenantId, businessId,
                 new PromoBusinessRequest("Spice Bazaar", null, null, null, null, null,
-                        List.of(), null));
+                        List.of(), null, null, null, null));
 
         assertThat(saved.getAllowedDomains()).isNull();
     }
@@ -528,7 +589,7 @@ class PromotionServiceTest {
                         "duplicate key value violates unique constraint \"uq_promo_business_name\""));
 
         assertThatThrownBy(() -> service.createBusiness(tenantId, new PromoBusinessRequest(
-                "Spice Bazaar", null, null, null, null, null, List.of(), null)))
+                "Spice Bazaar", null, null, null, null, null, List.of(), null, null, null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("already exists");
     }
@@ -537,7 +598,7 @@ class PromotionServiceTest {
     void createBusiness_rejectsANonHttpsLogo() {
         assertThatThrownBy(() -> service.createBusiness(tenantId, new PromoBusinessRequest(
                 "Spice Bazaar", null, "http://cdn.example.com/logo.png", null, null, null,
-                List.of(), null)))
+                List.of(), null, null, null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("https");
     }

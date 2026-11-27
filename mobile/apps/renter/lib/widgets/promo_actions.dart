@@ -9,8 +9,9 @@ import 'coupon_sheet.dart';
 
 export '../utils/promo_url.dart' show PromoUrlLauncher;
 
-/// What tapping a promotion does, in one place, shared by the home carousel
-/// and the Offers screen.
+/// What tapping a promotion does, in one place, shared by every screen that
+/// shows an `AdCard` (today the directory business page), plus the business
+/// page's own website, call and WhatsApp buttons.
 ///
 /// Links open in an **in-app browser** rather than the system browser: the
 /// renter stays in Miftah and sees the host in the in-app chrome. The URL is
@@ -61,6 +62,23 @@ class PromoActions {
         break;
     }
   }
+
+  /// The directory business page's website button: the same
+  /// [parseSafePromoUri] check as a WEBSITE ad, but opened in the **external**
+  /// browser — the renter is leaving Miftah for the business's own site.
+  /// Does nothing when the link fails the check.
+  Future<void> openBusinessWebsite(String? raw) async {
+    final uri = parseSafePromoUri(raw);
+    if (uri == null) return;
+    await _safeLaunch(uri, LaunchMode.externalApplication);
+  }
+
+  /// Dials [raw], the way a CALL ad does. Does nothing when blank.
+  Future<void> callPhone(String? raw) => _openPhone(raw, whatsapp: false);
+
+  /// Opens a WhatsApp chat with [raw], the way a WHATSAPP ad does. Does
+  /// nothing when blank or digit-less.
+  Future<void> openWhatsApp(String? raw) => _openPhone(raw, whatsapp: true);
 
   Future<void> _openWebsite(String? raw) async {
     final uri = parseSafePromoUri(raw);

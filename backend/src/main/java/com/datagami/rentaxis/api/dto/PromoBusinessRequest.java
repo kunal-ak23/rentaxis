@@ -7,7 +7,11 @@ import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
-/** category null = OTHER; active null = true; allowedDomains null = none allowed. */
+/**
+ * category null = OTHER; active null = true; allowedDomains null = none on create, unchanged on update.
+ * descriptionEn/Ar and websiteUrl: blank = none; websiteUrl must be https on one of the
+ * business's allowed domains. A promoter's values are ignored (PromoterService).
+ */
 public record PromoBusinessRequest(
         @NotBlank @Size(max = 160) String nameEn,
         @Size(max = 160) String nameAr,
@@ -18,5 +22,8 @@ public record PromoBusinessRequest(
         @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "whatsapp must be E.164, e.g. +971501234567")
         String whatsappE164,
         List<String> allowedDomains,
-        Boolean active) {
+        Boolean active,
+        @Size(max = 500) String descriptionEn,
+        @Size(max = 500) String descriptionAr,
+        @Size(max = 512) String websiteUrl) {
 }

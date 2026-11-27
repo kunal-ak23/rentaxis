@@ -21,6 +21,11 @@ interface BusinessEditorProps {
      * for approval (the server does this on every promoter edit).
      */
     mode?: "admin" | "promoter";
+    /**
+     * Description and website are the admin's: the server ignores a promoter's
+     * values, so the promoter's form leaves them out.
+     */
+    showDirectoryFields?: boolean;
 }
 
 /**
@@ -47,7 +52,7 @@ const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?
 
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
-export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: BusinessEditorProps) {
+export function BusinessEditor({ business, onSave, onCancel, mode = "admin", showDirectoryFields = true }: BusinessEditorProps) {
     const t = useTranslations("Promotions");
     const tp = useTranslations("Promoter");
 
@@ -61,6 +66,9 @@ export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: B
     const [domainDraft, setDomainDraft] = useState("");
     const [domainError, setDomainError] = useState<string | null>(null);
     const [active, setActive] = useState(business?.active ?? true);
+    const [descriptionEn, setDescriptionEn] = useState(business?.descriptionEn ?? "");
+    const [descriptionAr, setDescriptionAr] = useState(business?.descriptionAr ?? "");
+    const [websiteUrl, setWebsiteUrl] = useState(business?.websiteUrl ?? "");
     const [error, setError] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -102,6 +110,12 @@ export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: B
             whatsappE164: trimOrNull(whatsappE164),
             allowedDomains: domains,
             active,
+            // A business PUT replaces these (an omitted field is cleared), so they
+            // are always sent, null when blank. The promoter form never shows them
+            // and the server ignores a promoter's values.
+            descriptionEn: trimOrNull(descriptionEn),
+            descriptionAr: trimOrNull(descriptionAr),
+            websiteUrl: trimOrNull(websiteUrl),
         };
         savingRef.current = true;
         setSaving(true);
@@ -173,6 +187,31 @@ export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: B
                 )}
                 <p className="mt-1 text-xs text-gray-500">{t("allowedDomainsHint")}</p>
             </div>
+
+            {showDirectoryFields && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block">
+                        <span className="mb-1 block text-sm font-medium">{t("descriptionEn")}</span>
+                        <textarea aria-label={t("descriptionEn")} rows={3} maxLength={500}
+                            className="w-full rounded-lg border px-3 py-2"
+                            value={descriptionEn} onChange={e => setDescriptionEn(e.target.value)} />
+                    </label>
+                    <label className="block">
+                        <span className="mb-1 block text-sm font-medium">{t("descriptionAr")}</span>
+                        <textarea aria-label={t("descriptionAr")} dir="rtl" rows={3} maxLength={500}
+                            className="w-full rounded-lg border px-3 py-2"
+                            value={descriptionAr} onChange={e => setDescriptionAr(e.target.value)} />
+                    </label>
+                    <label className="block sm:col-span-2">
+                        <span className="mb-1 block text-sm font-medium">{t("websiteUrl")}</span>
+                        <input aria-label={t("websiteUrl")} dir="ltr" placeholder="https://example.com"
+                            aria-describedby="business-website-hint" maxLength={512}
+                            className="w-full rounded-lg border px-3 py-2"
+                            value={websiteUrl} onChange={e => setWebsiteUrl(e.target.value)} />
+                        <p id="business-website-hint" className="mt-1 text-xs text-gray-500">{t("websiteUrlHint")}</p>
+                    </label>
+                </div>
+            )}
 
             <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />

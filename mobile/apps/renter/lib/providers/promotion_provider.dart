@@ -1,21 +1,48 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
-/// The home carousel slate. `autoDispose` because the server rotates it daily
-/// and re-entering home should read the current day's slate rather than a
-/// kept-alive copy from yesterday.
-final homePromoFeedProvider = FutureProvider.autoDispose<List<PromoAd>>((ref) {
-  return ref.watch(promotionServiceProvider).feed();
+/// Directory categories for the home tile row. `autoDispose` so re-entering
+/// home re-reads them rather than showing a kept-alive copy.
+final directoryProvider = FutureProvider.autoDispose<List<DirectoryCategory>>((ref) {
+  return ref.watch(promotionServiceProvider).directory();
 });
 
-/// The full catalogue, optionally filtered. `null` family value = no filter.
-final promoOffersProvider =
-    FutureProvider.autoDispose.family<List<PromoAd>, String?>((ref, category) {
-  return ref.watch(promotionServiceProvider).offers(category: category);
+/// One directory category and its visible businesses. A hidden, archived or
+/// foreign category is a 404 (see [isNotFoundError]).
+final directoryCategoryProvider = FutureProvider.autoDispose.family<
+    ({DirectoryCategory category, List<DirectoryBusiness> businesses}),
+    String>((ref, id) {
+  return ref.watch(promotionServiceProvider).directoryCategory(id);
 });
 
-/// Deliberately **not** `autoDispose`: the queue has to outlive the carousel
-/// so events recorded just before a navigation still get flushed.
+/// One directory business. 404 when it is not visible to this renter.
+final directoryBusinessProvider =
+    FutureProvider.autoDispose.family<DirectoryBusiness, String>((ref, id) {
+  return ref.watch(promotionServiceProvider).business(id);
+});
+
+/// Live offers, optionally narrowed by category and/or business. A record
+/// family value: records compare by value, so the same filter reuses the
+/// same provider. All-null = the whole catalogue.
+final promoOffersProvider = FutureProvider.autoDispose
+    .family<List<PromoAd>, ({String? category, String? businessId})>(
+        (ref, filter) {
+  return ref.watch(promotionServiceProvider).offers(
+        category: filter.category,
+        businessId: filter.businessId,
+      );
+});
+
+/// Whether [error] is the server saying "not here": a 404 for a hidden,
+/// archived or foreign category or business. Drives the not-found state
+/// rather than the retryable error state — retrying a 404 cannot help.
+bool isNotFoundError(Object error) =>
+    error is DioException && error.response?.statusCode == 404;
+
+/// Deliberately **not** `autoDispose`: the queue has to outlive the business
+/// screen that records into it, so events recorded just before the renter
+/// leaves still get flushed by that screen's `dispose`.
 final promoEventQueueProvider = Provider<PromoEventQueue>((ref) {
   return PromoEventQueue(ref.watch(promotionServiceProvider));
 });
